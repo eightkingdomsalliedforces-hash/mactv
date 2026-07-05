@@ -27,6 +27,7 @@ struct TVShellChecks {
         try checkYouTubeNativeRuntimeAndAPI()
         try await checkBangumiYouTubeAnimeSourceFindsPlayableCandidates()
         try checkAnimekoStyleSourceCatalog()
+        try await checkAnimeSourceRegistryUsesCatalog()
         print("TVShellChecks passed")
     }
 
@@ -524,6 +525,7 @@ struct TVShellChecks {
     static func checkAnimekoStyleSourceCatalog() throws {
         let sources = AnimeSourceCatalog.defaultSources
         try expect(sources.count >= 20, "anime source catalog includes animeko-style source list")
+        try expect(sources.first?.id == "bangumi-youtube", "catalog starts with playable bangumi youtube source")
         try expect(sources.contains { $0.title == "girigiri 愛動漫" }, "catalog includes girigiri source")
         try expect(sources.contains { $0.title == "喵物次元" && $0.health == .needsCloudflare }, "catalog marks cloudflare source")
         try expect(sources.contains { $0.title == "新優酷" && $0.health == .needsCaptcha }, "catalog marks captcha source")
@@ -562,6 +564,70 @@ struct TVShellChecks {
         let focusedBefore = state.focusedAnimeSourceID
         state.handle(.down)
         try expect(state.focusedAnimeSourceID != focusedBefore, "remote down moves anime source focus")
+    }
+
+    static func checkAnimeSourceRegistryUsesCatalog() async throws {
+        let episode = AnimeEpisode(
+            id: "mock-episode-1",
+            title: "測試動畫 第 1 話",
+            number: 1,
+            identity: AnimeEpisodeIdentity(providerID: "mock-source", subjectID: "mock-title", episodeID: "1")
+        )
+        let mock = StaticAnimeSourceProvider(
+            id: "mock-source",
+            displayName: "Mock Source",
+            results: [
+                AnimeSearchResult(id: "mock-title", title: "測試動畫", subtitle: "Mock", episodes: [episode])
+            ],
+            streams: [
+                episode.id: [
+                    AnimeStreamCandidate(url: URL(string: "https://example.com/mock.m3u8")!, quality: "1080p", priority: 100)
+                ]
+            ]
+        )
+        var catalog = AnimeSourceCatalogState(definitions: [
+            AnimeSourceDefinition(
+                id: "needs-captcha",
+                title: "需要驗證",
+                iconLabel: "驗",
+                lines: [AnimeSourceLine(id: "needs-captcha-main", title: "主線")],
+                health: .needsCaptcha
+            ),
+            AnimeSourceDefinition(
+                id: "missing-adapter",
+                title: "尚未接入",
+                iconLabel: "空",
+                lines: [AnimeSourceLine(id: "missing-main", title: "主線")]
+            ),
+            AnimeSourceDefinition(
+                id: "mock-source",
+                title: "Mock Source",
+                iconLabel: "M",
+                lines: [AnimeSourceLine(id: "mock-main", title: "主線")]
+            )
+        ])
+        let registry = AnimeSourceRegistry(adapters: [mock])
+        let provider = CatalogAnimeSourceProvider(catalog: catalog, registry: registry)
+        let results = try await provider.search(AnimeSearchQuery(keyword: "測試"))
+        try expect(results.first?.title == "測試動畫", "catalog provider skips unavailable sources and uses registered adapter")
+        let streams = try await provider.streams(for: episode)
+        try expect(streams.first?.quality == "1080p", "catalog provider resolves through episode provider id")
+        try expect(provider.displayName.contains("Mock Source"), "catalog provider display name reports active source")
+
+        catalog.toggleEnabled(sourceID: "mock-source")
+        let disabledProvider = CatalogAnimeSourceProvider(catalog: catalog, registry: registry)
+        do {
+            _ = try await disabledProvider.search(AnimeSearchQuery(keyword: "測試"))
+            throw CheckFailure("catalog provider should fail when no playable adapter is enabled")
+        } catch let error as AnimeSourceCatalogError {
+            try expect(error == .noPlayableAdapter, "catalog provider reports no playable adapter")
+        }
+
+        let factoryProvider = AnimeSourceProviderFactory.provider(
+            catalog: AnimeSourceCatalogState(definitions: AnimeSourceCatalog.defaultSources),
+            youtubeCredentials: YouTubeCredentials(apiKey: "yt-key")
+        )
+        try expect(factoryProvider.id == "catalog", "factory creates catalog-backed anime provider")
     }
 }
 

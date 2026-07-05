@@ -98,6 +98,20 @@ public enum AnimeSourceProviderFactory {
     public static func defaultProvider(
         youtubeCredentials: YouTubeCredentials = .environment()
     ) -> any AnimeSourceProvider {
-        return BangumiYouTubeAnimeSourceProvider(youtubeCredentials: youtubeCredentials)
+        BangumiYouTubeAnimeSourceProvider(youtubeCredentials: youtubeCredentials)
+    }
+
+    public static func provider(
+        catalog: AnimeSourceCatalogState,
+        youtubeCredentials: YouTubeCredentials = .environment(),
+        transport: any AnimeHTTPTransport = URLSessionAnimeHTTPTransport()
+    ) -> any AnimeSourceProvider {
+        let registry = AnimeSourceRegistry(adapters: [
+            BangumiYouTubeAnimeSourceProvider(
+                youtubeCredentials: youtubeCredentials,
+                transport: transport
+            )
+        ])
+        return CatalogAnimeSourceProvider(catalog: catalog, registry: registry)
     }
 }

@@ -13,9 +13,10 @@ public protocol DanmakuProvider: Sendable {
     func comments(for episode: AnimeEpisodeIdentity) async throws -> [DanmakuComment]
 }
 
-public struct StaticAnimeSourceProvider: AnimeSourceProvider {
+public struct StaticAnimeSourceProvider: AnimeMediaSourceAdapter {
     public let id: String
     public let displayName: String
+    public let resolverKind: AnimeResolverKind
     private let results: [AnimeSearchResult]
     private let streamCandidates: [String: [AnimeStreamCandidate]]
 
@@ -23,12 +24,14 @@ public struct StaticAnimeSourceProvider: AnimeSourceProvider {
         id: String,
         displayName: String,
         results: [AnimeSearchResult],
-        streams: [String: [AnimeStreamCandidate]]
+        streams: [String: [AnimeStreamCandidate]],
+        resolverKind: AnimeResolverKind = .http
     ) {
         self.id = id
         self.displayName = displayName
         self.results = results
         self.streamCandidates = streams
+        self.resolverKind = resolverKind
     }
 
     public func search(_ query: AnimeSearchQuery) async throws -> [AnimeSearchResult] {

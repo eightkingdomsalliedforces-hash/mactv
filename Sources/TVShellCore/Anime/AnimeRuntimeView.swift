@@ -4,6 +4,7 @@ import SwiftUI
 
 public struct AnimeRuntimeView: View {
     public let app: TVAppProfile
+    @EnvironmentObject private var appState: AppState
     @StateObject private var controller = AnimeRuntimeController()
 
     public init(app: TVAppProfile) {
@@ -39,7 +40,12 @@ public struct AnimeRuntimeView: View {
             .foregroundStyle(.white)
         }
         .task {
-            await controller.load()
+            await controller.load(
+                sourceProvider: AnimeSourceProviderFactory.provider(
+                    catalog: appState.animeSourceCatalog,
+                    youtubeCredentials: appState.youtubeCredentials
+                )
+            )
         }
         .onDisappear {
             controller.stop()
@@ -131,7 +137,7 @@ final class AnimeRuntimeController: ObservableObject {
     @Published private(set) var visibleDanmaku: [DanmakuComment] = []
     @Published private(set) var currentYouTubeVideoID: String?
 
-    private let sourceProvider: any AnimeSourceProvider
+    private var sourceProvider: (any AnimeSourceProvider)?
     private let danmakuProvider: any DanmakuProvider
     private let searchKeywords = ["芙莉蓮", "藥師少女", "我推的孩子", "咒術迴戰", "孤獨搖滾"]
     private var searchKeywordIndex = 0
@@ -142,7 +148,7 @@ final class AnimeRuntimeController: ObservableObject {
     private var mediaState = MediaControlState()
 
     init(
-        sourceProvider: any AnimeSourceProvider = AnimeSourceProviderFactory.defaultProvider(),
+        sourceProvider: (any AnimeSourceProvider)? = nil,
         danmakuProvider: any DanmakuProvider = AnimeDemoCatalog.danmakuProvider()
     ) {
         self.sourceProvider = sourceProvider
@@ -178,7 +184,16 @@ final class AnimeRuntimeController: ObservableObject {
         return "\(currentTitle?.title ?? "動畫") · \(episodes[state.focusedEpisodeIndex].title)"
     }
 
-    func load() async {
+    func load(sourceProvider provider: (any AnimeSourceProvider)? = nil) async {
+        if let provider {
+            sourceProvider = provider
+        }
+
+        guard let sourceProvider else {
+            statusText = "沒有可用動畫來源。請先到動漫來源頁啟用來源。"
+            return
+        }
+
         do {
             let keyword = searchKeywords[searchKeywordIndex]
             let results = try await sourceProvider.search(AnimeSearchQuery(keyword: keyword))
@@ -244,6 +259,17 @@ final class AnimeRuntimeController: ObservableObject {
         }
 
         let episode = episodes[state.focusedEpisodeIndex]
+        guard let sourceProvider else {
+            statusText = "沒有可用動畫來源。"
+            state = AnimeRuntimeState(
+                episodeCount: episodes.count,
+                focusedEpisodeIndex: state.focusedEpisodeIndex,
+                phase: .browsing,
+                isDanmakuVisible: state.isDanmakuVisible
+            )
+            return
+        }
+
         do {
             statusText = "正在解析 \(episode.title)..."
             let candidates = try await sourceProvider.streams(for: episode)
