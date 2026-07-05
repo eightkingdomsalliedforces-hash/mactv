@@ -12,6 +12,7 @@ struct TVShellChecks {
         try checkDisplayScale()
         try checkMediaControlState()
         try checkSeedAppsIncludeMediaAndSettings()
+        try checkLauncherLayoutNavigation()
         print("TVShellChecks passed")
     }
 
@@ -124,6 +125,18 @@ struct TVShellChecks {
             if case let .web(url) = app.target { return url.host == "settings" }
             return false
         }, "seed apps include settings runtime")
+    }
+
+    static func checkLauncherLayoutNavigation() throws {
+        let sections = LauncherLayout.sections(for: SeedApps.defaultApps)
+        try expect(sections.count >= 3, "launcher groups apps into multiple tvOS-style rows")
+
+        let firstApp = sections[0].apps[0]
+        let below = LauncherLayout.focusedApp(after: .down, currentID: firstApp.id, sections: sections)
+        try expect(below == sections[1].apps[0].id, "down moves to first item in next row")
+
+        let right = LauncherLayout.focusedApp(after: .right, currentID: sections[1].apps[0].id, sections: sections)
+        try expect(right == sections[1].apps[1].id, "right moves within current row")
     }
 }
 

@@ -36,52 +36,137 @@ public struct LauncherView: View {
     }
 
     private var launcher: some View {
-        VStack(alignment: .leading, spacing: 72) {
-            HStack {
+        ZStack(alignment: .topLeading) {
+            heroBackground
+
+            VStack(alignment: .leading, spacing: 42) {
+                topBar
+                    .padding(.top, 48)
+
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("TV Shell")
-                        .font(.system(size: 76, weight: .bold))
-                    Text("Remote-first macOS launcher")
+                    Text(focusedApp?.name ?? "TV Shell")
+                        .font(.system(size: 82, weight: .bold))
+                    Text(heroSubtitle)
                         .font(.system(size: 30, weight: .medium))
                         .foregroundStyle(.white.opacity(0.68))
                 }
+                .padding(.top, 16)
+
+                VStack(alignment: .leading, spacing: 32) {
+                    ForEach(LauncherLayout.sections(for: appState.apps)) { section in
+                        LauncherRowView(section: section, focusedAppID: appState.focusedAppID)
+                    }
+                }
+                .scaleEffect(appState.displayScale.multiplier(), anchor: .topLeading)
 
                 Spacer()
 
-                Text(commandLabel)
-                    .font(.system(size: 26, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.8))
-                    .padding(.horizontal, 26)
-                    .padding(.vertical, 16)
-                    .background(.white.opacity(0.12), in: Capsule())
+                Text("Use D-pad to move. OK opens. Back or Home returns.")
+                    .font(.system(size: 26, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .padding(.bottom, 42)
             }
-
-            HStack(spacing: 54) {
-                ForEach(appState.apps) { app in
-                    AppCardView(title: app.name, isFocused: app.id == appState.focusedAppID)
-                }
-            }
-            .scaleEffect(appState.displayScale.multiplier(), anchor: .leading)
-
-            Spacer()
-
-            PermissionStatusView()
-
-            Text("Use arrows or remote D-pad. OK opens. Home returns here.")
-                .font(.system(size: 28, weight: .medium))
-                .foregroundStyle(.white.opacity(0.62))
+            .padding(.horizontal, 86)
         }
         .foregroundStyle(.white)
-        .padding(.horizontal, 96)
-        .padding(.top, 80)
-        .padding(.bottom, 64)
+    }
+
+    private var focusedApp: TVAppProfile? {
+        appState.apps.first { $0.id == appState.focusedAppID }
+    }
+
+    private var heroSubtitle: String {
+        guard let app = focusedApp else {
+            return "Remote-first macOS launcher"
+        }
+
+        switch app.target {
+        case .media:
+            return "Continue watching with cinematic controls"
+        case .nativeApp:
+            return "Open and control a native macOS app"
+        case let .web(url) where url.scheme == "tv-shell":
+            return "Configure remotes, scale, and system controls"
+        case .web:
+            return "Open a big-screen web experience"
+        }
+    }
+
+    private var topBar: some View {
+        HStack(spacing: 18) {
+            Text("TV Shell")
+                .font(.system(size: 28, weight: .bold))
+            Text(appState.displayScale.label)
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.72))
+            Spacer()
+            Text(commandLabel)
+                .font(.system(size: 23, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.78))
+        }
+        .padding(.horizontal, 28)
+        .padding(.vertical, 18)
+        .liquidGlassCard(isFocused: false, cornerRadius: 26)
+    }
+
+    private var heroBackground: some View {
+        ZStack {
+            LinearGradient(
+                colors: heroColors,
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            RadialGradient(
+                colors: [.white.opacity(0.22), .clear],
+                center: .topTrailing,
+                startRadius: 40,
+                endRadius: 780
+            )
+            .ignoresSafeArea()
+
+            LinearGradient(
+                colors: [.black.opacity(0.05), .black.opacity(0.72)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+        }
+        .animation(.easeInOut(duration: 0.45), value: appState.focusedAppID)
+    }
+
+    private var heroColors: [Color] {
+        let name = focusedApp?.name ?? "TV Shell"
+        let hue = Double(abs(name.hashValue % 360)) / 360.0
+        return [
+            Color(hue: hue, saturation: 0.54, brightness: 0.42),
+            Color(hue: min(hue + 0.12, 1.0), saturation: 0.44, brightness: 0.20),
+            Color(red: 0.03, green: 0.04, blue: 0.07)
+        ]
     }
 
     private var commandLabel: String {
-        guard let command = appState.lastCommand else {
-            return "Waiting for remote"
+        appState.lastCommand.map { "Last: \($0.description)" } ?? "Waiting for remote"
+    }
+}
+
+private struct LauncherRowView: View {
+    let section: LauncherSection
+    let focusedAppID: UUID?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text(section.title)
+                .font(.system(size: 30, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.78))
+
+            HStack(spacing: 42) {
+                ForEach(section.apps) { app in
+                    AppCardView(title: app.name, isFocused: app.id == focusedAppID)
+                }
+            }
         }
-        return "Last: \(command.description)"
     }
 }
 

@@ -32,9 +32,11 @@ public final class AppState: ObservableObject {
     private func handleLauncher(_ command: RemoteCommand) {
         switch command {
         case .left:
-            moveFocusedApp(by: -1)
+            moveFocusedApp(command)
         case .right:
-            moveFocusedApp(by: 1)
+            moveFocusedApp(command)
+        case .up, .down:
+            moveFocusedApp(command)
         case .select:
             openFocusedApp()
         case .home:
@@ -76,16 +78,12 @@ public final class AppState: ObservableObject {
         }
     }
 
-    private func moveFocusedApp(by offset: Int) {
-        guard let currentFocusedAppID = focusedAppID,
-              let index = apps.firstIndex(where: { $0.id == currentFocusedAppID })
-        else {
-            focusedAppID = apps.first?.id
-            return
-        }
-
-        let nextIndex = min(max(index + offset, 0), apps.count - 1)
-        focusedAppID = apps[nextIndex].id
+    private func moveFocusedApp(_ command: RemoteCommand) {
+        focusedAppID = LauncherLayout.focusedApp(
+            after: command,
+            currentID: focusedAppID,
+            sections: LauncherLayout.sections(for: apps)
+        )
     }
 
     private func openFocusedApp() {
