@@ -36,37 +36,50 @@ public struct LauncherView: View {
     }
 
     private var launcher: some View {
-        ZStack(alignment: .topLeading) {
-            heroBackground
+        GeometryReader { proxy in
+            let metrics = TVMetrics(size: proxy.size)
 
-            VStack(alignment: .leading, spacing: 42) {
-                topBar
-                    .padding(.top, 48)
+            ZStack(alignment: .topLeading) {
+                heroBackground
 
-                VStack(alignment: .leading, spacing: 14) {
-                    Text(focusedApp?.name ?? "TV Shell")
-                        .font(.system(size: 82, weight: .bold))
-                    Text(heroSubtitle)
-                        .font(.system(size: 30, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.68))
-                }
-                .padding(.top, 16)
+                VStack(alignment: .leading, spacing: 42 * metrics.scale) {
+                    topBar(metrics: metrics)
+                        .padding(.top, metrics.topPadding)
 
-                VStack(alignment: .leading, spacing: 32) {
-                    ForEach(LauncherLayout.sections(for: appState.apps)) { section in
-                        LauncherRowView(section: section, focusedAppID: appState.focusedAppID)
+                    VStack(alignment: .leading, spacing: 14 * metrics.scale) {
+                        Text(focusedApp?.name ?? "TV Shell")
+                            .font(.system(size: metrics.heroTitleSize, weight: .bold))
+                        Text(heroSubtitle)
+                            .font(.system(size: metrics.heroSubtitleSize, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.68))
                     }
-                }
-                .scaleEffect(appState.displayScale.multiplier(), anchor: .topLeading)
+                    .padding(.top, 16 * metrics.scale)
+
+                    VStack(alignment: .leading, spacing: metrics.rowSpacing) {
+                        ForEach(LauncherLayout.sections(for: appState.apps)) { section in
+                            LauncherRowView(section: section, focusedAppID: appState.focusedAppID, metrics: metrics)
+                        }
+                    }
+                    .scaleEffect(appState.displayScale.multiplier(), anchor: .topLeading)
 
                 Spacer()
 
+                if let statusMessage = appState.statusMessage {
+                    Text(statusMessage)
+                        .font(.system(size: 24 * metrics.scale, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.82))
+                        .padding(.horizontal, 24 * metrics.scale)
+                        .padding(.vertical, 16 * metrics.scale)
+                        .liquidGlassCard(isFocused: true, cornerRadius: 20)
+                }
+
                 Text("Use D-pad to move. OK opens. Back or Home returns.")
-                    .font(.system(size: 26, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.62))
-                    .padding(.bottom, 42)
+                        .font(.system(size: metrics.hintSize, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.62))
+                        .padding(.bottom, 42 * metrics.scale)
+                }
+                .padding(.horizontal, metrics.horizontalPadding)
             }
-            .padding(.horizontal, 86)
         }
         .foregroundStyle(.white)
     }
@@ -92,20 +105,20 @@ public struct LauncherView: View {
         }
     }
 
-    private var topBar: some View {
+    private func topBar(metrics: TVMetrics) -> some View {
         HStack(spacing: 18) {
             Text("TV Shell")
-                .font(.system(size: 28, weight: .bold))
+                .font(.system(size: 28 * metrics.scale, weight: .bold))
             Text(appState.displayScale.label)
-                .font(.system(size: 24, weight: .semibold))
+                .font(.system(size: 24 * metrics.scale, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.72))
             Spacer()
             Text(commandLabel)
-                .font(.system(size: 23, weight: .semibold))
+                .font(.system(size: 23 * metrics.scale, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.78))
         }
-        .padding(.horizontal, 28)
-        .padding(.vertical, 18)
+        .padding(.horizontal, 28 * metrics.scale)
+        .padding(.vertical, 18 * metrics.scale)
         .liquidGlassCard(isFocused: false, cornerRadius: 26)
     }
 
@@ -154,16 +167,17 @@ public struct LauncherView: View {
 private struct LauncherRowView: View {
     let section: LauncherSection
     let focusedAppID: UUID?
+    let metrics: TVMetrics
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 18 * metrics.scale) {
             Text(section.title)
-                .font(.system(size: 30, weight: .semibold))
+                .font(.system(size: metrics.rowTitleSize, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.78))
 
-            HStack(spacing: 42) {
+            HStack(spacing: metrics.cardSpacing) {
                 ForEach(section.apps) { app in
-                    AppCardView(title: app.name, isFocused: app.id == focusedAppID)
+                    AppCardView(title: app.name, isFocused: app.id == focusedAppID, metrics: metrics)
                 }
             }
         }

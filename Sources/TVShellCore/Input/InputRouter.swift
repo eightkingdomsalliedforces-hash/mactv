@@ -70,7 +70,7 @@ public final class HostingKeyView<Content: View>: NSHostingView<Content> {
             return
         }
 
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.systemDefined]) { [weak self] event in
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .systemDefined]) { [weak self] event in
             guard self?.handle(event) == true else {
                 return event
             }

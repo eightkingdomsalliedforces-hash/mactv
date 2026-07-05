@@ -8,6 +8,7 @@ public final class AppState: ObservableObject {
     @Published public var lastCommand: RemoteCommand?
     @Published public var apps: [TVAppProfile]
     @Published public var displayScale: DisplayScale = .auto
+    @Published public var statusMessage: String?
 
     private let nativeRuntime = NativeAppRuntime()
 
@@ -93,16 +94,25 @@ public final class AppState: ObservableObject {
 
         switch app.target {
         case let .web(url) where url.scheme == "tv-shell" && url.host == "remote-learning":
+            statusMessage = "Opening Remote Setup"
             activeRuntime = .remoteLearning
         case let .web(url) where url.scheme == "tv-shell" && url.host == "settings":
+            statusMessage = "Opening Settings"
             activeRuntime = .settings
         case .web:
+            statusMessage = "Opening \(app.name)"
             activeRuntime = .web(app)
         case .media:
+            statusMessage = "Opening \(app.name)"
             activeRuntime = .media(app)
         case .nativeApp:
+            statusMessage = "Opening \(app.name)"
             activeRuntime = .native(app)
-            nativeRuntime.launch(app)
+            nativeRuntime.launch(app) { [weak self] success, message in
+                Task { @MainActor in
+                    self?.statusMessage = success ? message : "Failed: \(message)"
+                }
+            }
         }
     }
 }

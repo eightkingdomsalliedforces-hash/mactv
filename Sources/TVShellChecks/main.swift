@@ -13,6 +13,8 @@ struct TVShellChecks {
         try checkMediaControlState()
         try checkSeedAppsIncludeMediaAndSettings()
         try checkLauncherLayoutNavigation()
+        try checkAppStateOpensFocusedApps()
+        try checkTVMetricsScaleWithWindowSize()
         print("TVShellChecks passed")
     }
 
@@ -137,6 +139,42 @@ struct TVShellChecks {
 
         let right = LauncherLayout.focusedApp(after: .right, currentID: sections[1].apps[0].id, sections: sections)
         try expect(right == sections[1].apps[1].id, "right moves within current row")
+    }
+
+    @MainActor
+    static func checkAppStateOpensFocusedApps() throws {
+        let apps = SeedApps.defaultApps
+        let media = apps.first { app in
+            if case .media = app.target { return true }
+            return false
+        }
+        guard let media else {
+            throw CheckFailure("missing media seed app")
+        }
+
+        let state = AppState(apps: apps)
+        state.focusedAppID = media.id
+        state.handle(.select)
+        try expect(state.activeRuntime == .media(media), "select opens focused media app")
+
+        let settings = apps.first { app in
+            if case let .web(url) = app.target { return url.host == "settings" }
+            return false
+        }
+        guard let settings else {
+            throw CheckFailure("missing settings seed app")
+        }
+
+        state.activeRuntime = .launcher
+        state.focusedAppID = settings.id
+        state.handle(.select)
+        try expect(state.activeRuntime == .settings, "select opens focused settings app")
+    }
+
+    static func checkTVMetricsScaleWithWindowSize() throws {
+        try expect(TVMetrics(size: CGSize(width: 1920, height: 1080)).scale == 1.0, "1080p uses base scale")
+        try expect(TVMetrics(size: CGSize(width: 960, height: 540)).scale == 0.72, "small windows clamp to readable minimum")
+        try expect(TVMetrics(size: CGSize(width: 3840, height: 2160)).scale == 1.65, "large windows clamp to practical maximum")
     }
 }
 

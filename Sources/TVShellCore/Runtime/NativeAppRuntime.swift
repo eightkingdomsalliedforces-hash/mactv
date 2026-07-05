@@ -16,15 +16,24 @@ public struct NativeLaunchRequest: Equatable, Sendable {
 public final class NativeAppRuntime {
     public init() {}
 
-    public func launch(_ profile: TVAppProfile) {
+    public func launch(_ profile: TVAppProfile, completion: @escaping @Sendable (Bool, String) -> Void = { _, _ in }) {
         guard let request = NativeLaunchRequest(profile: profile),
               let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: request.bundleIdentifier)
         else {
+            completion(false, "Could not find native app.")
             return
         }
 
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
-        NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { _, _ in }
+        NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { app, error in
+            if let error {
+                completion(false, error.localizedDescription)
+            } else if app == nil {
+                completion(false, "macOS did not return a launched app.")
+            } else {
+                completion(true, "Opened \(profile.name)")
+            }
+        }
     }
 }
