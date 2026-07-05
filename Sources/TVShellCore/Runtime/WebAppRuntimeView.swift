@@ -94,8 +94,77 @@ public struct WebAppRuntimeView: NSViewRepresentable {
           min-height: 44px !important;
           min-width: 44px !important;
         }
+        #tv-shell-cursor {
+          position: fixed !important;
+          z-index: 2147483647 !important;
+          width: 34px !important;
+          height: 34px !important;
+          border-radius: 999px !important;
+          border: 4px solid rgba(255,255,255,.96) !important;
+          background: radial-gradient(circle at 35% 35%, rgba(255,255,255,.88), rgba(80,200,255,.30) 45%, rgba(255,255,255,.08)) !important;
+          box-shadow: 0 0 28px rgba(80,200,255,.72), 0 12px 26px rgba(0,0,0,.38) !important;
+          transform: translate(-50%, -50%) !important;
+          pointer-events: none !important;
+          transition: left .12s ease-out, top .12s ease-out, transform .08s ease-out !important;
+        }
+        #tv-shell-cursor.tv-shell-click {
+          transform: translate(-50%, -50%) scale(.72) !important;
+        }
       `;
       document.documentElement.appendChild(style);
+
+      const cursorState = {
+        x: Math.round(window.innerWidth / 2),
+        y: Math.round(window.innerHeight / 2),
+        visible: false
+      };
+
+      const ensureCursor = () => {
+        let cursor = document.getElementById('tv-shell-cursor');
+        if (!cursor) {
+          cursor = document.createElement('div');
+          cursor.id = 'tv-shell-cursor';
+          document.documentElement.appendChild(cursor);
+        }
+        cursorState.visible = true;
+        cursor.style.left = `${cursorState.x}px`;
+        cursor.style.top = `${cursorState.y}px`;
+        return cursor;
+      };
+
+      const moveCursor = (dx, dy) => {
+        cursorState.x = Math.max(18, Math.min(window.innerWidth - 18, cursorState.x + dx));
+        cursorState.y = Math.max(18, Math.min(window.innerHeight - 18, cursorState.y + dy));
+        ensureCursor();
+        const target = document.elementFromPoint(cursorState.x, cursorState.y);
+        if (target && target.focus) {
+          try { target.focus({ preventScroll: true }); } catch (_) {}
+        }
+        return true;
+      };
+
+      const clickCursor = () => {
+        const cursor = ensureCursor();
+        const target = document.elementFromPoint(cursorState.x, cursorState.y);
+        cursor.classList.add('tv-shell-click');
+        setTimeout(() => cursor.classList.remove('tv-shell-click'), 110);
+        if (!target) return false;
+        const init = {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+          clientX: cursorState.x,
+          clientY: cursorState.y,
+          button: 0,
+          buttons: 1
+        };
+        target.dispatchEvent(new MouseEvent('mousemove', init));
+        target.dispatchEvent(new MouseEvent('mousedown', init));
+        target.dispatchEvent(new MouseEvent('mouseup', { ...init, buttons: 0 }));
+        target.dispatchEvent(new MouseEvent('click', { ...init, buttons: 0 }));
+        if (target.click) target.click();
+        return true;
+      };
 
       window.tvShellCommand = (command, mode = 'keyboard') => {
         const keyForCommand = {
@@ -166,6 +235,18 @@ public struct WebAppRuntimeView: NSViewRepresentable {
           if (command === 'select' && active && active.click) return active.click(), true;
           if (command === 'playPause') dispatchKey();
           return scrollByCommand();
+        }
+
+        if (mode === 'mouse') {
+          ensureCursor();
+          const step = Math.max(34, Math.round(Math.min(window.innerWidth, window.innerHeight) * 0.075));
+          if (command === 'up') return moveCursor(0, -step);
+          if (command === 'down') return moveCursor(0, step);
+          if (command === 'left') return moveCursor(-step, 0);
+          if (command === 'right') return moveCursor(step, 0);
+          if (command === 'select') return clickCursor();
+          if (command === 'playPause') return dispatchKey();
+          return false;
         }
 
         if (command === 'select') {

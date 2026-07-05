@@ -217,7 +217,8 @@ struct TVShellChecks {
     static func checkWebRemoteModeCycles() throws {
         try expect(WebRemoteMode.keyboard.next == .domFocus, "web remote mode cycles from keyboard to DOM focus")
         try expect(WebRemoteMode.domFocus.next == .scroll, "web remote mode cycles from DOM focus to scroll")
-        try expect(WebRemoteMode.scroll.next == .keyboard, "web remote mode cycles back to keyboard")
+        try expect(WebRemoteMode.scroll.next == .mouse, "web remote mode cycles from scroll to mouse")
+        try expect(WebRemoteMode.mouse.next == .keyboard, "web remote mode cycles back to keyboard")
     }
 }
 
