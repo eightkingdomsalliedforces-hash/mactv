@@ -190,7 +190,10 @@ public struct LauncherView: View {
     }
 
     private var commandLabel: String {
-        appState.lastCommand.map { "Last: \($0.description)" } ?? "Waiting for remote"
+        if case .web = appState.activeRuntime {
+            return "Web: \(appState.webRemoteMode.title)"
+        }
+        return appState.lastCommand.map { "Last: \($0.description)" } ?? "Waiting for remote"
     }
 }
 

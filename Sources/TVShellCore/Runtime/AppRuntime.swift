@@ -58,4 +58,5 @@ public extension Notification.Name {
 
 public enum RuntimeCommandNotification {
     public static let commandKey = "command"
+    public static let webModeKey = "webMode"
 }

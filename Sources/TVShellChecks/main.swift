@@ -18,6 +18,7 @@ struct TVShellChecks {
         try checkAppCatalogVisibilityAndOrdering()
         try checkWallpaperPresetCyclingAndProvider()
         try checkQuickActionsAndBrowserArePresent()
+        try checkWebRemoteModeCycles()
         print("TVShellChecks passed")
     }
 
@@ -211,6 +212,12 @@ struct TVShellChecks {
         try expect(quickHosts.contains("app-management"), "app management is always available as a quick action")
 
         try expect(SeedApps.defaultApps.contains { $0.name == "Browser" }, "embedded browser app exists")
+    }
+
+    static func checkWebRemoteModeCycles() throws {
+        try expect(WebRemoteMode.keyboard.next == .domFocus, "web remote mode cycles from keyboard to DOM focus")
+        try expect(WebRemoteMode.domFocus.next == .scroll, "web remote mode cycles from DOM focus to scroll")
+        try expect(WebRemoteMode.scroll.next == .keyboard, "web remote mode cycles back to keyboard")
     }
 }
 

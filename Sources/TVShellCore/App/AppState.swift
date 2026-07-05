@@ -12,6 +12,7 @@ public final class AppState: ObservableObject {
     @Published public var focusedManagementAppID: UUID?
     @Published public var wallpaperSource: WallpaperSource = .builtIn(.aurora)
     @Published public var settingsFocus: SettingsFocus = .scale
+    @Published public var webRemoteMode: WebRemoteMode = .keyboard
 
     private let nativeRuntime = NativeAppRuntime()
 
@@ -59,6 +60,20 @@ public final class AppState: ObservableObject {
             return
         }
 
+        if case .web = activeRuntime, command == .menu {
+            webRemoteMode = webRemoteMode.next
+            statusMessage = "Web Mode: \(webRemoteMode.title)"
+            NotificationCenter.default.post(
+                name: .tvShellRuntimeCommand,
+                object: nil,
+                userInfo: [
+                    RuntimeCommandNotification.commandKey: command,
+                    RuntimeCommandNotification.webModeKey: webRemoteMode
+                ]
+            )
+            return
+        }
+
         if activeRuntime == .remoteLearning, command == .select {
             AccessibilityScanner.requestTrustPrompt()
             return
@@ -67,7 +82,10 @@ public final class AppState: ObservableObject {
         NotificationCenter.default.post(
             name: .tvShellRuntimeCommand,
             object: nil,
-            userInfo: [RuntimeCommandNotification.commandKey: command]
+            userInfo: [
+                RuntimeCommandNotification.commandKey: command,
+                RuntimeCommandNotification.webModeKey: webRemoteMode
+            ]
         )
     }
 

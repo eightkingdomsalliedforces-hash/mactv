@@ -57,14 +57,15 @@ public struct WebAppRuntimeView: NSViewRepresentable {
                     guard let command = notification.userInfo?[RuntimeCommandNotification.commandKey] as? RemoteCommand else {
                         return
                     }
+                    let mode = notification.userInfo?[RuntimeCommandNotification.webModeKey] as? WebRemoteMode ?? .keyboard
                     Task { @MainActor [weak self] in
-                        self?.send(command)
+                        self?.send(command, mode: mode)
                     }
                 }
             }
         }
 
-        private func send(_ command: RemoteCommand) {
+        private func send(_ command: RemoteCommand, mode: WebRemoteMode) {
             guard let webView else {
                 return
             }
@@ -74,7 +75,7 @@ public struct WebAppRuntimeView: NSViewRepresentable {
                 return
             }
 
-            webView.evaluateJavaScript("window.tvShellCommand && window.tvShellCommand('\(jsCommand)')") { _, _ in }
+            webView.evaluateJavaScript("window.tvShellCommand && window.tvShellCommand('\(jsCommand)', '\(mode.rawValue)')") { _, _ in }
         }
     }
 
@@ -96,7 +97,7 @@ public struct WebAppRuntimeView: NSViewRepresentable {
       `;
       document.documentElement.appendChild(style);
 
-      window.tvShellCommand = (command) => {
+      window.tvShellCommand = (command, mode = 'keyboard') => {
         const keyForCommand = {
           up: 'ArrowUp',
           down: 'ArrowDown',
@@ -140,6 +141,32 @@ public struct WebAppRuntimeView: NSViewRepresentable {
             window.scrollBy({ top: -window.innerHeight * 0.65, behavior: 'smooth' });
           }
         };
+
+        const scrollByCommand = () => {
+          if (command === 'down') window.scrollBy({ top: window.innerHeight * 0.65, behavior: 'smooth' });
+          if (command === 'up') window.scrollBy({ top: -window.innerHeight * 0.65, behavior: 'smooth' });
+          if (command === 'right') window.scrollBy({ left: window.innerWidth * 0.65, behavior: 'smooth' });
+          if (command === 'left') window.scrollBy({ left: -window.innerWidth * 0.65, behavior: 'smooth' });
+          return ['up', 'down', 'left', 'right'].includes(command);
+        };
+
+        if (mode === 'keyboard') {
+          const sent = dispatchKey();
+          if (command === 'select' && active && active.click) active.click();
+          if (command === 'playPause') {
+            const video = document.querySelector('video');
+            if (video) {
+              if (video.paused) video.play(); else video.pause();
+            }
+          }
+          return sent;
+        }
+
+        if (mode === 'scroll') {
+          if (command === 'select' && active && active.click) return active.click(), true;
+          if (command === 'playPause') dispatchKey();
+          return scrollByCommand();
+        }
 
         if (command === 'select') {
           if (active && active.click) active.click();
