@@ -46,6 +46,9 @@ public struct LauncherView: View {
             case .appManagement:
                 AppManagementView()
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
+            case .animeSourceManagement:
+                AnimeSourceManagementView()
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
             if let openingAppName = appState.openingAppName {
@@ -127,6 +130,8 @@ public struct LauncherView: View {
             return "用大螢幕控制列播放本機或串流影片"
         case .nativeApp:
             return "開啟並用輔助使用控制原生 macOS App"
+        case let .web(url) where url.scheme == "tv-shell" && url.host == "anime-sources":
+            return "管理 Animeko 風格來源、線路、狀態與驗證入口"
         case let .web(url) where url.scheme == "tv-shell":
             return "設定遙控器、縮放、壁紙與系統控制"
         case .web:

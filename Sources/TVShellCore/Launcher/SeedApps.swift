@@ -33,6 +33,11 @@ public enum SeedApps {
             controlMode: .web
         ),
         TVAppProfile(
+            name: "動漫來源",
+            target: .web(URL(string: "tv-shell://anime-sources")!),
+            controlMode: .web
+        ),
+        TVAppProfile(
             name: "遙控器",
             target: .web(URL(string: "tv-shell://remote-learning")!),
             controlMode: .web

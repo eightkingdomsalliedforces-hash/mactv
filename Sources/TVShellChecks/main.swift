@@ -26,6 +26,7 @@ struct TVShellChecks {
         try await checkDandanplayConfiguredProvider()
         try checkYouTubeNativeRuntimeAndAPI()
         try await checkBangumiYouTubeAnimeSourceFindsPlayableCandidates()
+        try checkAnimekoStyleSourceCatalog()
         print("TVShellChecks passed")
     }
 
@@ -517,6 +518,50 @@ struct TVShellChecks {
         let streams = try await provider.streams(for: episode)
         try expect(streams.first?.url.absoluteString == "youtube://frieren01", "bangumi youtube provider resolves youtube candidate")
         try expect(streams.first?.quality == "YouTube", "bangumi youtube provider labels youtube source")
+    }
+
+    @MainActor
+    static func checkAnimekoStyleSourceCatalog() throws {
+        let sources = AnimeSourceCatalog.defaultSources
+        try expect(sources.count >= 20, "anime source catalog includes animeko-style source list")
+        try expect(sources.contains { $0.title == "girigiri 愛動漫" }, "catalog includes girigiri source")
+        try expect(sources.contains { $0.title == "喵物次元" && $0.health == .needsCloudflare }, "catalog marks cloudflare source")
+        try expect(sources.contains { $0.title == "新優酷" && $0.health == .needsCaptcha }, "catalog marks captcha source")
+        try expect(sources.contains { $0.title == "櫻花動漫" && $0.health == .failed }, "catalog marks failed source")
+
+        guard let hoibi = sources.first(where: { $0.title == "吼哔動漫" }) else {
+            throw CheckFailure("missing hoibi source")
+        }
+        try expect(hoibi.lines.map(\.title) == ["吼哔2線", "吼哔1線", "吼哔4線"], "hoibi source keeps screenshot line order")
+
+        var catalog = AnimeSourceCatalogState(definitions: sources)
+        try expect(catalog.enabledInstances.contains { $0.definition.title == "hanime1[720p]" } == false, "adult source is not enabled by default")
+        try expect(catalog.focusedID == catalog.instances.first?.id, "catalog focuses first source by default")
+
+        catalog.selectLine(sourceID: hoibi.id, lineID: "hoibi-1")
+        try expect(catalog.instance(id: hoibi.id)?.selectedLine?.title == "吼哔1線", "catalog can select a source line")
+
+        catalog.toggleEnabled(sourceID: hoibi.id)
+        try expect(catalog.instance(id: hoibi.id)?.isEnabled == false, "catalog can disable a source")
+
+        let firstID = catalog.instances[0].id
+        let secondID = catalog.instances[1].id
+        catalog.moveSource(sourceID: secondID, offset: -1)
+        try expect(catalog.instances[0].id == secondID && catalog.instances[1].id == firstID, "catalog can reorder sources")
+
+        let state = AppState(apps: SeedApps.defaultApps)
+        guard let sourceApp = state.apps.first(where: { app in
+            if case let .web(url) = app.target { return url.host == "anime-sources" }
+            return false
+        }) else {
+            throw CheckFailure("missing anime source manager app")
+        }
+        state.focusedAppID = sourceApp.id
+        state.handle(.select)
+        try expect(state.activeRuntime == .animeSourceManagement, "select opens anime source management")
+        let focusedBefore = state.focusedAnimeSourceID
+        state.handle(.down)
+        try expect(state.focusedAnimeSourceID != focusedBefore, "remote down moves anime source focus")
     }
 }
 

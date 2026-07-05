@@ -20,13 +20,17 @@ public final class AppState: ObservableObject {
     @Published public var dandanplayCredentials: DandanplayCredentials = .environment()
     @Published public var youtubeCredentials: YouTubeCredentials = .environment()
     @Published public var openingAppName: String?
+    @Published public var animeSourceCatalog: AnimeSourceCatalogState
+    @Published public var focusedAnimeSourceID: String?
 
     private let nativeRuntime = NativeAppRuntime()
     private nonisolated(unsafe) var exitObserver: NSObjectProtocol?
 
     public init(apps: [TVAppProfile] = SeedApps.defaultApps) {
         self.apps = apps
+        animeSourceCatalog = AnimeSourceCatalogState(definitions: AnimeSourceCatalog.defaultSources)
         focusedAppID = apps.first?.id
+        focusedAnimeSourceID = animeSourceCatalog.focusedID
         exitObserver = NotificationCenter.default.addObserver(
             forName: .tvShellRequestLauncher,
             object: nil,
@@ -55,6 +59,8 @@ public final class AppState: ObservableObject {
             handleSettings(command)
         case .appManagement:
             handleAppManagement(command)
+        case .animeSourceManagement:
+            handleAnimeSourceManagement(command)
         case .web, .media, .anime, .youtube, .native, .remoteLearning:
             handleRuntimeCommand(command)
         }
@@ -207,6 +213,10 @@ public final class AppState: ObservableObject {
             statusMessage = "正在開啟 App 管理"
             focusedManagementAppID = apps.first?.id
             setRuntime(.appManagement)
+        case let .web(url) where url.scheme == "tv-shell" && url.host == "anime-sources":
+            statusMessage = "正在開啟動漫來源"
+            focusedAnimeSourceID = animeSourceCatalog.focusedID ?? animeSourceCatalog.instances.first?.id
+            setRuntime(.animeSourceManagement)
         case .web:
             statusMessage = "正在開啟 \(app.name)"
             setRuntime(.web(app))
@@ -291,12 +301,71 @@ public final class AppState: ObservableObject {
         catalog.moveApp(id: focusedManagementAppID, direction: direction)
         apps = catalog.apps
     }
+
+    private func handleAnimeSourceManagement(_ command: RemoteCommand) {
+        switch command {
+        case .up:
+            animeSourceCatalog.moveFocus(by: -1)
+            focusedAnimeSourceID = animeSourceCatalog.focusedID
+        case .down:
+            animeSourceCatalog.moveFocus(by: 1)
+            focusedAnimeSourceID = animeSourceCatalog.focusedID
+        case .left:
+            cycleFocusedAnimeSourceLine(forward: false)
+        case .right:
+            cycleFocusedAnimeSourceLine(forward: true)
+        case .select:
+            guard let focusedAnimeSourceID else {
+                return
+            }
+            animeSourceCatalog.toggleEnabled(sourceID: focusedAnimeSourceID)
+            statusMessage = animeSourceStatusMessage(for: focusedAnimeSourceID)
+        case .menu:
+            animeSourceCatalog.displayMode = animeSourceCatalog.displayMode.next
+            statusMessage = animeSourceCatalog.displayMode == .simple ? "來源：簡單模式" : "來源：詳細模式"
+        case .rewind:
+            moveFocusedAnimeSource(offset: -1)
+        case .fastForward:
+            moveFocusedAnimeSource(offset: 1)
+        case .home, .back:
+            activeRuntime = .launcher
+        default:
+            break
+        }
+    }
+
+    private func cycleFocusedAnimeSourceLine(forward: Bool) {
+        guard let focusedAnimeSourceID else {
+            return
+        }
+        animeSourceCatalog.cycleLine(sourceID: focusedAnimeSourceID, forward: forward)
+        statusMessage = animeSourceStatusMessage(for: focusedAnimeSourceID)
+    }
+
+    private func moveFocusedAnimeSource(offset: Int) {
+        guard let focusedAnimeSourceID else {
+            return
+        }
+        animeSourceCatalog.moveSource(sourceID: focusedAnimeSourceID, offset: offset)
+        self.focusedAnimeSourceID = animeSourceCatalog.focusedID
+    }
+
+    private func animeSourceStatusMessage(for sourceID: String) -> String {
+        guard let source = animeSourceCatalog.instance(id: sourceID) else {
+            return "動漫來源"
+        }
+        let line = source.selectedLine?.title ?? "預設線路"
+        let enabled = source.isEnabled ? "已啟用" : "已停用"
+        return "\(source.definition.title)：\(enabled)，\(line)"
+    }
 }
 
 private extension ActiveRuntime {
     var handlesBackInternally: Bool {
         switch self {
         case .anime, .youtube:
+            return true
+        case .animeSourceManagement:
             return true
         default:
             return false

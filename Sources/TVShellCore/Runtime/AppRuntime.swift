@@ -54,6 +54,7 @@ public enum ActiveRuntime: Equatable, Sendable {
     case remoteLearning
     case settings
     case appManagement
+    case animeSourceManagement
 }
 
 public extension Notification.Name {
