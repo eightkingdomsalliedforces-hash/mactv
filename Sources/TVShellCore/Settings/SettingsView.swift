@@ -38,6 +38,8 @@ public struct SettingsView: View {
                 .font(.system(size: 28, weight: .medium))
                 .foregroundStyle(.white.opacity(0.64))
 
+            DanmakuServiceStatusView(isConfigured: appState.dandanplayCredentials.isConfigured)
+
             PermissionStatusView()
 
             Spacer()
@@ -55,6 +57,28 @@ public struct SettingsView: View {
         case .remoteImage:
             "壁紙提供商"
         }
+    }
+}
+
+private struct DanmakuServiceStatusView: View {
+    let isConfigured: Bool
+
+    var body: some View {
+        HStack(spacing: 22) {
+            Circle()
+                .fill(isConfigured ? .green : .orange)
+                .frame(width: 22, height: 22)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("彈幕服務")
+                    .font(.system(size: 32, weight: .bold))
+                Text(isConfigured ? "Dandanplay 已配置，可以接入遠端彈幕。" : "尚未配置 Dandanplay。可用環境變數 TVSHELL_DANDANPLAY_APP_ID / TVSHELL_DANDANPLAY_APP_SECRET。")
+                    .font(.system(size: 24, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.66))
+            }
+        }
+        .padding(30)
+        .liquidGlassCard(isFocused: isConfigured == false, cornerRadius: 18)
     }
 }
 

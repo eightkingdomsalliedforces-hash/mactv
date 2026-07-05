@@ -23,6 +23,7 @@ struct TVShellChecks {
         try await checkAnimeSourceAndDanmakuProviders()
         try checkAnimeRuntimeStateNavigation()
         try checkExternalAnimeIntegrations()
+        try await checkDandanplayConfiguredProvider()
         print("TVShellChecks passed")
     }
 
@@ -356,6 +357,44 @@ struct TVShellChecks {
             AnimeStreamCandidate(url: URL(string: "https://example.com/1080.m3u8")!, quality: "1080p", priority: 80)
         ])
         try expect(selected?.quality == "1080p", "stream selector balances priority and quality")
+    }
+
+    static func checkDandanplayConfiguredProvider() async throws {
+        let emptyCredentials = DandanplayCredentials(appID: "", appSecret: "")
+        try expect(emptyCredentials.isConfigured == false, "empty dandanplay credentials are not configured")
+
+        let credentials = DandanplayCredentials(appID: "app123", appSecret: "secret456")
+        try expect(credentials.isConfigured, "filled dandanplay credentials are configured")
+        let environmentCredentials = DandanplayCredentials.environment([
+            "TVSHELL_DANDANPLAY_APP_ID": "env-app",
+            "TVSHELL_DANDANPLAY_APP_SECRET": "env-secret"
+        ])
+        try expect(environmentCredentials.appID == "env-app", "dandanplay app id loads from environment")
+        try expect(environmentCredentials.appSecret == "env-secret", "dandanplay app secret loads from environment")
+
+        let response = """
+        {
+          "comments": [
+            { "p": "9.000,1,25,16777215,0", "m": "遠端彈幕" }
+          ]
+        }
+        """.data(using: .utf8)!
+        let transport = StaticAnimeHTTPTransport(routes: [
+            "https://api.dandanplay.net/api/v2/comment/123450001?withRelated=true": response
+        ])
+        let provider = DandanplayDanmakuProvider(
+            credentials: credentials,
+            timestamp: 1_735_660_800,
+            transport: transport
+        )
+        let comments = try await provider.comments(for: AnimeEpisodeIdentity(
+            providerID: "bangumi",
+            subjectID: "424883",
+            episodeID: "123450001"
+        ))
+
+        try expect(comments.first?.text == "遠端彈幕", "configured provider fetches dandanplay comments")
+        try expect(transport.requests.first?.headers["X-AppId"] == "app123", "configured provider sends dandanplay app id")
     }
 }
 

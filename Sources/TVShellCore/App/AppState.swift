@@ -17,6 +17,7 @@ public final class AppState: ObservableObject {
     @Published public var webRemoteMode: WebRemoteMode = .keyboard
     @Published public var webZoom: Double = 1.25
     @Published public var videoSourceLabel: String = "內建示範影片"
+    @Published public var dandanplayCredentials: DandanplayCredentials = .environment()
     @Published public var openingAppName: String?
 
     private let nativeRuntime = NativeAppRuntime()
