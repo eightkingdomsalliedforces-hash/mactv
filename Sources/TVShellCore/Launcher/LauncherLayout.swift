@@ -25,8 +25,12 @@ public enum LauncherLayout {
     public static func sections(for apps: [TVAppProfile]) -> [LauncherSection] {
         let visibleApps = apps.filter(\.isVisibleOnHome)
         let media = visibleApps.filter { app in
-            if case .media = app.target { return true }
-            return false
+            switch app.target {
+            case .media, .anime:
+                return true
+            default:
+                return false
+            }
         }
         let webAndNative = visibleApps.filter { app in
             switch app.target {
@@ -34,7 +38,7 @@ public enum LauncherLayout {
                 return url.scheme != "tv-shell"
             case .nativeApp:
                 return true
-            case .media:
+            case .media, .anime:
                 return false
             }
         }
@@ -46,9 +50,9 @@ public enum LauncherLayout {
         }
 
         return [
-            LauncherSection(id: "continue", title: "Continue Watching", apps: media),
-            LauncherSection(id: "apps", title: "Apps", apps: webAndNative),
-            LauncherSection(id: "tools", title: "Controls", apps: tools)
+            LauncherSection(id: "continue", title: "繼續觀看", apps: media),
+            LauncherSection(id: "apps", title: "App", apps: webAndNative),
+            LauncherSection(id: "tools", title: "控制", apps: tools)
         ].filter { $0.apps.isEmpty == false }
     }
 

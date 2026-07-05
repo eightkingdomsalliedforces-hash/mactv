@@ -28,6 +28,9 @@ public struct LauncherView: View {
             case let .media(app):
                 MediaRuntimeView(app: app)
                     .transition(.opacity.combined(with: .scale(scale: 1.015)))
+            case let .anime(app):
+                AnimeRuntimeView(app: app)
+                    .transition(.opacity.combined(with: .scale(scale: 1.015)))
             case let .native(app):
                 NativeRuntimeInterimView(app: app)
                     .transition(.opacity.combined(with: .scale(scale: 1.015)))
@@ -113,6 +116,8 @@ public struct LauncherView: View {
         }
 
         switch app.target {
+        case .anime:
+            return "自動解析動畫源、選集播放，並顯示 Bangumi 風格彈幕"
         case .media:
             return "用大螢幕控制列播放本機或串流影片"
         case .nativeApp:
@@ -267,7 +272,7 @@ private struct NativeRuntimeInterimView: View {
         VStack(spacing: 32) {
             Text(app.name)
                 .font(.system(size: 72, weight: .bold))
-            Text("Native app launched. Press Home to return.")
+            Text("原生 App 已開啟，按 Home 返回。")
                 .font(.system(size: 32, weight: .medium))
                 .foregroundStyle(.white.opacity(0.7))
             Text("已啟用輔助使用控制基礎；按 Home 返回主畫面。")

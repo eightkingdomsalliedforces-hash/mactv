@@ -20,10 +20,27 @@ public final class AppState: ObservableObject {
     @Published public var openingAppName: String?
 
     private let nativeRuntime = NativeAppRuntime()
+    private nonisolated(unsafe) var exitObserver: NSObjectProtocol?
 
     public init(apps: [TVAppProfile] = SeedApps.defaultApps) {
         self.apps = apps
         focusedAppID = apps.first?.id
+        exitObserver = NotificationCenter.default.addObserver(
+            forName: .tvShellRequestLauncher,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.activeRuntime = .launcher
+                NSApp.activate(ignoringOtherApps: true)
+            }
+        }
+    }
+
+    deinit {
+        if let exitObserver {
+            NotificationCenter.default.removeObserver(exitObserver)
+        }
     }
 
     public func handle(_ command: RemoteCommand) {
@@ -36,7 +53,7 @@ public final class AppState: ObservableObject {
             handleSettings(command)
         case .appManagement:
             handleAppManagement(command)
-        case .web, .media, .native, .remoteLearning:
+        case .web, .media, .anime, .native, .remoteLearning:
             handleRuntimeCommand(command)
         }
     }
@@ -59,7 +76,7 @@ public final class AppState: ObservableObject {
     }
 
     private func handleRuntimeCommand(_ command: RemoteCommand) {
-        if command == .home || command == .back {
+        if command == .home || (command == .back && activeRuntime.isAnime == false) {
             activeRuntime = .launcher
             NSApp.activate(ignoringOtherApps: true)
             return
@@ -194,6 +211,9 @@ public final class AppState: ObservableObject {
         case .media:
             statusMessage = "正在開啟 \(app.name)"
             setRuntime(.media(app))
+        case .anime:
+            statusMessage = "正在開啟 \(app.name)"
+            setRuntime(.anime(app))
         case .nativeApp:
             statusMessage = "正在開啟 \(app.name)"
             setRuntime(.native(app))
@@ -265,5 +285,14 @@ public final class AppState: ObservableObject {
         var catalog = AppCatalog(apps: apps)
         catalog.moveApp(id: focusedManagementAppID, direction: direction)
         apps = catalog.apps
+    }
+}
+
+private extension ActiveRuntime {
+    var isAnime: Bool {
+        if case .anime = self {
+            return true
+        }
+        return false
     }
 }

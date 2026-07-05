@@ -28,6 +28,11 @@ public enum SeedApps {
             controlMode: .web
         ),
         TVAppProfile(
+            name: "動畫",
+            target: .anime,
+            controlMode: .web
+        ),
+        TVAppProfile(
             name: "遙控器",
             target: .web(URL(string: "tv-shell://remote-learning")!),
             controlMode: .web

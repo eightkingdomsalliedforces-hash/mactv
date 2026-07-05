@@ -10,6 +10,7 @@ public enum RuntimeKind: String, Codable, Equatable, Sendable {
 public enum LaunchTarget: Equatable, Codable, Sendable {
     case web(URL)
     case media(URL)
+    case anime
     case nativeApp(bundleIdentifier: String)
 }
 
@@ -46,6 +47,7 @@ public enum ActiveRuntime: Equatable, Sendable {
     case launcher
     case web(TVAppProfile)
     case media(TVAppProfile)
+    case anime(TVAppProfile)
     case native(TVAppProfile)
     case remoteLearning
     case settings
@@ -54,6 +56,7 @@ public enum ActiveRuntime: Equatable, Sendable {
 
 public extension Notification.Name {
     static let tvShellRuntimeCommand = Notification.Name("TVShellRuntimeCommand")
+    static let tvShellRequestLauncher = Notification.Name("TVShellRequestLauncher")
 }
 
 public enum RuntimeCommandNotification {

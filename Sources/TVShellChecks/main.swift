@@ -21,6 +21,7 @@ struct TVShellChecks {
         try checkWebRemoteModeCycles()
         try checkSettingsFocusIncludesVideoAndWebZoom()
         try await checkAnimeSourceAndDanmakuProviders()
+        try checkAnimeRuntimeStateNavigation()
         print("TVShellChecks passed")
     }
 
@@ -130,6 +131,11 @@ struct TVShellChecks {
         }, "seed apps include media runtime")
 
         try expect(SeedApps.defaultApps.contains { app in
+            if case .anime = app.target { return true }
+            return false
+        }, "seed apps include anime runtime")
+
+        try expect(SeedApps.defaultApps.contains { app in
             if case let .web(url) = app.target { return url.host == "settings" }
             return false
         }, "seed apps include settings runtime")
@@ -175,6 +181,19 @@ struct TVShellChecks {
         state.focusedAppID = settings.id
         state.handle(.select)
         try expect(state.activeRuntime == .settings, "select opens focused settings app")
+
+        let anime = apps.first { app in
+            if case .anime = app.target { return true }
+            return false
+        }
+        guard let anime else {
+            throw CheckFailure("missing anime seed app")
+        }
+
+        state.activeRuntime = .launcher
+        state.focusedAppID = anime.id
+        state.handle(.select)
+        try expect(state.activeRuntime == .anime(anime), "select opens focused anime app")
     }
 
     static func checkTVMetricsScaleWithWindowSize() throws {
@@ -264,6 +283,20 @@ struct TVShellChecks {
         ])
         let comments = try await danmaku.comments(for: episode.identity)
         try expect(comments.first?.text == "開場", "danmaku provider returns timed comments")
+    }
+
+    static func checkAnimeRuntimeStateNavigation() throws {
+        var state = AnimeRuntimeState(episodeCount: 3)
+        state.apply(.right)
+        try expect(state.focusedEpisodeIndex == 1, "anime right moves focused episode")
+        state.apply(.left)
+        try expect(state.focusedEpisodeIndex == 0, "anime left moves focused episode")
+        state.apply(.select)
+        try expect(state.phase == .playing, "anime select starts playback")
+        state.apply(.menu)
+        try expect(state.isDanmakuVisible == false, "anime menu toggles danmaku")
+        state.apply(.back)
+        try expect(state.phase == .browsing, "anime back returns to episode browser")
     }
 }
 
