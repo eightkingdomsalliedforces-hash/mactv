@@ -12,23 +12,14 @@ public struct AppCardView: View {
     public var body: some View {
         VStack(spacing: 18) {
             RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(cardFill)
+                .fill(iconFill)
                 .overlay(
                     Text(String(title.prefix(1)))
                         .font(.system(size: 82, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
                 )
                 .frame(width: 220, height: 220)
-                .shadow(
-                    color: isFocused ? .white.opacity(0.35) : .black.opacity(0.25),
-                    radius: isFocused ? 38 : 14,
-                    x: 0,
-                    y: isFocused ? 24 : 10
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
-                        .stroke(.white.opacity(isFocused ? 0.95 : 0.12), lineWidth: isFocused ? 6 : 1)
-                )
+                .liquidGlassCard(isFocused: isFocused)
 
             Text(title)
                 .font(.system(size: 34, weight: isFocused ? .semibold : .medium))
@@ -41,9 +32,11 @@ public struct AppCardView: View {
         .accessibilityLabel(title)
     }
 
-    private var cardFill: LinearGradient {
+    private var iconFill: LinearGradient {
         LinearGradient(
-            colors: isFocused ? [.blue, .purple, .pink] : [.gray.opacity(0.7), .gray.opacity(0.35)],
+            colors: isFocused
+                ? [.blue.opacity(0.75), .purple.opacity(0.62), .pink.opacity(0.52)]
+                : [.white.opacity(0.15), .blue.opacity(0.18), .purple.opacity(0.12)],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )

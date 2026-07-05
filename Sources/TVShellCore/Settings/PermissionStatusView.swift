@@ -23,6 +23,6 @@ public struct PermissionStatusView: View {
         }
         .foregroundStyle(.white)
         .padding(30)
-        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .liquidGlassCard(isFocused: AccessibilityScanner.isTrusted == false, cornerRadius: 18)
     }
 }

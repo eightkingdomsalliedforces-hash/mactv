@@ -39,6 +39,8 @@ public struct KeyCodeMapper: Equatable, Sendable {
     private func commandForMedia(systemCode: Int) -> RemoteCommand? {
         switch systemCode {
         case 16: return .playPause
+        case 17, 19: return .fastForward
+        case 18, 20: return .rewind
         case 0: return .volumeUp
         case 1: return .volumeDown
         case 7: return .mute
@@ -49,10 +51,16 @@ public struct KeyCodeMapper: Equatable, Sendable {
     private func commandForHID(usagePage: Int, usage: Int) -> RemoteCommand? {
         if usagePage == 0x0C {
             switch usage {
+            case 0x40: return .menu
+            case 0x41: return .select
             case 0xCD: return .playPause
+            case 0xB3: return .fastForward
+            case 0xB4: return .rewind
             case 0xE9: return .volumeUp
             case 0xEA: return .volumeDown
             case 0xE2: return .mute
+            case 0x223: return .home
+            case 0x224: return .back
             default: return nil
             }
         }

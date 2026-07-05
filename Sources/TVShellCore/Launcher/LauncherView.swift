@@ -10,7 +10,8 @@ public struct LauncherView: View {
             LinearGradient(
                 colors: [
                     Color(red: 0.04, green: 0.05, blue: 0.09),
-                    Color(red: 0.14, green: 0.09, blue: 0.18)
+                    Color(red: 0.08, green: 0.12, blue: 0.18),
+                    Color(red: 0.15, green: 0.10, blue: 0.18)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
