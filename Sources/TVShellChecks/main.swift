@@ -16,6 +16,7 @@ struct TVShellChecks {
         try checkAppStateOpensFocusedApps()
         try checkTVMetricsScaleWithWindowSize()
         try checkAppCatalogVisibilityAndOrdering()
+        try checkWallpaperPresetCyclingAndProvider()
         print("TVShellChecks passed")
     }
 
@@ -187,6 +188,15 @@ struct TVShellChecks {
         let second = catalog.apps[1]
         catalog.moveApp(id: second.id, direction: .left)
         try expect(catalog.apps[0].id == second.id, "app can move left in catalog")
+    }
+
+    static func checkWallpaperPresetCyclingAndProvider() throws {
+        try expect(WallpaperPreset.aurora.next == .ocean, "wallpaper cycles forward")
+        try expect(WallpaperPreset.ocean.previous == .aurora, "wallpaper cycles backward")
+
+        let provider = StaticWallpaperProvider(presets: [.aurora, .ocean])
+        try expect(provider.featured().preset == .aurora, "static provider returns first featured wallpaper")
+        try expect(provider.next(after: .aurora).preset == .ocean, "static provider returns next wallpaper")
     }
 }
 

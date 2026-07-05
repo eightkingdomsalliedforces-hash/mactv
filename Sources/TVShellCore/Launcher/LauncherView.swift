@@ -152,17 +152,22 @@ public struct LauncherView: View {
     }
 
     private var heroColors: [Color] {
-        let name = focusedApp?.name ?? "TV Shell"
-        let hue = Double(abs(name.hashValue % 360)) / 360.0
-        return [
-            Color(hue: hue, saturation: 0.54, brightness: 0.42),
-            Color(hue: min(hue + 0.12, 1.0), saturation: 0.44, brightness: 0.20),
-            Color(red: 0.03, green: 0.04, blue: 0.07)
-        ]
+        switch appState.wallpaperSource {
+        case let .builtIn(preset):
+            return preset.palette.colors.map(Color.init(wallpaperColor:))
+        case .localFile, .remoteImage:
+            return WallpaperPreset.graphite.palette.colors.map(Color.init(wallpaperColor:))
+        }
     }
 
     private var commandLabel: String {
         appState.lastCommand.map { "Last: \($0.description)" } ?? "Waiting for remote"
+    }
+}
+
+private extension Color {
+    init(wallpaperColor: WallpaperColor) {
+        self.init(red: wallpaperColor.red, green: wallpaperColor.green, blue: wallpaperColor.blue)
     }
 }
 

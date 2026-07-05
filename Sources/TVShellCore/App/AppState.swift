@@ -10,6 +10,8 @@ public final class AppState: ObservableObject {
     @Published public var displayScale: DisplayScale = .auto
     @Published public var statusMessage: String?
     @Published public var focusedManagementAppID: UUID?
+    @Published public var wallpaperSource: WallpaperSource = .builtIn(.aurora)
+    @Published public var settingsFocus: SettingsFocus = .scale
 
     private let nativeRuntime = NativeAppRuntime()
 
@@ -71,14 +73,28 @@ public final class AppState: ObservableObject {
 
     private func handleSettings(_ command: RemoteCommand) {
         switch command {
+        case .up:
+            settingsFocus = settingsFocus.previous
+        case .down:
+            settingsFocus = settingsFocus.next
         case .left:
-            displayScale = displayScale.previous
+            changeFocusedSetting(previous: true)
         case .right, .select:
-            displayScale = displayScale.next
+            changeFocusedSetting(previous: false)
         case .home, .back:
             activeRuntime = .launcher
         default:
             break
+        }
+    }
+
+    private func changeFocusedSetting(previous: Bool) {
+        switch settingsFocus {
+        case .scale:
+            displayScale = previous ? displayScale.previous : displayScale.next
+        case .wallpaper:
+            let currentPreset = wallpaperSource.preset ?? .aurora
+            wallpaperSource = .builtIn(previous ? currentPreset.previous : currentPreset.next)
         }
     }
 
