@@ -9,6 +9,9 @@ struct TVShellChecks {
         try checkRemoteMappingStore()
         try checkFocusEngine()
         try checkNativeLaunchRequest()
+        try checkDisplayScale()
+        try checkMediaControlState()
+        try checkSeedAppsIncludeMediaAndSettings()
         print("TVShellChecks passed")
     }
 
@@ -90,6 +93,37 @@ struct TVShellChecks {
             controlMode: .web
         )
         try expect(NativeLaunchRequest(profile: webProfile) == nil, "web profile does not create native launch request")
+    }
+
+    static func checkDisplayScale() throws {
+        try expect(DisplayScale.auto.multiplier(forScreenScale: 1.0) == 1.0, "auto scale uses 1x for normal screen scale")
+        try expect(DisplayScale.auto.multiplier(forScreenScale: 2.0) == 1.5, "auto scale grows on high-density screens")
+        try expect(DisplayScale.percent125.next == .percent150, "scale cycles forward")
+        try expect(DisplayScale.percent125.previous == .percent100, "scale cycles backward")
+    }
+
+    static func checkMediaControlState() throws {
+        var state = MediaControlState()
+        state.apply(.playPause)
+        try expect(state.isPlaying, "playPause starts playback")
+        state.apply(.right)
+        try expect(state.pendingSeekOffset == 10, "right seeks forward")
+        state.apply(.rewind)
+        try expect(state.pendingSeekOffset == -10, "rewind seeks backward")
+        state.apply(.back)
+        try expect(state.shouldExit, "back exits media runtime")
+    }
+
+    static func checkSeedAppsIncludeMediaAndSettings() throws {
+        try expect(SeedApps.defaultApps.contains { app in
+            if case .media = app.target { return true }
+            return false
+        }, "seed apps include media runtime")
+
+        try expect(SeedApps.defaultApps.contains { app in
+            if case let .web(url) = app.target { return url.host == "settings" }
+            return false
+        }, "seed apps include settings runtime")
     }
 }
 

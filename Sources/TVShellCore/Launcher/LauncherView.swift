@@ -23,10 +23,14 @@ public struct LauncherView: View {
                 launcher
             case let .web(app):
                 WebAppRuntimeView(app: app)
+            case let .media(app):
+                MediaRuntimeView(app: app)
             case let .native(app):
                 NativeRuntimeInterimView(app: app)
             case .remoteLearning:
                 RemoteLearningView()
+            case .settings:
+                SettingsView()
             }
         }
     }
@@ -57,6 +61,7 @@ public struct LauncherView: View {
                     AppCardView(title: app.name, isFocused: app.id == appState.focusedAppID)
                 }
             }
+            .scaleEffect(appState.displayScale.multiplier(), anchor: .leading)
 
             Spacer()
 

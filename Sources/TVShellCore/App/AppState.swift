@@ -7,6 +7,7 @@ public final class AppState: ObservableObject {
     @Published public var focusedAppID: UUID?
     @Published public var lastCommand: RemoteCommand?
     @Published public var apps: [TVAppProfile]
+    @Published public var displayScale: DisplayScale = .auto
 
     private let nativeRuntime = NativeAppRuntime()
 
@@ -21,7 +22,9 @@ public final class AppState: ObservableObject {
         switch activeRuntime {
         case .launcher:
             handleLauncher(command)
-        case .web, .native, .remoteLearning:
+        case .settings:
+            handleSettings(command)
+        case .web, .media, .native, .remoteLearning:
             handleRuntimeCommand(command)
         }
     }
@@ -42,7 +45,7 @@ public final class AppState: ObservableObject {
     }
 
     private func handleRuntimeCommand(_ command: RemoteCommand) {
-        if command == .home {
+        if command == .home || command == .back {
             activeRuntime = .launcher
             NSApp.activate(ignoringOtherApps: true)
             return
@@ -58,6 +61,19 @@ public final class AppState: ObservableObject {
             object: nil,
             userInfo: [RuntimeCommandNotification.commandKey: command]
         )
+    }
+
+    private func handleSettings(_ command: RemoteCommand) {
+        switch command {
+        case .left:
+            displayScale = displayScale.previous
+        case .right, .select:
+            displayScale = displayScale.next
+        case .home, .back:
+            activeRuntime = .launcher
+        default:
+            break
+        }
     }
 
     private func moveFocusedApp(by offset: Int) {
@@ -80,8 +96,12 @@ public final class AppState: ObservableObject {
         switch app.target {
         case let .web(url) where url.scheme == "tv-shell" && url.host == "remote-learning":
             activeRuntime = .remoteLearning
+        case let .web(url) where url.scheme == "tv-shell" && url.host == "settings":
+            activeRuntime = .settings
         case .web:
             activeRuntime = .web(app)
+        case .media:
+            activeRuntime = .media(app)
         case .nativeApp:
             activeRuntime = .native(app)
             nativeRuntime.launch(app)

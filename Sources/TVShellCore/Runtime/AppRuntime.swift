@@ -9,6 +9,7 @@ public enum RuntimeKind: String, Codable, Equatable, Sendable {
 
 public enum LaunchTarget: Equatable, Codable, Sendable {
     case web(URL)
+    case media(URL)
     case nativeApp(bundleIdentifier: String)
 }
 
@@ -41,8 +42,10 @@ public enum ControlMode: String, Codable, Equatable, Sendable {
 public enum ActiveRuntime: Equatable, Sendable {
     case launcher
     case web(TVAppProfile)
+    case media(TVAppProfile)
     case native(TVAppProfile)
     case remoteLearning
+    case settings
 }
 
 public extension Notification.Name {

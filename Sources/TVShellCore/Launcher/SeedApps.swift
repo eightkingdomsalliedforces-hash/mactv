@@ -18,8 +18,18 @@ public enum SeedApps {
             controlMode: .hybridNative
         ),
         TVAppProfile(
+            name: "Video",
+            target: .media(URL(string: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4")!),
+            controlMode: .web
+        ),
+        TVAppProfile(
             name: "Remote",
             target: .web(URL(string: "tv-shell://remote-learning")!),
+            controlMode: .web
+        ),
+        TVAppProfile(
+            name: "Settings",
+            target: .web(URL(string: "tv-shell://settings")!),
             controlMode: .web
         )
     ]
