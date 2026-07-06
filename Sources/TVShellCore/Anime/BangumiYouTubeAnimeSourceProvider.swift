@@ -36,6 +36,7 @@ public struct BangumiYouTubeAnimeSourceProvider: AnimeMediaSourceAdapter {
                 id: "bangumi-\(subject.id)",
                 title: subject.title,
                 subtitle: subject.summary,
+                coverURL: subject.coverURL,
                 episodes: episodes(for: subject)
             )
         }

@@ -21,6 +21,7 @@ public struct BangumiSubject: Codable, Equatable, Sendable {
     public var nameCN: String?
     public var summary: String?
     public var episodeCount: Int?
+    public var images: BangumiSubjectImages?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -28,11 +29,31 @@ public struct BangumiSubject: Codable, Equatable, Sendable {
         case nameCN = "name_cn"
         case summary
         case episodeCount = "eps"
+        case images
     }
 
     public var title: String {
         let trimmedCN = nameCN?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmedCN.isEmpty ? name : trimmedCN
+    }
+
+    public var coverURL: URL? {
+        images?.coverURL
+    }
+}
+
+public struct BangumiSubjectImages: Codable, Equatable, Sendable {
+    public var large: String?
+    public var common: String?
+    public var medium: String?
+    public var small: String?
+    public var grid: String?
+
+    public var coverURL: URL? {
+        [large, common, medium, small, grid]
+            .compactMap { $0 }
+            .compactMap(URL.init(string:))
+            .first
     }
 }
 

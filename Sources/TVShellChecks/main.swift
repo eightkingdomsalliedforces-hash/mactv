@@ -296,9 +296,13 @@ struct TVShellChecks {
     }
 
     static func checkAnimeRuntimeStateNavigation() throws {
-        var state = AnimeRuntimeState(episodeCount: 3)
+        var state = AnimeRuntimeState(titleCount: 2, episodeCount: 3)
         state.apply(.right)
-        try expect(state.focusedEpisodeIndex == 1, "anime right moves focused episode")
+        try expect(state.focusedTitleIndex == 1, "anime right moves focused title on title grid")
+        state.apply(.select)
+        try expect(state.phase == .episodes, "anime select opens episode list")
+        state.apply(.right)
+        try expect(state.focusedEpisodeIndex == 1, "anime right moves focused episode in episode list")
         state.apply(.left)
         try expect(state.focusedEpisodeIndex == 0, "anime left moves focused episode")
         state.apply(.select)
@@ -306,7 +310,9 @@ struct TVShellChecks {
         state.apply(.menu)
         try expect(state.isDanmakuVisible == false, "anime menu toggles danmaku")
         state.apply(.back)
-        try expect(state.phase == .browsing, "anime back returns to episode browser")
+        try expect(state.phase == .episodes, "anime back returns to episode browser")
+        state.apply(.back)
+        try expect(state.phase == .titles, "anime back returns to title grid")
     }
 
     static func checkExternalAnimeIntegrations() throws {
@@ -325,7 +331,10 @@ struct TVShellChecks {
               "name": "Sousou no Frieren",
               "name_cn": "葬送的芙莉蓮",
               "summary": "勇者一行打倒魔王之後。",
-              "eps": 28
+              "eps": 28,
+              "images": {
+                "large": "https://example.com/frieren.jpg"
+              }
             }
           ]
         }
@@ -333,6 +342,7 @@ struct TVShellChecks {
         let bangumiSubjects = try BangumiAPI.decodeSubjectSearch(bangumiJSON)
         try expect(bangumiSubjects.first?.title == "葬送的芙莉蓮", "bangumi decoder prefers Chinese title")
         try expect(bangumiSubjects.first?.episodeCount == 28, "bangumi decoder reads episode count")
+        try expect(bangumiSubjects.first?.coverURL?.absoluteString == "https://example.com/frieren.jpg", "bangumi decoder reads cover image")
 
         let signature = DandanplaySignature.signature(
             appID: "app123",

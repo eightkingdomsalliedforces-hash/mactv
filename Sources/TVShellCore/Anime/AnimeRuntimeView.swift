@@ -28,8 +28,11 @@ public struct AnimeRuntimeView: View {
                 .ignoresSafeArea()
 
                 switch controller.state.phase {
-                case .browsing:
-                    browser(metrics: metrics)
+                case .titles:
+                    titleBrowser(metrics: metrics)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                case .episodes:
+                    episodeBrowser(metrics: metrics)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 case .playing:
                     player(metrics: metrics)
@@ -53,27 +56,44 @@ public struct AnimeRuntimeView: View {
         }
     }
 
-    private func browser(metrics: TVMetrics) -> some View {
+    private func titleBrowser(metrics: TVMetrics) -> some View {
         VStack(alignment: .leading, spacing: 34 * metrics.scale) {
-            VStack(alignment: .leading, spacing: 12 * metrics.scale) {
-                Text(app.name)
-                    .font(.system(size: 76 * metrics.scale, weight: .bold))
-                Text(controller.statusText)
-                    .font(.system(size: 28 * metrics.scale, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.68))
-            }
+            animeHeader(metrics: metrics, title: app.name, subtitle: controller.statusText)
 
-            if let title = controller.currentTitle {
-                VStack(alignment: .leading, spacing: 10 * metrics.scale) {
-                    Text(title.title)
-                        .font(.system(size: 42 * metrics.scale, weight: .bold))
-                    Text(title.subtitle ?? "示範來源")
-                        .font(.system(size: 25 * metrics.scale, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.62))
+            searchKeywordBar(metrics: metrics)
+
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 260 * metrics.scale), spacing: 26 * metrics.scale)],
+                alignment: .leading,
+                spacing: 30 * metrics.scale
+            ) {
+                ForEach(Array(controller.titles.enumerated()), id: \.element.id) { index, title in
+                    AnimeTitleCard(
+                        title: title,
+                        isFocused: index == controller.state.focusedTitleIndex,
+                        metrics: metrics
+                    )
                 }
             }
 
-            searchKeywordBar(metrics: metrics)
+            Spacer()
+
+            Text("方向鍵選作品，OK 進入選集，Menu 切換搜尋作品，Home 回主畫面。")
+                .font(.system(size: 25 * metrics.scale, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.62))
+        }
+        .padding(.horizontal, metrics.horizontalPadding)
+        .padding(.top, metrics.topPadding)
+        .padding(.bottom, 54 * metrics.scale)
+    }
+
+    private func episodeBrowser(metrics: TVMetrics) -> some View {
+        VStack(alignment: .leading, spacing: 34 * metrics.scale) {
+            animeHeader(
+                metrics: metrics,
+                title: controller.currentTitle?.title ?? "選集",
+                subtitle: controller.currentTitle?.subtitle ?? controller.statusText
+            )
 
             LazyVGrid(
                 columns: [GridItem(.adaptive(minimum: 230 * metrics.scale), spacing: 22 * metrics.scale)],
@@ -91,13 +111,25 @@ public struct AnimeRuntimeView: View {
 
             Spacer()
 
-            Text("方向鍵選集，OK 播放，Menu 切換搜尋作品，Home 回主畫面。播放中 Menu 開關彈幕。")
+            Text("方向鍵選集，OK 播放，Back 回作品，播放中 Menu 開關彈幕。")
                 .font(.system(size: 25 * metrics.scale, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.62))
         }
         .padding(.horizontal, metrics.horizontalPadding)
         .padding(.top, metrics.topPadding)
         .padding(.bottom, 54 * metrics.scale)
+    }
+
+    private func animeHeader(metrics: TVMetrics, title: String, subtitle: String) -> some View {
+        VStack(alignment: .leading, spacing: 12 * metrics.scale) {
+            Text(title)
+                .font(.system(size: 76 * metrics.scale, weight: .bold))
+                .lineLimit(2)
+            Text(subtitle)
+                .font(.system(size: 28 * metrics.scale, weight: .medium))
+                .foregroundStyle(.white.opacity(0.68))
+                .lineLimit(2)
+        }
     }
 
     private func searchKeywordBar(metrics: TVMetrics) -> some View {
@@ -151,6 +183,7 @@ public struct AnimeRuntimeView: View {
 final class AnimeRuntimeController: ObservableObject {
     let player = AVPlayer()
     @Published private(set) var state = AnimeRuntimeState(episodeCount: 0)
+    @Published private(set) var titles: [AnimeSearchResult] = []
     @Published private(set) var currentTitle: AnimeSearchResult?
     @Published private(set) var episodes: [AnimeEpisode] = []
     @Published private(set) var statusText = "正在載入動畫源..."
@@ -222,16 +255,14 @@ final class AnimeRuntimeController: ObservableObject {
 
         do {
             let keyword = searchKeywords[searchKeywordIndex]
-            let results = try await sourceProvider.search(AnimeSearchQuery(keyword: keyword))
-            guard let first = results.first else {
+            titles = try await sourceProvider.search(AnimeSearchQuery(keyword: keyword))
+            guard titles.isEmpty == false else {
                 statusText = "沒有找到動畫。"
                 return
             }
 
-            currentTitle = first
-            episodes = try await sourceProvider.episodes(for: first)
-            state.updateEpisodeCount(episodes.count)
-            statusText = "來源：\(sourceProvider.displayName) · 已載入 \(episodes.count) 集 · 搜尋：\(keyword)"
+            state = AnimeRuntimeState(titleCount: titles.count, episodeCount: 0)
+            statusText = "來源：\(sourceProvider.displayName) · 找到 \(titles.count) 部作品 · 搜尋：\(keyword)"
         } catch {
             statusText = "動畫源載入失敗：\(error.localizedDescription)"
         }
@@ -244,11 +275,12 @@ final class AnimeRuntimeController: ObservableObject {
     }
 
     private func handle(_ command: RemoteCommand) {
-        if state.phase == .browsing, command == .menu {
+        if state.phase == .titles, command == .menu {
             searchKeywordIndex = (searchKeywordIndex + 1) % searchKeywords.count
+            titles = []
             episodes = []
             currentTitle = nil
-            state = AnimeRuntimeState(episodeCount: 0)
+            state = AnimeRuntimeState(titleCount: 0, episodeCount: 0)
             statusText = "正在搜尋：\(searchKeywords[searchKeywordIndex])..."
             Task { await load() }
             return
@@ -257,17 +289,22 @@ final class AnimeRuntimeController: ObservableObject {
         let previousPhase = state.phase
         state.apply(command)
 
-        if previousPhase == .browsing, command == .back {
+        if previousPhase == .titles, command == .back {
             NotificationCenter.default.post(name: .tvShellRequestLauncher, object: nil)
             return
         }
 
-        if previousPhase == .browsing, state.phase == .playing {
+        if previousPhase == .titles, state.phase == .episodes {
+            Task { await loadFocusedTitleEpisodes() }
+            return
+        }
+
+        if previousPhase == .episodes, state.phase == .playing {
             Task { await playFocusedEpisode() }
             return
         }
 
-        if previousPhase == .playing, state.phase == .browsing {
+        if previousPhase == .playing, state.phase == .episodes {
             stop()
             statusText = "已回到選集。"
             return
@@ -275,6 +312,32 @@ final class AnimeRuntimeController: ObservableObject {
 
         if state.phase == .playing {
             handlePlayback(command)
+        }
+    }
+
+    private func loadFocusedTitleEpisodes() async {
+        guard titles.indices.contains(state.focusedTitleIndex),
+              let sourceProvider
+        else {
+            statusText = "沒有可用作品。"
+            return
+        }
+
+        let title = titles[state.focusedTitleIndex]
+        do {
+            currentTitle = title
+            episodes = try await sourceProvider.episodes(for: title)
+            state.openEpisodes(episodeCount: episodes.count)
+            statusText = "\(title.title) · 已載入 \(episodes.count) 集"
+        } catch {
+            statusText = "選集載入失敗：\(error.localizedDescription)"
+            state = AnimeRuntimeState(
+                titleCount: titles.count,
+                episodeCount: 0,
+                focusedTitleIndex: state.focusedTitleIndex,
+                phase: .titles,
+                isDanmakuVisible: state.isDanmakuVisible
+            )
         }
     }
 
@@ -290,7 +353,7 @@ final class AnimeRuntimeController: ObservableObject {
             state = AnimeRuntimeState(
                 episodeCount: episodes.count,
                 focusedEpisodeIndex: state.focusedEpisodeIndex,
-                phase: .browsing,
+                phase: .episodes,
                 isDanmakuVisible: state.isDanmakuVisible
             )
             return
@@ -304,7 +367,7 @@ final class AnimeRuntimeController: ObservableObject {
                 state = AnimeRuntimeState(
                     episodeCount: episodes.count,
                     focusedEpisodeIndex: state.focusedEpisodeIndex,
-                    phase: .browsing,
+                    phase: .episodes,
                     isDanmakuVisible: state.isDanmakuVisible
                 )
                 return
@@ -321,7 +384,7 @@ final class AnimeRuntimeController: ObservableObject {
             state = AnimeRuntimeState(
                 episodeCount: episodes.count,
                 focusedEpisodeIndex: state.focusedEpisodeIndex,
-                phase: .browsing,
+                phase: .episodes,
                 isDanmakuVisible: state.isDanmakuVisible
             )
         }
@@ -400,6 +463,62 @@ final class AnimeRuntimeController: ObservableObject {
         visibleDanmaku = comments
             .filter { abs($0.time - time) < 2.2 }
             .suffix(5)
+    }
+}
+
+private struct AnimeTitleCard: View {
+    let title: AnimeSearchResult
+    let isFocused: Bool
+    let metrics: TVMetrics
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16 * metrics.scale) {
+            ZStack(alignment: .bottomLeading) {
+                RoundedRectangle(cornerRadius: 24 * metrics.scale, style: .continuous)
+                    .fill(.white.opacity(0.08))
+                    .aspectRatio(0.70, contentMode: .fit)
+
+                if let coverURL = title.coverURL {
+                    AsyncImage(url: coverURL) { image in
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    } placeholder: {
+                        ProgressView()
+                            .controlSize(.large)
+                    }
+                    .aspectRatio(0.70, contentMode: .fill)
+                    .clipped()
+                } else {
+                    Text(String(title.title.prefix(1)))
+                        .font(.system(size: 76 * metrics.scale, weight: .heavy, design: .rounded))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .foregroundStyle(.white.opacity(0.74))
+                }
+
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.78)],
+                    startPoint: .center,
+                    endPoint: .bottom
+                )
+
+                Text(title.title)
+                    .font(.system(size: 28 * metrics.scale, weight: .bold))
+                    .lineLimit(2)
+                    .padding(18 * metrics.scale)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 24 * metrics.scale, style: .continuous))
+
+            Text(title.subtitle ?? "動畫")
+                .font(.system(size: 20 * metrics.scale, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.62))
+                .lineLimit(2)
+                .frame(minHeight: 48 * metrics.scale, alignment: .topLeading)
+        }
+        .padding(18 * metrics.scale)
+        .liquidGlassCard(isFocused: isFocused, cornerRadius: 28 * metrics.scale)
+        .scaleEffect(isFocused ? 1.045 : 1)
+        .animation(TVMotion.focus, value: isFocused)
     }
 }
 

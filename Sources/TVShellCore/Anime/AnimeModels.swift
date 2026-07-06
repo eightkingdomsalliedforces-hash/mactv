@@ -38,12 +38,14 @@ public struct AnimeSearchResult: Identifiable, Codable, Equatable, Sendable {
     public var id: String
     public var title: String
     public var subtitle: String?
+    public var coverURL: URL?
     public var episodes: [AnimeEpisode]
 
-    public init(id: String, title: String, subtitle: String? = nil, episodes: [AnimeEpisode]) {
+    public init(id: String, title: String, subtitle: String? = nil, coverURL: URL? = nil, episodes: [AnimeEpisode]) {
         self.id = id
         self.title = title
         self.subtitle = subtitle
+        self.coverURL = coverURL
         self.episodes = episodes
     }
 }
