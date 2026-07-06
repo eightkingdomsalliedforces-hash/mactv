@@ -62,18 +62,18 @@ public struct AnimeRuntimeView: View {
 
             searchKeywordBar(metrics: metrics)
 
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 260 * metrics.scale), spacing: 26 * metrics.scale)],
-                alignment: .leading,
-                spacing: 30 * metrics.scale
-            ) {
-                ForEach(Array(controller.titles.enumerated()), id: \.element.id) { index, title in
-                    AnimeTitleCard(
-                        title: title,
-                        isFocused: index == controller.state.focusedTitleIndex,
-                        metrics: metrics
-                    )
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 34 * metrics.scale) {
+                    ForEach(Array(controller.titles.enumerated()), id: \.element.id) { index, title in
+                        AnimeTitleCard(
+                            title: title,
+                            isFocused: index == controller.state.focusedTitleIndex,
+                            metrics: metrics
+                        )
+                    }
                 }
+                .padding(.horizontal, 18 * metrics.scale)
+                .padding(.vertical, 20 * metrics.scale)
             }
 
             Spacer()
@@ -472,11 +472,14 @@ private struct AnimeTitleCard: View {
     let metrics: TVMetrics
 
     var body: some View {
+        let posterWidth = 240 * metrics.scale
+        let posterHeight = 344 * metrics.scale
+
         VStack(alignment: .leading, spacing: 16 * metrics.scale) {
             ZStack(alignment: .bottomLeading) {
                 RoundedRectangle(cornerRadius: 24 * metrics.scale, style: .continuous)
                     .fill(.white.opacity(0.08))
-                    .aspectRatio(0.70, contentMode: .fit)
+                    .frame(width: posterWidth, height: posterHeight)
 
                 if let coverURL = title.coverURL {
                     AsyncImage(url: coverURL) { image in
@@ -484,15 +487,19 @@ private struct AnimeTitleCard: View {
                             .resizable()
                             .scaledToFill()
                     } placeholder: {
-                        ProgressView()
-                            .controlSize(.large)
+                        ZStack {
+                            Color.white.opacity(0.06)
+                            ProgressView()
+                                .controlSize(.large)
+                        }
+                        .frame(width: posterWidth, height: posterHeight)
                     }
-                    .aspectRatio(0.70, contentMode: .fill)
+                    .frame(width: posterWidth, height: posterHeight)
                     .clipped()
                 } else {
                     Text(String(title.title.prefix(1)))
                         .font(.system(size: 76 * metrics.scale, weight: .heavy, design: .rounded))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .frame(width: posterWidth, height: posterHeight)
                         .foregroundStyle(.white.opacity(0.74))
                 }
 
@@ -501,6 +508,7 @@ private struct AnimeTitleCard: View {
                     startPoint: .center,
                     endPoint: .bottom
                 )
+                .frame(width: posterWidth, height: posterHeight)
 
                 Text(title.title)
                     .font(.system(size: 28 * metrics.scale, weight: .bold))
@@ -513,8 +521,10 @@ private struct AnimeTitleCard: View {
                 .font(.system(size: 20 * metrics.scale, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.62))
                 .lineLimit(2)
+                .frame(width: posterWidth, alignment: .leading)
                 .frame(minHeight: 48 * metrics.scale, alignment: .topLeading)
         }
+        .frame(width: (posterWidth + 36 * metrics.scale), alignment: .leading)
         .padding(18 * metrics.scale)
         .liquidGlassCard(isFocused: isFocused, cornerRadius: 28 * metrics.scale)
         .scaleEffect(isFocused ? 1.045 : 1)
