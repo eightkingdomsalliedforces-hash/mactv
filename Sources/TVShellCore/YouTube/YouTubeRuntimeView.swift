@@ -215,18 +215,23 @@ struct YouTubePlayerView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
+        configuration.allowsAirPlayForMediaPlayback = true
+        configuration.mediaTypesRequiringUserActionForPlayback = []
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
         webView.setValue(false, forKey: "drawsBackground")
         context.coordinator.videoID = videoID
         context.coordinator.attach(to: webView)
-        webView.loadHTMLString(Self.html(videoID: videoID), baseURL: URL(string: "https://www.youtube.com"))
+        let page = YouTubeEmbedPage(videoID: videoID)
+        webView.loadHTMLString(page.html, baseURL: page.baseURL)
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         if context.coordinator.videoID != videoID {
             context.coordinator.videoID = videoID
-            webView.loadHTMLString(Self.html(videoID: videoID), baseURL: URL(string: "https://www.youtube.com"))
+            let page = YouTubeEmbedPage(videoID: videoID)
+            webView.loadHTMLString(page.html, baseURL: page.baseURL)
         }
     }
 
@@ -276,49 +281,4 @@ struct YouTubePlayerView: NSViewRepresentable {
         }
     }
 
-    static func html(videoID: String) -> String {
-        """
-        <!doctype html>
-        <html>
-        <head>
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <style>
-            html, body, #player { margin: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
-          </style>
-        </head>
-        <body>
-          <div id="player"></div>
-          <script src="https://www.youtube.com/iframe_api"></script>
-          <script>
-            var player;
-            var isPlaying = false;
-            function onYouTubeIframeAPIReady() {
-              player = new YT.Player('player', {
-                width: '100%',
-                height: '100%',
-                videoId: '\(videoID)',
-                playerVars: { autoplay: 1, controls: 1, playsinline: 1, rel: 0, enablejsapi: 1 },
-                events: {
-                  onReady: function(event) { event.target.playVideo(); },
-                  onStateChange: function(event) { isPlaying = event.data === YT.PlayerState.PLAYING; }
-                }
-              });
-            }
-            window.tvShellYouTubeCommand = function(command) {
-              if (!player || !player.getCurrentTime) return;
-              if (command === 'playPause') {
-                if (isPlaying) player.pauseVideo(); else player.playVideo();
-              }
-              if (command === 'seekBack') {
-                player.seekTo(Math.max(0, player.getCurrentTime() - 10), true);
-              }
-              if (command === 'seekForward') {
-                player.seekTo(player.getCurrentTime() + 10, true);
-              }
-            }
-          </script>
-        </body>
-        </html>
-        """
-    }
 }

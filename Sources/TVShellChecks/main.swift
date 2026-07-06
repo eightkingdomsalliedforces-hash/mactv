@@ -26,6 +26,7 @@ struct TVShellChecks {
         try await checkDandanplayConfiguredProvider()
         try await checkDandanplaySearchEpisodesFallback()
         try checkYouTubeNativeRuntimeAndAPI()
+        try checkYouTubeEmbedPageIncludesOriginAndFallback()
         try await checkBangumiYouTubeAnimeSourceFindsPlayableCandidates()
         try checkAnimekoStyleSourceCatalog()
         try await checkAnimeSourceRegistryUsesCatalog()
@@ -524,6 +525,18 @@ struct TVShellChecks {
         try expect(youtubeState.phase == .playing, "youtube select starts playback")
         youtubeState.apply(.back)
         try expect(youtubeState.phase == .browsing, "youtube back returns to native list")
+    }
+
+    static func checkYouTubeEmbedPageIncludesOriginAndFallback() throws {
+        let page = YouTubeEmbedPage(videoID: "abcXYZ")
+        try expect(page.origin.absoluteString == "https://mactv.local", "youtube embed uses stable origin")
+        try expect(page.watchURL.absoluteString == "https://www.youtube.com/watch?v=abcXYZ", "youtube embed exposes watch fallback url")
+
+        let html = page.html
+        try expect(html.contains("origin=https%3A%2F%2Fmactv.local"), "youtube iframe includes encoded origin")
+        try expect(html.contains(#"referrerpolicy="strict-origin-when-cross-origin""#), "youtube iframe sends strict origin referrer")
+        try expect(html.contains("onError"), "youtube iframe handles player errors")
+        try expect(html.contains("前往 YouTube 觀看影片"), "youtube iframe includes user-facing fallback link")
     }
 
     static func checkBangumiYouTubeAnimeSourceFindsPlayableCandidates() async throws {
