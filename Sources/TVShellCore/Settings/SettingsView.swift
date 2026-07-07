@@ -9,58 +9,72 @@ public struct SettingsView: View {
         GeometryReader { proxy in
             let metrics = TVMetrics(size: proxy.size)
 
-            ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: 34 * metrics.scale) {
-                    Text("設定")
-                        .font(.system(size: 76 * metrics.scale, weight: .bold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.76)
+            ScrollViewReader { scrollProxy in
+                ScrollView(.vertical) {
+                    VStack(alignment: .leading, spacing: 34 * metrics.scale) {
+                        Text("設定")
+                            .font(.system(size: 76 * metrics.scale, weight: .bold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.76)
 
-                    SettingsOptionRow(
-                        title: "介面縮放",
-                        value: appState.displayScale.label,
-                        isFocused: appState.settingsFocus == .scale,
-                        metrics: metrics
-                    )
+                        SettingsOptionRow(
+                            title: "介面縮放",
+                            value: appState.displayScale.label,
+                            isFocused: appState.settingsFocus == .scale,
+                            metrics: metrics
+                        )
+                        .id(SettingsFocus.scale)
 
-                    SettingsOptionRow(
-                        title: "壁紙",
-                        value: wallpaperLabel,
-                        isFocused: appState.settingsFocus == .wallpaper,
-                        metrics: metrics
-                    )
+                        SettingsOptionRow(
+                            title: "壁紙",
+                            value: wallpaperLabel,
+                            isFocused: appState.settingsFocus == .wallpaper,
+                            metrics: metrics
+                        )
+                        .id(SettingsFocus.wallpaper)
 
-                    SettingsOptionRow(
-                        title: "網頁放大",
-                        value: "\(Int(appState.webZoom * 100))%",
-                        isFocused: appState.settingsFocus == .webZoom,
-                        metrics: metrics
-                    )
+                        SettingsOptionRow(
+                            title: "網頁放大",
+                            value: "\(Int(appState.webZoom * 100))%",
+                            isFocused: appState.settingsFocus == .webZoom,
+                            metrics: metrics
+                        )
+                        .id(SettingsFocus.webZoom)
 
-                    SettingsOptionRow(
-                        title: "影片位置",
-                        value: appState.videoSourceLabel,
-                        isFocused: appState.settingsFocus == .videoSource,
-                        metrics: metrics
-                    )
+                        SettingsOptionRow(
+                            title: "影片位置",
+                            value: appState.videoSourceLabel,
+                            isFocused: appState.settingsFocus == .videoSource,
+                            metrics: metrics
+                        )
+                        .id(SettingsFocus.videoSource)
 
-                    Text("上下選擇設定，左右調整；在影片位置按 OK 選擇本機影片。Home 或返回鍵回主畫面。")
-                        .font(.system(size: 28 * metrics.scale, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.64))
-                        .lineLimit(3)
-                        .minimumScaleFactor(0.72)
+                        Text("上下選擇設定，左右調整；在影片位置按 OK 選擇本機影片。Home 或返回鍵回主畫面。")
+                            .font(.system(size: 28 * metrics.scale, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.64))
+                            .lineLimit(3)
+                            .minimumScaleFactor(0.72)
 
-                    DanmakuServiceStatusView(isConfigured: appState.dandanplayCredentials.isConfigured, metrics: metrics)
+                        DanmakuServiceStatusView(isConfigured: appState.dandanplayCredentials.isConfigured, metrics: metrics)
 
-                    YouTubeAPIStatusView(isConfigured: appState.youtubeCredentials.isConfigured, metrics: metrics)
+                        YouTubeAPIStatusView(isConfigured: appState.youtubeCredentials.isConfigured, metrics: metrics)
 
-                    PermissionStatusView()
+                        PermissionStatusView()
+                    }
+                    .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .topLeading)
+                    .padding(.horizontal, metrics.horizontalPadding)
+                    .padding(.vertical, max(34, metrics.topPadding))
                 }
-                .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .topLeading)
-                .padding(.horizontal, metrics.horizontalPadding)
-                .padding(.vertical, max(34, metrics.topPadding))
+                .scrollIndicators(.hidden)
+                .onChange(of: appState.settingsFocus) { _, focus in
+                    withAnimation(TVMotion.focus) {
+                        scrollProxy.scrollTo(focus, anchor: .center)
+                    }
+                }
+                .onAppear {
+                    scrollProxy.scrollTo(appState.settingsFocus, anchor: .center)
+                }
             }
-            .scrollIndicators(.hidden)
         }
         .foregroundStyle(.white)
     }

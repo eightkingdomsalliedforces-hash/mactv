@@ -9,34 +9,50 @@ public struct AppManagementView: View {
         GeometryReader { proxy in
             let metrics = TVMetrics(size: proxy.size)
 
-            ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: 34 * metrics.scale) {
-                    Text("App 管理")
-                        .font(.system(size: 72 * metrics.scale, weight: .bold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.76)
+            ScrollViewReader { scrollProxy in
+                ScrollView(.vertical) {
+                    VStack(alignment: .leading, spacing: 34 * metrics.scale) {
+                        Text("App 管理")
+                            .font(.system(size: 72 * metrics.scale, weight: .bold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.76)
 
-                    Text("上下選擇，OK 顯示或隱藏，左右排序，Home 返回。")
-                        .font(.system(size: 28 * metrics.scale, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.66))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.74)
+                        Text("上下選擇，OK 顯示或隱藏，左右排序，Home 返回。")
+                            .font(.system(size: 28 * metrics.scale, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.66))
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.74)
 
-                    VStack(alignment: .leading, spacing: 18 * metrics.scale) {
-                        ForEach(appState.apps) { app in
-                            AppManagementRow(
-                                app: app,
-                                isFocused: app.id == appState.focusedManagementAppID,
-                                metrics: metrics
-                            )
+                        VStack(alignment: .leading, spacing: 18 * metrics.scale) {
+                            ForEach(appState.apps) { app in
+                                AppManagementRow(
+                                    app: app,
+                                    isFocused: app.id == appState.focusedManagementAppID,
+                                    metrics: metrics
+                                )
+                                .id(app.id)
+                            }
                         }
                     }
+                    .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .topLeading)
+                    .padding(.horizontal, metrics.horizontalPadding)
+                    .padding(.vertical, max(34, metrics.topPadding))
                 }
-                .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .topLeading)
-                .padding(.horizontal, metrics.horizontalPadding)
-                .padding(.vertical, max(34, metrics.topPadding))
+                .scrollIndicators(.hidden)
+                .onChange(of: appState.focusedManagementAppID) { _, id in
+                    guard let id else {
+                        return
+                    }
+                    withAnimation(TVMotion.focus) {
+                        scrollProxy.scrollTo(id, anchor: .center)
+                    }
+                }
+                .onAppear {
+                    if let id = appState.focusedManagementAppID {
+                        scrollProxy.scrollTo(id, anchor: .center)
+                    }
+                }
             }
-            .scrollIndicators(.hidden)
         }
         .foregroundStyle(.white)
     }

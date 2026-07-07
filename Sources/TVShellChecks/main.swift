@@ -983,6 +983,14 @@ struct TVShellChecks {
             try expect(source.contains("TVMetrics"), "\(path) uses TVMetrics scaling")
         }
 
+        let settings = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Settings/SettingsView.swift"))
+        try expect(settings.contains("ScrollViewReader"), "settings view keeps remote focus visible")
+        try expect(settings.contains("scrollTo(focus"), "settings view scrolls to the focused setting")
+
+        let appManagement = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Settings/AppManagementView.swift"))
+        try expect(appManagement.contains("ScrollViewReader"), "app management keeps remote focus visible")
+        try expect(appManagement.contains("scrollTo(id"), "app management scrolls to the focused app row")
+
         let app = try String(contentsOf: root.appending(path: "Sources/TVShell/TVShellApp.swift"))
         try expect(app.contains("minWidth: 960"), "root window can shrink below 1280 for smaller displays")
         try expect(app.contains("minHeight: 540"), "root window can shrink below 720 for smaller displays")
