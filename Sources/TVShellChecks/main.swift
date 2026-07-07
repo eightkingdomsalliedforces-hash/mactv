@@ -29,6 +29,7 @@ struct TVShellChecks {
         try await checkDandanplaySearchEpisodesFallback()
         try checkYouTubeNativeRuntimeAndAPI()
         try checkYouTubeEmbedPageIncludesOriginAndFallback()
+        try checkYouTubeLayoutAndPlayerShell()
         try await checkBangumiYouTubeAnimeSourceFindsPlayableCandidates()
         try checkAnimekoStyleSourceCatalog()
         try await checkAnimeSourceRegistryUsesCatalog()
@@ -335,11 +336,13 @@ struct TVShellChecks {
     }
 
     static func checkAnimeRuntimeStateNavigation() throws {
-        var state = AnimeRuntimeState(titleCount: 3, episodeCount: 8)
+        var state = AnimeRuntimeState(titleCount: 12, episodeCount: 8)
         state.apply(.right)
         try expect(state.focusedTitleIndex == 1, "anime right moves focused title on title grid")
-        state.apply(.down)
-        try expect(state.focusedTitleIndex == 1, "anime title row ignores vertical movement")
+        state.apply(.down, titleColumns: 6)
+        try expect(state.focusedTitleIndex == 7, "anime down moves to the same column on the next poster row")
+        state.apply(.up, titleColumns: 6)
+        try expect(state.focusedTitleIndex == 1, "anime up moves to the previous poster row")
         state.apply(.select)
         try expect(state.phase == .details, "anime select opens title details")
         state.apply(.select)
@@ -600,6 +603,22 @@ struct TVShellChecks {
         try expect(html.contains(#"referrerpolicy="strict-origin-when-cross-origin""#), "youtube iframe sends strict origin referrer")
         try expect(html.contains("onError"), "youtube iframe handles player errors")
         try expect(html.contains("前往 YouTube 觀看影片"), "youtube iframe includes user-facing fallback link")
+        try expect(html.contains("controls=0"), "youtube player hides youtube web controls behind MacTV controls")
+        try expect(html.contains("getDuration"), "youtube player exposes duration to custom shell")
+        try expect(html.contains("tvShellYouTubeState"), "youtube player exposes state for custom shell")
+    }
+
+    static func checkYouTubeLayoutAndPlayerShell() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        let youtubeRuntime = try String(contentsOf: root.appending(path: "Sources/TVShellCore/YouTube/YouTubeRuntimeView.swift"))
+        try expect(youtubeRuntime.contains("let cardWidth = 360 * metrics.scale"), "youtube cards use stable card width")
+        try expect(youtubeRuntime.contains("let thumbnailHeight = 202 * metrics.scale"), "youtube cards use stable thumbnail height")
+        try expect(youtubeRuntime.contains("MacTVYouTubeControls"), "youtube runtime renders custom player controls")
+
+        let webRuntime = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Runtime/WebAppRuntimeView.swift"))
+        try expect(webRuntime.contains("remoteScrollByCommand"), "browser runtime exposes remote scroll command")
+        try expect(webRuntime.contains("command === 'fastForward'"), "browser can scroll down by remote command")
+        try expect(webRuntime.contains("command === 'rewind'"), "browser can scroll up by remote command")
     }
 
     static func checkBangumiYouTubeAnimeSourceFindsPlayableCandidates() async throws {
@@ -908,6 +927,7 @@ struct TVShellChecks {
         try expect(youtubeRuntime.contains("updateGridColumns"), "youtube runtime updates remote navigation columns from current window size")
 
         let animeRuntime = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Anime/AnimeRuntimeView.swift"))
+        try expect(animeRuntime.contains("updateTitleColumns"), "anime runtime updates poster grid columns from current window size")
         try expect(animeRuntime.contains("updateEpisodeColumns"), "anime runtime updates episode navigation columns from current window size")
         try expect(animeRuntime.contains(".animation(TVMotion.focus, value: comments)") == false, "danmaku overlay does not animate every comment refresh")
 

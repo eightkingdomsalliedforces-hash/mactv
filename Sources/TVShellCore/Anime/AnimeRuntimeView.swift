@@ -55,9 +55,11 @@ public struct AnimeRuntimeView: View {
             .animation(TVMotion.runtime, value: controller.state.phase)
             .foregroundStyle(.white)
             .onAppear {
+                controller.updateTitleColumns(titleGridColumns(for: metrics, size: proxy.size))
                 controller.updateEpisodeColumns(episodeGridColumns(for: metrics, size: proxy.size))
             }
             .onChange(of: proxy.size) { _, newSize in
+                controller.updateTitleColumns(titleGridColumns(for: TVMetrics(size: newSize), size: newSize))
                 controller.updateEpisodeColumns(episodeGridColumns(for: TVMetrics(size: newSize), size: newSize))
             }
         }
@@ -134,6 +136,14 @@ public struct AnimeRuntimeView: View {
         )
     }
 
+    private func titleGridColumns(for metrics: TVMetrics, size: CGSize) -> Int {
+        Self.adaptiveColumns(
+            availableWidth: size.width - (metrics.horizontalPadding * 2),
+            minimumWidth: 184 * metrics.scale,
+            spacing: 18 * metrics.scale
+        )
+    }
+
     private static func adaptiveColumns(availableWidth: Double, minimumWidth: Double, spacing: Double) -> Int {
         max(1, Int((max(availableWidth, minimumWidth) + spacing) / (minimumWidth + spacing)))
     }
@@ -145,18 +155,18 @@ public struct AnimeRuntimeView: View {
 
                 searchKeywordBar(metrics: metrics)
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: 34 * metrics.scale) {
-                        ForEach(Array(controller.titles.enumerated()), id: \.element.id) { index, title in
-                            AnimeTitleCard(
-                                title: title,
-                                isFocused: index == controller.state.focusedTitleIndex,
-                                metrics: metrics
-                            )
-                        }
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 184 * metrics.scale), spacing: 18 * metrics.scale)],
+                    alignment: .leading,
+                    spacing: 18 * metrics.scale
+                ) {
+                    ForEach(Array(controller.titles.enumerated()), id: \.element.id) { index, title in
+                        AnimeTitleCard(
+                            title: title,
+                            isFocused: index == controller.state.focusedTitleIndex,
+                            metrics: metrics
+                        )
                     }
-                    .padding(.horizontal, 18 * metrics.scale)
-                    .padding(.vertical, 20 * metrics.scale)
                 }
 
                 Text("方向鍵選作品，OK 進入詳情，Menu 搜尋動漫，Home 回主畫面。")
@@ -260,6 +270,19 @@ public struct AnimeRuntimeView: View {
             .padding(28 * metrics.scale)
             .liquidGlassCard(isFocused: true, cornerRadius: 22 * metrics.scale)
             .padding(50 * metrics.scale)
+
+            HStack(spacing: 12 * metrics.scale) {
+                Text(controller.state.isDanmakuVisible ? "彈幕 ON" : "彈幕 OFF")
+                Text(controller.danmakuStatusText)
+            }
+            .font(.system(size: 22 * metrics.scale, weight: .bold))
+            .foregroundStyle(.white.opacity(0.88))
+            .padding(.horizontal, 20 * metrics.scale)
+            .padding(.vertical, 12 * metrics.scale)
+            .liquidGlassCard(isFocused: false, cornerRadius: 18 * metrics.scale)
+            .padding(.top, 50 * metrics.scale)
+            .padding(.trailing, 50 * metrics.scale)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
         .background(.black)
     }
@@ -276,6 +299,7 @@ final class AnimeRuntimeController: ObservableObject {
     @Published private(set) var visibleDanmaku: [DanmakuComment] = []
     @Published private(set) var currentYouTubeVideoID: String?
     @Published private(set) var searchKeywordIndex = 0
+    @Published private(set) var danmakuStatusText = "彈幕未載入"
     @Published private(set) var isKeyboardVisible = false
     @Published private(set) var keyboardState = VirtualKeyboardState(text: "葬送的芙莉蓮")
 
@@ -283,6 +307,7 @@ final class AnimeRuntimeController: ObservableObject {
     private var danmakuProvider: any DanmakuProvider
     let searchKeywords = AnimeSearchKeywordCatalog.defaultKeywords
     private var comments: [DanmakuComment] = []
+    private var titleColumns = 6
     private var episodeColumns = 4
     private var currentQuery = "葬送的芙莉蓮"
     private nonisolated(unsafe) var observer: NSObjectProtocol?
@@ -375,6 +400,10 @@ final class AnimeRuntimeController: ObservableObject {
         episodeColumns = max(1, columns)
     }
 
+    func updateTitleColumns(_ columns: Int) {
+        titleColumns = max(1, columns)
+    }
+
     private func handle(_ command: RemoteCommand) {
         if isKeyboardVisible {
             handleKeyboard(command)
@@ -389,7 +418,7 @@ final class AnimeRuntimeController: ObservableObject {
         }
 
         let previousPhase = state.phase
-        state.apply(command, episodeColumns: episodeColumns)
+        state.apply(command, titleColumns: titleColumns, episodeColumns: episodeColumns)
 
         if previousPhase == .titles, command == .back {
             NotificationCenter.default.post(name: .tvShellRequestLauncher, object: nil)
@@ -535,14 +564,17 @@ final class AnimeRuntimeController: ObservableObject {
         do {
             comments = DanmakuAggregator.merge([try await danmakuProvider.comments(for: episode.identity)])
             visibleDanmaku = Array(comments.prefix(5))
+            danmakuStatusText = "\(comments.count) 條"
             statusText = "播放源：\(stream.quality) · Dandanplay 彈幕 \(comments.count) 條"
         } catch AnimeHTTPError.missingCredentials {
             comments = []
             visibleDanmaku = []
+            danmakuStatusText = "未配置 Dandanplay"
             statusText = "播放源：\(stream.quality) · 尚未配置 Dandanplay AppID/AppSecret"
         } catch {
             comments = []
             visibleDanmaku = []
+            danmakuStatusText = "載入失敗"
             statusText = "播放源：\(stream.quality) · 彈幕載入失敗：\(error.localizedDescription)"
         }
     }
@@ -616,61 +648,58 @@ private struct AnimeTitleCard: View {
     let metrics: TVMetrics
 
     var body: some View {
-        let posterWidth = 240 * metrics.scale
-        let posterHeight = 344 * metrics.scale
+        let posterWidth = 166 * metrics.scale
+        let posterHeight = 236 * metrics.scale
 
-        VStack(alignment: .leading, spacing: 16 * metrics.scale) {
-            ZStack(alignment: .bottomLeading) {
-                RoundedRectangle(cornerRadius: 24 * metrics.scale, style: .continuous)
-                    .fill(.white.opacity(0.08))
-                    .frame(width: posterWidth, height: posterHeight)
-
-                if let coverURL = title.coverURL {
-                    AsyncImage(url: coverURL) { image in
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    } placeholder: {
-                        ZStack {
-                            Color.white.opacity(0.06)
-                            ProgressView()
-                                .controlSize(.large)
-                        }
-                        .frame(width: posterWidth, height: posterHeight)
-                    }
-                    .frame(width: posterWidth, height: posterHeight)
-                    .clipped()
-                } else {
-                    Text(String(title.title.prefix(1)))
-                        .font(.system(size: 76 * metrics.scale, weight: .heavy, design: .rounded))
-                        .frame(width: posterWidth, height: posterHeight)
-                        .foregroundStyle(.white.opacity(0.74))
-                }
-
-                LinearGradient(
-                    colors: [.clear, .black.opacity(0.78)],
-                    startPoint: .center,
-                    endPoint: .bottom
-                )
+        ZStack(alignment: .bottomLeading) {
+            RoundedRectangle(cornerRadius: 16 * metrics.scale, style: .continuous)
+                .fill(.white.opacity(0.08))
                 .frame(width: posterWidth, height: posterHeight)
 
-                Text(title.title)
-                    .font(.system(size: 28 * metrics.scale, weight: .bold))
-                    .lineLimit(2)
-                    .padding(18 * metrics.scale)
+            if let coverURL = title.coverURL {
+                AsyncImage(url: coverURL) { image in
+                    image
+                        .resizable()
+                        .scaledToFill()
+                } placeholder: {
+                    ZStack {
+                        Color.white.opacity(0.06)
+                        ProgressView()
+                            .controlSize(.large)
+                    }
+                    .frame(width: posterWidth, height: posterHeight)
+                }
+                .frame(width: posterWidth, height: posterHeight)
+                .clipped()
+            } else {
+                Text(String(title.title.prefix(1)))
+                    .font(.system(size: 56 * metrics.scale, weight: .heavy, design: .rounded))
+                    .frame(width: posterWidth, height: posterHeight)
+                    .foregroundStyle(.white.opacity(0.74))
             }
-            .clipShape(RoundedRectangle(cornerRadius: 24 * metrics.scale, style: .continuous))
 
-            Text(title.subtitle ?? "動畫")
-                .font(.system(size: 20 * metrics.scale, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.62))
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.82)],
+                startPoint: .center,
+                endPoint: .bottom
+            )
+            .frame(width: posterWidth, height: posterHeight)
+
+            Text(title.title)
+                .font(.system(size: 18 * metrics.scale, weight: .bold))
                 .lineLimit(2)
-                .frame(width: posterWidth, alignment: .leading)
-                .frame(minHeight: 48 * metrics.scale, alignment: .topLeading)
+                .minimumScaleFactor(0.66)
+                .foregroundStyle(.white)
+                .padding(10 * metrics.scale)
+                .shadow(color: .black.opacity(0.9), radius: 5, x: 0, y: 2)
         }
-        .frame(width: (posterWidth + 36 * metrics.scale), alignment: .leading)
-        .padding(18 * metrics.scale)
-        .liquidGlassCard(isFocused: isFocused, cornerRadius: 28 * metrics.scale)
+        .frame(width: posterWidth, height: posterHeight)
+        .clipShape(RoundedRectangle(cornerRadius: 16 * metrics.scale, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16 * metrics.scale, style: .continuous)
+                .stroke(.white.opacity(isFocused ? 0.96 : 0.08), lineWidth: isFocused ? 4 : 1)
+        )
+        .shadow(color: isFocused ? .cyan.opacity(0.28) : .black.opacity(0.16), radius: isFocused ? 18 : 6, x: 0, y: isFocused ? 10 : 4)
         .scaleEffect(isFocused ? 1.045 : 1)
         .animation(TVMotion.focus, value: isFocused)
     }

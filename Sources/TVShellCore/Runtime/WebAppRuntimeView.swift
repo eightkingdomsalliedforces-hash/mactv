@@ -491,6 +491,19 @@ public struct WebAppRuntimeView: NSViewRepresentable {
           if (command === 'left') window.scrollBy({ left: -window.innerWidth * 0.65, behavior: 'smooth' });
           return ['up', 'down', 'left', 'right'].includes(command);
         };
+        const remoteScrollByCommand = () => {
+          if (command === 'fastForward') {
+            window.scrollBy({ top: window.innerHeight * 0.72, behavior: 'smooth' });
+            return true;
+          }
+          if (command === 'rewind') {
+            window.scrollBy({ top: -window.innerHeight * 0.72, behavior: 'smooth' });
+            return true;
+          }
+          return false;
+        };
+
+        if (remoteScrollByCommand()) return true;
 
         if (mode === 'keyboard') {
           const sent = dispatchKey();
@@ -575,6 +588,8 @@ private extension RemoteCommand {
         case .select: "select"
         case .back: "back"
         case .playPause: "playPause"
+        case .rewind: "rewind"
+        case .fastForward: "fastForward"
         default: ""
         }
     }

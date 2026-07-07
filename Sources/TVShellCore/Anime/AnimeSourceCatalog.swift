@@ -186,7 +186,7 @@ public enum AnimeSourceCatalog {
     public static let defaultSources: [AnimeSourceDefinition] = [
         source("bangumi-youtube", "Bangumi + YouTube", "BY", ["官方 API"]),
         pendingSource("girigiri", "girigiri 愛動漫", "G", ["在線"]),
-        pendingSource("omofun111", "omofun111", "O", ["在線"]),
+        source("omofun111", "omofun111", "O", ["授權 Adapter", "WebView 入口"], health: .needsAdapter, defaultEnabled: false),
         pendingSource("e-acg", "E-ACG", "EA", ["E-ACG"]),
         pendingSource("hoibi", "吼哔動漫", "吼", [
             AnimeSourceLine(id: "hoibi-2", title: "吼哔2線"),

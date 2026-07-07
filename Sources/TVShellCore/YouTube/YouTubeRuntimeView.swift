@@ -61,7 +61,7 @@ public struct YouTubeRuntimeView: View {
     private func videoGridColumns(for metrics: TVMetrics, size: CGSize) -> Int {
         Self.adaptiveColumns(
             availableWidth: size.width - (metrics.horizontalPadding * 2),
-            minimumWidth: 330 * metrics.scale,
+            minimumWidth: 408 * metrics.scale,
             spacing: 24 * metrics.scale
         )
     }
@@ -82,9 +82,9 @@ public struct YouTubeRuntimeView: View {
                 }
 
                 LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 330 * metrics.scale), spacing: 24 * metrics.scale)],
+                    columns: [GridItem(.adaptive(minimum: 408 * metrics.scale), spacing: 28 * metrics.scale)],
                     alignment: .leading,
-                    spacing: 24 * metrics.scale
+                    spacing: 30 * metrics.scale
                 ) {
                     ForEach(Array(controller.videos.enumerated()), id: \.element.id) { index, video in
                         YouTubeVideoCard(
@@ -126,6 +126,10 @@ public struct YouTubeRuntimeView: View {
             .padding(28 * metrics.scale)
             .liquidGlassCard(isFocused: true, cornerRadius: 22 * metrics.scale)
             .padding(50 * metrics.scale)
+
+            MacTVYouTubeControls(metrics: metrics)
+                .padding(.horizontal, 50 * metrics.scale)
+                .padding(.bottom, 38 * metrics.scale)
         }
         .background(.black)
     }
@@ -253,11 +257,14 @@ private struct YouTubeVideoCard: View {
     let metrics: TVMetrics
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18 * metrics.scale) {
+        let cardWidth = 360 * metrics.scale
+        let thumbnailHeight = 202 * metrics.scale
+
+        VStack(alignment: .leading, spacing: 16 * metrics.scale) {
             ZStack {
                 Rectangle()
                     .fill(.black.opacity(0.28))
-                    .aspectRatio(16 / 9, contentMode: .fit)
+                    .frame(width: cardWidth, height: thumbnailHeight)
                 if let thumbnailURL = video.thumbnailURL {
                     AsyncImage(url: thumbnailURL) { image in
                         image.resizable().scaledToFill()
@@ -265,7 +272,7 @@ private struct YouTubeVideoCard: View {
                         ProgressView()
                             .controlSize(.large)
                     }
-                    .aspectRatio(16 / 9, contentMode: .fill)
+                    .frame(width: cardWidth, height: thumbnailHeight)
                     .clipped()
                 } else {
                     Text("▶")
@@ -273,6 +280,7 @@ private struct YouTubeVideoCard: View {
                         .foregroundStyle(.white.opacity(0.76))
                 }
             }
+            .frame(width: cardWidth, height: thumbnailHeight)
             .clipShape(RoundedRectangle(cornerRadius: 22 * metrics.scale, style: .continuous))
 
             Text(video.title)
@@ -285,10 +293,30 @@ private struct YouTubeVideoCard: View {
                 .foregroundStyle(.white.opacity(0.62))
                 .lineLimit(1)
         }
+        .frame(width: cardWidth, alignment: .leading)
         .padding(22 * metrics.scale)
         .liquidGlassCard(isFocused: isFocused, cornerRadius: 26 * metrics.scale)
-        .scaleEffect(isFocused ? 1.04 : 1)
+        .scaleEffect(isFocused ? 1.025 : 1)
         .animation(TVMotion.focus, value: isFocused)
+    }
+}
+
+private struct MacTVYouTubeControls: View {
+    let metrics: TVMetrics
+
+    var body: some View {
+        HStack(spacing: 18 * metrics.scale) {
+            Text("◀︎ 10")
+            Text("播放 / 暫停")
+            Text("10 ▶︎")
+            Spacer()
+            Text("遙控器：OK 播放暫停，左右快轉倒退，Back 回列表")
+        }
+        .font(.system(size: 23 * metrics.scale, weight: .bold))
+        .foregroundStyle(.white.opacity(0.86))
+        .padding(.horizontal, 26 * metrics.scale)
+        .padding(.vertical, 18 * metrics.scale)
+        .liquidGlassCard(isFocused: false, cornerRadius: 24 * metrics.scale)
     }
 }
 

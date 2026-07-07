@@ -48,13 +48,20 @@ public struct YouTubeEmbedPage: Equatable, Sendable {
               font-weight: 700;
               text-decoration: underline;
             }
+            #telemetry {
+              position: fixed;
+              width: 1px;
+              height: 1px;
+              opacity: 0;
+              pointer-events: none;
+            }
           </style>
         </head>
         <body>
           <iframe
             id="playerFrame"
             type="text/html"
-            src="https://www.youtube.com/embed/\(videoID)?enablejsapi=1&autoplay=1&controls=1&playsinline=1&rel=0&origin=\(originValue)"
+            src="https://www.youtube.com/embed/\(videoID)?enablejsapi=1&autoplay=1&controls=0&playsinline=1&rel=0&modestbranding=1&iv_load_policy=3&origin=\(originValue)"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowfullscreen
             referrerpolicy="strict-origin-when-cross-origin"
@@ -65,11 +72,13 @@ public struct YouTubeEmbedPage: Equatable, Sendable {
             <div class="code" id="errorCode">嵌入播放被 YouTube 或影片擁有者限制</div>
             <a href="\(watchValue)">前往 YouTube 觀看影片</a>
           </div>
+          <div id="telemetry"></div>
 
           <script src="https://www.youtube.com/iframe_api"></script>
           <script>
             var player;
             var isPlaying = false;
+            var lastState = {};
             function showFallback(code) {
               document.getElementById('playerFrame').style.display = 'none';
               document.getElementById('fallback').style.display = 'flex';
@@ -84,6 +93,18 @@ public struct YouTubeEmbedPage: Equatable, Sendable {
                 }
               });
             }
+            function tvShellYouTubeState() {
+              if (!player || !player.getCurrentTime) return lastState;
+              lastState = {
+                currentTime: player.getCurrentTime(),
+                duration: player.getDuration ? player.getDuration() : 0,
+                isPlaying: isPlaying,
+                volume: player.getVolume ? player.getVolume() : 100
+              };
+              document.getElementById('telemetry').textContent = JSON.stringify(lastState);
+              return lastState;
+            }
+            setInterval(tvShellYouTubeState, 500);
             window.tvShellYouTubeCommand = function(command) {
               if (!player || !player.getCurrentTime) return;
               if (command === 'playPause') {
@@ -95,6 +116,13 @@ public struct YouTubeEmbedPage: Equatable, Sendable {
               if (command === 'seekForward') {
                 player.seekTo(player.getCurrentTime() + 10, true);
               }
+              if (command === 'volumeUp' && player.setVolume) {
+                player.setVolume(Math.min(100, player.getVolume() + 8));
+              }
+              if (command === 'volumeDown' && player.setVolume) {
+                player.setVolume(Math.max(0, player.getVolume() - 8));
+              }
+              return tvShellYouTubeState();
             }
           </script>
         </body>
