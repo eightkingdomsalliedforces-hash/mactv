@@ -327,7 +327,7 @@ final class AnimeRuntimeController: ObservableObject {
     @Published private(set) var searchKeywordIndex = 0
     @Published private(set) var danmakuStatusText = "彈幕未載入"
     @Published private(set) var isKeyboardVisible = false
-    @Published private(set) var keyboardState = VirtualKeyboardState(text: "葬送的芙莉蓮")
+    @Published private(set) var keyboardState = VirtualKeyboardState(text: "")
 
     private var sourceProvider: (any AnimeSourceProvider)?
     private var danmakuProvider: any DanmakuProvider
@@ -335,7 +335,7 @@ final class AnimeRuntimeController: ObservableObject {
     private var comments: [DanmakuComment] = []
     private var titleColumns = 6
     private var episodeColumns = 4
-    private var currentQuery = "葬送的芙莉蓮"
+    private var currentQuery = ""
     private nonisolated(unsafe) var observer: NSObjectProtocol?
     private nonisolated(unsafe) var timeObserver: Any?
     private nonisolated(unsafe) var itemObserver: NSKeyValueObservation?
@@ -410,7 +410,11 @@ final class AnimeRuntimeController: ObservableObject {
             }
 
             state = AnimeRuntimeState(titleCount: titles.count, episodeCount: 0)
-            statusText = "來源：\(sourceProvider.displayName) · 找到 \(titles.count) 部作品 · 搜尋：\(keyword)"
+            if keyword.isEmpty {
+                statusText = "來源：\(sourceProvider.displayName) · 首頁推薦 \(titles.count) 部作品"
+            } else {
+                statusText = "來源：\(sourceProvider.displayName) · 找到 \(titles.count) 部作品 · 搜尋：\(keyword)"
+            }
         } catch {
             statusText = "動畫源載入失敗：\(error.localizedDescription)"
         }

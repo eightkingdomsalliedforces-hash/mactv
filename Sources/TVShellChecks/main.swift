@@ -2,6 +2,41 @@ import CoreGraphics
 import Foundation
 import TVShellCore
 
+private struct KeywordAnimeSourceProvider: AnimeMediaSourceAdapter {
+    let id: String
+    let displayName: String
+    let resolverKind: AnimeResolverKind
+    private let resultsByKeyword: [String: [AnimeSearchResult]]
+    private let streamCandidates: [String: [AnimeStreamCandidate]]
+
+    init(
+        id: String,
+        displayName: String,
+        resultsByKeyword: [String: [AnimeSearchResult]],
+        streams: [String: [AnimeStreamCandidate]] = [:],
+        resolverKind: AnimeResolverKind = .http
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.resultsByKeyword = resultsByKeyword
+        self.streamCandidates = streams
+        self.resolverKind = resolverKind
+    }
+
+    func search(_ query: AnimeSearchQuery) async throws -> [AnimeSearchResult] {
+        let keyword = query.keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        return resultsByKeyword[keyword] ?? []
+    }
+
+    func episodes(for result: AnimeSearchResult) async throws -> [AnimeEpisode] {
+        result.episodes.sorted { $0.number < $1.number }
+    }
+
+    func streams(for episode: AnimeEpisode) async throws -> [AnimeStreamCandidate] {
+        (streamCandidates[episode.id] ?? []).sorted { $0.priority > $1.priority }
+    }
+}
+
 @main
 struct TVShellChecks {
     static func main() async throws {
@@ -31,6 +66,7 @@ struct TVShellChecks {
         try checkYouTubeEmbedPageIncludesOriginAndFallback()
         try checkYouTubeLayoutAndPlayerShell()
         try await checkBangumiYouTubeAnimeSourceFindsPlayableCandidates()
+        try await checkAnimeHomeProviderAggregatesDistinctTitles()
         try checkAnimekoStyleSourceCatalog()
         try await checkAnimeSourceRegistryUsesCatalog()
         try await checkSelectorAnimeSourceProvider()
@@ -685,6 +721,33 @@ struct TVShellChecks {
         try expect(streams.first?.quality == "YouTube", "bangumi youtube provider labels youtube source")
     }
 
+    static func checkAnimeHomeProviderAggregatesDistinctTitles() async throws {
+        let first = AnimeSearchResult(id: "frieren", title: "葬送的芙莉蓮", episodes: [])
+        let duplicate = AnimeSearchResult(id: "frieren-s2", title: "葬送的芙莉蓮 第二季", episodes: [])
+        let second = AnimeSearchResult(id: "toradora", title: "虎子", episodes: [])
+        let third = AnimeSearchResult(id: "gakkou", title: "女子高中生的虛度日常", episodes: [])
+        let provider = AnimeHomeSourceProvider(
+            base: KeywordAnimeSourceProvider(
+                id: "home-base",
+                displayName: "Home Base",
+                resultsByKeyword: [
+                    "葬送的芙莉蓮": [first, duplicate],
+                    "虎子": [second],
+                    "女子高中生": [third]
+                ],
+                streams: [:]
+            ),
+            homeKeywords: ["葬送的芙莉蓮", "虎子", "女子高中生"]
+        )
+
+        let home = try await provider.search(AnimeSearchQuery(keyword: ""))
+        let homeTitles = home.map(\.title)
+        try expect(homeTitles == ["葬送的芙莉蓮", "虎子", "女子高中生的虛度日常"], "anime home provider returns one distinct work per homepage keyword: \(homeTitles)")
+
+        let search = try await provider.search(AnimeSearchQuery(keyword: "葬送的芙莉蓮"))
+        try expect(search.map(\.title) == ["葬送的芙莉蓮", "葬送的芙莉蓮 第二季"], "anime home provider keeps full search results for explicit search")
+    }
+
     @MainActor
     static func checkAnimekoStyleSourceCatalog() throws {
         let sources = AnimeSourceCatalog.defaultSources
@@ -791,7 +854,7 @@ struct TVShellChecks {
             catalog: AnimeSourceCatalogState(definitions: AnimeSourceCatalog.defaultSources),
             youtubeCredentials: YouTubeCredentials(apiKey: "yt-key")
         )
-        try expect(factoryProvider.id == "catalog", "factory creates catalog-backed anime provider")
+        try expect(factoryProvider.id == "catalog-home", "factory creates homepage aggregator over catalog-backed anime provider")
     }
 
     static func checkSelectorAnimeSourceProvider() async throws {

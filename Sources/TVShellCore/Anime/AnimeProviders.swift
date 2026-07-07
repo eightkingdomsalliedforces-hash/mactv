@@ -60,6 +60,104 @@ public struct StaticAnimeSourceProvider: AnimeMediaSourceAdapter {
     }
 }
 
+public struct AnimeHomeSourceProvider: AnimeSourceProvider {
+    public let id: String
+    public let displayName: String
+
+    private let base: any AnimeSourceProvider
+    private let homeKeywords: [String]
+
+    public init(
+        base: any AnimeSourceProvider,
+        homeKeywords: [String] = AnimeSearchKeywordCatalog.defaultKeywords
+    ) {
+        self.base = base
+        self.homeKeywords = homeKeywords
+        id = "\(base.id)-home"
+        displayName = base.displayName
+    }
+
+    public func search(_ query: AnimeSearchQuery) async throws -> [AnimeSearchResult] {
+        let keyword = query.keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard keyword.isEmpty else {
+            return try await base.search(query)
+        }
+
+        var seenTitles = Set<String>()
+        var results: [AnimeSearchResult] = []
+        for homeKeyword in homeKeywords {
+            let candidates = try await base.search(AnimeSearchQuery(keyword: homeKeyword))
+            guard let best = bestHomeCandidate(from: candidates, keyword: homeKeyword) else {
+                continue
+            }
+            let normalized = normalizeTitle(best.title)
+            guard seenTitles.contains(normalized) == false else {
+                continue
+            }
+            seenTitles.insert(normalized)
+            results.append(best)
+        }
+        return results
+    }
+
+    public func episodes(for result: AnimeSearchResult) async throws -> [AnimeEpisode] {
+        try await base.episodes(for: result)
+    }
+
+    public func streams(for episode: AnimeEpisode) async throws -> [AnimeStreamCandidate] {
+        try await base.streams(for: episode)
+    }
+
+    private func bestHomeCandidate(from candidates: [AnimeSearchResult], keyword: String) -> AnimeSearchResult? {
+        var best: AnimeSearchResult?
+        var bestScore = Int.min
+        for candidate in candidates {
+            let candidateScore = score(candidate, keyword: keyword)
+            if candidateScore > bestScore {
+                best = candidate
+                bestScore = candidateScore
+            }
+        }
+        return best
+    }
+
+    private func score(_ result: AnimeSearchResult, keyword: String) -> Int {
+        var value = 0
+        if result.title.compare(keyword, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame {
+            value += 120
+        }
+        if result.title.localizedCaseInsensitiveContains(keyword) {
+            value += 40
+        }
+        if result.title.count <= keyword.count + 2 {
+            value += 20
+        }
+        if result.title.contains("第二季") || result.title.contains("第2季") || result.title.localizedCaseInsensitiveContains("Season 2") {
+            value -= 35
+        }
+        if let score = result.score {
+            value += Int(score * 10)
+        }
+        if result.coverURL != nil {
+            value += 8
+        }
+        if let rank = result.rank {
+            value += max(0, 30 - min(rank / 100, 30))
+        }
+        return value
+    }
+
+    private func normalizeTitle(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "第二季", with: "")
+            .replacingOccurrences(of: "第2季", with: "")
+            .replacingOccurrences(of: "Season 2", with: "", options: .caseInsensitive)
+            .replacingOccurrences(of: "S2", with: "", options: .caseInsensitive)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+    }
+}
+
 public struct StaticDanmakuProvider: DanmakuProvider {
     private let storedComments: [DanmakuComment]
 

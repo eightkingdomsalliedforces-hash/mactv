@@ -137,9 +137,10 @@ public enum AnimeSourceProviderFactory {
             )
         ] + selectorAdapters
         let registry = AnimeSourceRegistry(adapters: adapters)
-        return CatalogAnimeSourceProvider(
+        let catalogProvider = CatalogAnimeSourceProvider(
             catalog: catalog.includingDynamicDefinitions(selectorConfigs.map(\.catalogDefinition)),
             registry: registry
         )
+        return AnimeHomeSourceProvider(base: catalogProvider)
     }
 }
