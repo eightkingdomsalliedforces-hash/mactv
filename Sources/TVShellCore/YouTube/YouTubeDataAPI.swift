@@ -3,23 +3,35 @@ import Foundation
 public enum YouTubeDataAPI {
     public static let baseURL = URL(string: "https://www.googleapis.com/youtube/v3")!
 
+    public enum SearchProfile: Equatable, Sendable {
+        case general
+        case animeEpisode
+    }
+
     public static func searchRequest(
         query: String,
         credentials: YouTubeCredentials,
-        maxResults: Int = 20
+        maxResults: Int = 20,
+        profile: SearchProfile = .general
     ) throws -> AnimeHTTPRequest {
         guard credentials.isConfigured else {
             throw YouTubeAPIError.missingAPIKey
         }
 
         var components = URLComponents(url: baseURL.appending(path: "/search"), resolvingAgainstBaseURL: false)!
-        components.queryItems = [
+        var queryItems = [
             URLQueryItem(name: "part", value: "snippet"),
             URLQueryItem(name: "type", value: "video"),
             URLQueryItem(name: "maxResults", value: "\(max(1, min(maxResults, 50)))"),
             URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "videoEmbeddable", value: "true"),
+            URLQueryItem(name: "videoSyndicated", value: "true"),
             URLQueryItem(name: "key", value: credentials.apiKey)
         ]
+        if profile == .animeEpisode {
+            queryItems.append(URLQueryItem(name: "videoDuration", value: "long"))
+        }
+        components.queryItems = queryItems
 
         return AnimeHTTPRequest(
             method: "GET",

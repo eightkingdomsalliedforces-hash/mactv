@@ -68,59 +68,71 @@ public struct LauncherView: View {
             ZStack(alignment: .topLeading) {
                 heroBackground
 
-                ScrollView(.vertical) {
-                    VStack(alignment: .leading, spacing: 42 * metrics.scale) {
-                        topBar(metrics: metrics)
-                            .padding(.top, metrics.topPadding)
+                ScrollViewReader { scrollProxy in
+                    ScrollView(.vertical) {
+                        VStack(alignment: .leading, spacing: 42 * metrics.scale) {
+                            topBar(metrics: metrics)
+                                .padding(.top, metrics.topPadding)
 
-                        VStack(alignment: .leading, spacing: 14 * metrics.scale) {
-                            Text(focusedApp?.name ?? "TV Shell")
-                                .font(.system(size: metrics.heroTitleSize, weight: .bold))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.72)
-                            Text(heroSubtitle)
-                                .font(.system(size: metrics.heroSubtitleSize, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.68))
-                                .lineLimit(2)
-                                .minimumScaleFactor(0.76)
-                        }
-                        .padding(.top, 16 * metrics.scale)
-
-                        quickActionBar(metrics: metrics)
-
-                        if appState.watchingHistory.isEmpty == false {
-                            WatchHistoryRowView(entries: appState.watchingHistory, metrics: metrics)
-                        }
-
-                        VStack(alignment: .leading, spacing: metrics.rowSpacing) {
-                            ForEach(LauncherLayout.sections(for: appState.apps)) { section in
-                                LauncherRowView(section: section, focusedAppID: appState.focusedAppID, metrics: metrics)
+                            VStack(alignment: .leading, spacing: 14 * metrics.scale) {
+                                Text(focusedApp?.name ?? "TV Shell")
+                                    .font(.system(size: metrics.heroTitleSize, weight: .bold))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.72)
+                                Text(heroSubtitle)
+                                    .font(.system(size: metrics.heroSubtitleSize, weight: .medium))
+                                    .foregroundStyle(.white.opacity(0.68))
+                                    .lineLimit(2)
+                                    .minimumScaleFactor(0.76)
                             }
-                        }
-                        .scaleEffect(appState.displayScale.multiplier(), anchor: .topLeading)
+                            .padding(.top, 16 * metrics.scale)
 
-                        if let statusMessage = appState.statusMessage {
-                            Text(statusMessage)
-                                .font(.system(size: 24 * metrics.scale, weight: .semibold))
-                                .foregroundStyle(.white.opacity(0.82))
+                            quickActionBar(metrics: metrics)
+
+                            if appState.watchingHistory.isEmpty == false {
+                                WatchHistoryRowView(entries: appState.watchingHistory, metrics: metrics)
+                                    .id("launcher-history")
+                            }
+
+                            VStack(alignment: .leading, spacing: metrics.rowSpacing) {
+                                ForEach(LauncherLayout.sections(for: appState.apps)) { section in
+                                    LauncherRowView(section: section, focusedAppID: appState.focusedAppID, metrics: metrics)
+                                        .id("launcher-section-\(section.id)")
+                                }
+                            }
+                            .scaleEffect(appState.displayScale.multiplier(), anchor: .topLeading)
+
+                            if let statusMessage = appState.statusMessage {
+                                Text(statusMessage)
+                                    .font(.system(size: 24 * metrics.scale, weight: .semibold))
+                                    .foregroundStyle(.white.opacity(0.82))
+                                    .lineLimit(2)
+                                    .minimumScaleFactor(0.74)
+                                    .padding(.horizontal, 24 * metrics.scale)
+                                    .padding(.vertical, 16 * metrics.scale)
+                                    .liquidGlassCard(isFocused: true, cornerRadius: 20)
+                            }
+
+                            Text("方向鍵移動，OK 開啟，返回或 Home 回主畫面。")
+                                .font(.system(size: metrics.hintSize, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.62))
                                 .lineLimit(2)
-                                .minimumScaleFactor(0.74)
-                                .padding(.horizontal, 24 * metrics.scale)
-                                .padding(.vertical, 16 * metrics.scale)
-                                .liquidGlassCard(isFocused: true, cornerRadius: 20)
+                                .minimumScaleFactor(0.72)
+                                .padding(.bottom, 42 * metrics.scale)
                         }
-
-                        Text("方向鍵移動，OK 開啟，返回或 Home 回主畫面。")
-                            .font(.system(size: metrics.hintSize, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.62))
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.72)
-                            .padding(.bottom, 42 * metrics.scale)
+                        .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .topLeading)
+                        .padding(.horizontal, metrics.horizontalPadding)
                     }
-                    .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .topLeading)
-                    .padding(.horizontal, metrics.horizontalPadding)
+                    .scrollIndicators(.hidden)
+                    .onChange(of: appState.focusedAppID) { _, id in
+                        guard let sectionID = focusedSectionID(for: id) else {
+                            return
+                        }
+                        withAnimation(TVMotion.focus) {
+                            scrollProxy.scrollTo("launcher-section-\(sectionID)", anchor: .center)
+                        }
+                    }
                 }
-                .scrollIndicators(.hidden)
             }
         }
         .foregroundStyle(.white)
@@ -128,6 +140,15 @@ public struct LauncherView: View {
 
     private var focusedApp: TVAppProfile? {
         appState.apps.first { $0.id == appState.focusedAppID }
+    }
+
+    private func focusedSectionID(for appID: UUID?) -> String? {
+        guard let appID else {
+            return nil
+        }
+        return LauncherLayout.sections(for: appState.apps)
+            .first { section in section.apps.contains { $0.id == appID } }?
+            .id
     }
 
     private var heroSubtitle: String {

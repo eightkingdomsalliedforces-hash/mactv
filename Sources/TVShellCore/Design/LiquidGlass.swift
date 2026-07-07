@@ -10,15 +10,20 @@ public struct LiquidGlassCardModifier: ViewModifier {
     }
 
     public func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
         content
             .background(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                shape
                     .fill(.regularMaterial)
                     .overlay(baseFill)
                     .overlay(baseTint)
+                    .clipShape(shape)
             )
+            .clipShape(shape)
             .overlay(edgeHighlight)
             .overlay(specularHighlight)
+            .compositingGroup()
             .shadow(
                 color: isFocused ? .cyan.opacity(0.18) : .black.opacity(0.18),
                 radius: isFocused ? 24 : 8,

@@ -55,7 +55,8 @@ public struct BangumiYouTubeAnimeSourceProvider: AnimeMediaSourceAdapter {
         let request = try YouTubeDataAPI.searchRequest(
             query: youtubeSearchQuery(for: episode),
             credentials: youtubeCredentials,
-            maxResults: 10
+            maxResults: 10,
+            profile: .animeEpisode
         )
         let data = try await transport.data(for: request)
         return try YouTubeDataAPI.decodeSearchResponse(data).map { video in
@@ -69,6 +70,7 @@ public struct BangumiYouTubeAnimeSourceProvider: AnimeMediaSourceAdapter {
                 ]
             )
         }
+        .sorted { $0.priority > $1.priority }
     }
 
     private func episodes(for subject: BangumiSubject) -> [AnimeEpisode] {
@@ -94,23 +96,37 @@ public struct BangumiYouTubeAnimeSourceProvider: AnimeMediaSourceAdapter {
         if title.localizedCaseInsensitiveContains(episode.identity.subjectID) {
             value += 40
         }
-        if title.localizedCaseInsensitiveContains("第 \(episode.number)") ||
-            title.localizedCaseInsensitiveContains("第\(episode.number)") ||
-            title.localizedCaseInsensitiveContains("EP\(episode.number)") ||
-            title.localizedCaseInsensitiveContains("E\(episode.number)") {
-            value += 30
+        if matchesEpisodeNumber(title, episode: episode.number) {
+            value += 44
         }
         if title.localizedCaseInsensitiveContains("reaction") ||
             title.localizedCaseInsensitiveContains("解說") ||
             title.localizedCaseInsensitiveContains("預告") ||
-            title.localizedCaseInsensitiveContains("trailer") {
-            value -= 40
+            title.localizedCaseInsensitiveContains("trailer") ||
+            title.localizedCaseInsensitiveContains("shorts") ||
+            title.localizedCaseInsensitiveContains("short") ||
+            title.localizedCaseInsensitiveContains("精華") ||
+            title.localizedCaseInsensitiveContains("剪輯") ||
+            title.localizedCaseInsensitiveContains("片段") {
+            value -= 70
         }
         return value
     }
 
     private func youtubeSearchQuery(for episode: AnimeEpisode) -> String {
-        "\(episode.identity.subjectID) 第 \(episode.number) 話 full episode anime"
+        "\(episode.identity.subjectID) 第\(episode.number)話 EP\(episode.number) 完整版 動畫"
+    }
+
+    private func matchesEpisodeNumber(_ title: String, episode: Int) -> Bool {
+        [
+            "第 \(episode) 話",
+            "第\(episode)話",
+            "第 \(episode) 集",
+            "第\(episode)集",
+            "EP\(episode)",
+            "E\(episode)",
+            "Episode \(episode)"
+        ].contains { title.localizedCaseInsensitiveContains($0) }
     }
 }
 

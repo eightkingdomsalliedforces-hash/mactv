@@ -273,17 +273,18 @@ public struct AnimeRuntimeView: View {
 
     private func player(metrics: TVMetrics) -> some View {
         ZStack(alignment: .bottomLeading) {
-            if controller.state.isDanmakuVisible {
-                DanmakuOverlay(comments: controller.visibleDanmaku, metrics: metrics)
-                    .transition(.opacity)
-            }
-
             if let youtubeVideoID = controller.currentYouTubeVideoID {
                 YouTubePlayerView(videoID: youtubeVideoID)
                     .ignoresSafeArea()
             } else {
                 AnimePlayerSurface(player: controller.player)
                     .ignoresSafeArea()
+            }
+
+            if controller.state.isDanmakuVisible {
+                DanmakuOverlay(comments: controller.visibleDanmaku, metrics: metrics)
+                    .transition(.opacity)
+                    .zIndex(3)
             }
 
             VStack(alignment: .leading, spacing: 12 * metrics.scale) {
@@ -327,7 +328,7 @@ final class AnimeRuntimeController: ObservableObject {
     @Published private(set) var searchKeywordIndex = 0
     @Published private(set) var danmakuStatusText = "彈幕未載入"
     @Published private(set) var isKeyboardVisible = false
-    @Published private(set) var keyboardState = VirtualKeyboardState(text: "")
+    @Published private(set) var keyboardState = VirtualKeyboardState(text: "", layout: .zhuyin)
 
     private var sourceProvider: (any AnimeSourceProvider)?
     private var danmakuProvider: any DanmakuProvider
@@ -441,7 +442,7 @@ final class AnimeRuntimeController: ObservableObject {
         }
 
         if state.phase == .titles || state.phase == .details, command == .menu {
-            keyboardState = VirtualKeyboardState(text: currentQuery)
+            keyboardState = VirtualKeyboardState(text: currentQuery, layout: .zhuyin)
             isKeyboardVisible = true
             statusText = "動漫搜尋"
             return

@@ -17,8 +17,16 @@ public struct VirtualKeyboardView: View {
                 .ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: 22 * metrics.scale) {
-                Text(title)
-                    .font(.system(size: 42 * metrics.scale, weight: .bold))
+                HStack {
+                    Text(title)
+                        .font(.system(size: 42 * metrics.scale, weight: .bold))
+                    Spacer()
+                    Text(state.layout.title)
+                        .font(.system(size: 24 * metrics.scale, weight: .bold))
+                        .padding(.horizontal, 18 * metrics.scale)
+                        .padding(.vertical, 10 * metrics.scale)
+                        .liquidGlassCard(isFocused: false, cornerRadius: 16 * metrics.scale)
+                }
 
                 Text(state.text.isEmpty ? "輸入搜尋內容" : state.text)
                     .font(.system(size: 48 * metrics.scale, weight: .heavy, design: .rounded))
@@ -53,7 +61,7 @@ public struct VirtualKeyboardView: View {
             }
             .foregroundStyle(.white)
             .padding(36 * metrics.scale)
-            .frame(maxWidth: 980 * metrics.scale)
+                    .frame(maxWidth: 1120 * metrics.scale)
             .liquidGlassCard(isFocused: true, cornerRadius: 34 * metrics.scale)
             .padding(.horizontal, 56 * metrics.scale)
         }
@@ -65,7 +73,7 @@ public struct VirtualKeyboardView: View {
             68 * metrics.scale
         case .space:
             150 * metrics.scale
-        case .delete, .submit, .cancel:
+        case .delete, .submit, .cancel, .layoutSwitch:
             132 * metrics.scale
         }
     }

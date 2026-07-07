@@ -130,6 +130,26 @@ struct TVShellChecks {
         _ = submitKeyboard.apply(.right)
         try expect(submitKeyboard.focusedKey.label == "搜尋", "virtual keyboard can focus submit")
         try expect(submitKeyboard.apply(.select) == .submitted("frieren"), "virtual keyboard submits current text")
+
+        var zhuyinKeyboard = VirtualKeyboardState(layout: .zhuyin)
+        try expect(zhuyinKeyboard.focusedKey.label == "ㄅ", "zhuyin keyboard starts at bopomofo keys")
+        try expect(zhuyinKeyboard.apply(.select) == .textChanged, "zhuyin keyboard types focused bopomofo key")
+        try expect(zhuyinKeyboard.text == "ㄅ", "zhuyin keyboard appends bopomofo text")
+        _ = zhuyinKeyboard.apply(.down)
+        _ = zhuyinKeyboard.apply(.down)
+        _ = zhuyinKeyboard.apply(.down)
+        _ = zhuyinKeyboard.apply(.down)
+        _ = zhuyinKeyboard.apply(.down)
+        _ = zhuyinKeyboard.apply(.right)
+        _ = zhuyinKeyboard.apply(.right)
+        _ = zhuyinKeyboard.apply(.right)
+        _ = zhuyinKeyboard.apply(.right)
+        _ = zhuyinKeyboard.apply(.right)
+        _ = zhuyinKeyboard.apply(.right)
+        _ = zhuyinKeyboard.apply(.right)
+        try expect(zhuyinKeyboard.focusedKey.label == "ABC", "zhuyin keyboard exposes ABC switch")
+        try expect(zhuyinKeyboard.apply(.select) == .none, "layout switch does not submit text")
+        try expect(zhuyinKeyboard.layout == .latin, "zhuyin keyboard switches back to latin")
     }
 
     static func checkRemoteMappingStore() throws {
@@ -602,6 +622,8 @@ struct TVShellChecks {
         )
         try expect(request.url.absoluteString.contains("https://www.googleapis.com/youtube/v3/search"), "youtube search uses official data api")
         try expect(request.url.absoluteString.contains("type=video"), "youtube search filters videos")
+        try expect(request.url.absoluteString.contains("videoEmbeddable=true"), "youtube search asks for embeddable videos")
+        try expect(request.url.absoluteString.contains("videoSyndicated=true"), "youtube search asks for externally playable videos")
         try expect(request.url.absoluteString.contains("maxResults=12"), "youtube search includes max results")
         try expect(request.url.absoluteString.contains("key=abc123"), "youtube search includes api key")
 
@@ -688,6 +710,17 @@ struct TVShellChecks {
         {
           "items": [
             {
+              "id": { "videoId": "frierenShort" },
+              "snippet": {
+                "title": "葬送的芙莉蓮 shorts 精華片段",
+                "channelTitle": "剪輯頻道",
+                "description": "短影音",
+                "thumbnails": {
+                  "high": { "url": "https://example.com/short.jpg" }
+                }
+              }
+            },
+            {
               "id": { "videoId": "frieren01" },
               "snippet": {
                 "title": "葬送的芙莉蓮 第 1 話",
@@ -703,10 +736,12 @@ struct TVShellChecks {
         """.data(using: .utf8)!
         let bangumiRequest = try BangumiAPI.searchSubjectsRequest(keyword: "芙莉蓮")
         let youtubeRequest = try YouTubeDataAPI.searchRequest(
-            query: "葬送的芙莉蓮 第 1 話 full episode anime",
+            query: "葬送的芙莉蓮 第1話 EP1 完整版 動畫",
             credentials: YouTubeCredentials(apiKey: "yt-key"),
-            maxResults: 10
+            maxResults: 10,
+            profile: .animeEpisode
         )
+        try expect(youtubeRequest.url.absoluteString.contains("videoDuration=long"), "anime youtube search excludes shorts with long duration filter")
         let transport = StaticAnimeHTTPTransport(routes: [
             bangumiRequest.url.absoluteString: bangumiResponse,
             youtubeRequest.url.absoluteString: youtubeResponse
@@ -970,6 +1005,8 @@ struct TVShellChecks {
 
         let launcher = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Launcher/LauncherView.swift"))
         try expect(launcher.contains("ScrollView(.horizontal"), "launcher rows use horizontal scrolling instead of overflowing")
+        try expect(launcher.contains("ScrollViewReader"), "launcher keeps focused app rows visible after watch history appears")
+        try expect(launcher.contains("launcher-section-\\(section.id)"), "launcher sections expose stable scroll ids")
         try expect(launcher.contains(".scrollIndicators(.hidden)"), "launcher hides TV-unfriendly scroll indicators")
 
         for path in [
@@ -1019,11 +1056,15 @@ struct TVShellChecks {
         try expect(animeRuntime.contains("scrollTo(\"anime-title-\\(index)\""), "anime title focus movement scrolls to focused poster")
         try expect(animeRuntime.contains("scrollTo(\"anime-episode-\\(index)\""), "anime episode focus movement scrolls to focused episode")
         try expect(animeRuntime.contains(".animation(TVMotion.focus, value: comments)") == false, "danmaku overlay does not animate every comment refresh")
+        try expect(animeRuntime.contains("DanmakuOverlay(comments: controller.visibleDanmaku"), "anime player renders danmaku overlay")
+        try expect(animeRuntime.contains(".zIndex(3)"), "danmaku overlay is above player surfaces")
 
         let liquidGlass = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Design/LiquidGlass.swift"))
         try expect(liquidGlass.contains(".regularMaterial"), "liquid glass uses frosted glass material")
         try expect(liquidGlass.contains(".ultraThinMaterial") == false, "liquid glass avoids the previous ultra-thin material on every card")
         try expect(liquidGlass.contains("radius: isFocused ? 42") == false, "liquid glass avoids very large focus shadows")
+        try expect(liquidGlass.contains(".clipShape(shape)"), "liquid glass clips material to rounded shape")
+        try expect(liquidGlass.contains(".compositingGroup()"), "liquid glass composites rounded material without square corner artifacts")
     }
 }
 
