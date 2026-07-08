@@ -50,7 +50,8 @@ public struct BTFeedAnimeSourceProvider: AnimeMediaSourceAdapter {
                 identity: AnimeEpisodeIdentity(
                     providerID: id,
                     subjectID: displayTitle,
-                    episodeID: streamURL.absoluteString
+                    episodeID: "\(episodeNumber)",
+                    playbackURL: streamURL
                 )
             )
             return BTFeedRelease(title: displayTitle, rawTitle: rawTitle, episode: episode)
@@ -96,7 +97,7 @@ public struct BTFeedAnimeSourceProvider: AnimeMediaSourceAdapter {
     }
 
     public func streams(for episode: AnimeEpisode) async throws -> [AnimeStreamCandidate] {
-        guard let url = URL(string: episode.identity.episodeID) else {
+        guard let url = episode.identity.playbackURL ?? URL(string: episode.identity.episodeID) else {
             throw AnimeHTTPError.missingRoute("torrent stream url: \(episode.identity.episodeID)")
         }
         return [

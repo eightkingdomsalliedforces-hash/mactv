@@ -134,7 +134,7 @@ public struct SelectorAnimeSourceProvider: AnimeMediaSourceAdapter {
             }
 
             let detailHTML = try await html(for: detailURL)
-            let episodes = try parseEpisodes(html: detailHTML, subjectID: id, baseURL: detailURL)
+            let episodes = try parseEpisodes(html: detailHTML, subjectID: title, baseURL: detailURL)
             results.append(AnimeSearchResult(id: id, title: title, subtitle: displayName, episodes: episodes))
         }
 
@@ -149,7 +149,7 @@ public struct SelectorAnimeSourceProvider: AnimeMediaSourceAdapter {
     }
 
     public func streams(for episode: AnimeEpisode) async throws -> [AnimeStreamCandidate] {
-        guard let pageURL = URL(string: episode.identity.episodeID) else {
+        guard let pageURL = episode.identity.playbackURL ?? URL(string: episode.identity.episodeID) else {
             throw SelectorAnimeSourceError.noMatch("episode url")
         }
 
@@ -219,7 +219,8 @@ public struct SelectorAnimeSourceProvider: AnimeMediaSourceAdapter {
                 identity: AnimeEpisodeIdentity(
                     providerID: id,
                     subjectID: subjectID,
-                    episodeID: episodeURL.absoluteString
+                    episodeID: rawNumber,
+                    playbackURL: episodeURL
                 )
             )
         }

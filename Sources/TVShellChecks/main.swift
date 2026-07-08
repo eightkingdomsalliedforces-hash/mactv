@@ -955,6 +955,8 @@ struct TVShellChecks {
         guard let btEpisode = btResults.first?.episodes.first else {
             throw CheckFailure("missing BT feed episode")
         }
+        try expect(btEpisode.identity.episodeID == "1", "BT feed keeps episode id usable for danmaku lookup")
+        try expect(btEpisode.identity.playbackURL?.scheme == "magnet", "BT feed stores magnet in playback url")
         let btStreams = try await btProvider.streams(for: btEpisode)
         try expect(btStreams.first?.url.scheme == "magnet", "BT feed provider prefers magnet streams")
         try expect(btStreams.first?.headers["resolver"] == "torrent", "BT feed stream marks torrent resolver")
