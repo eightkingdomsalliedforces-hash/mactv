@@ -47,6 +47,18 @@ private struct KeywordAnimeSourceProvider: AnimeMediaSourceAdapter {
     }
 }
 
+private final class HandlerAnimeHTTPTransport: AnimeHTTPTransport, @unchecked Sendable {
+    private let handler: (AnimeHTTPRequest) throws -> Data
+
+    init(handler: @escaping (AnimeHTTPRequest) throws -> Data) {
+        self.handler = handler
+    }
+
+    func data(for request: AnimeHTTPRequest) async throws -> Data {
+        try handler(request)
+    }
+}
+
 @main
 struct TVShellChecks {
     static func main() async throws {
@@ -76,6 +88,7 @@ struct TVShellChecks {
         try checkYouTubeEmbedPageIncludesOriginAndFallback()
         try checkYouTubeLayoutAndPlayerShell()
         try await checkBangumiYouTubeAnimeSourceFindsPlayableCandidates()
+        try await checkBuiltInAnimekoStyleSources()
         try await checkAnimeHomeProviderAggregatesDistinctTitles()
         try checkAnimekoStyleSourceCatalog()
         try await checkAnimeSourceRegistryUsesCatalog()
@@ -868,6 +881,92 @@ struct TVShellChecks {
 
         let search = try await provider.search(AnimeSearchQuery(keyword: "葬送的芙莉蓮"))
         try expect(search.map(\.title) == ["葬送的芙莉蓮", "葬送的芙莉蓮 第二季"], "anime home provider keeps full search results for explicit search")
+    }
+
+    static func checkBuiltInAnimekoStyleSources() async throws {
+        let sources = AnimeSourceCatalog.defaultSources
+        try expect(sources.contains { $0.id == "mikan" && $0.title == "Mikan Project" }, "catalog includes built-in Mikan source")
+        try expect(sources.contains { $0.id == "dmhy" && $0.title == "動漫花園" }, "catalog includes built-in DMHY source")
+        try expect(sources.contains { $0.id == "jellyfin" && $0.title == "Jellyfin" }, "catalog includes Jellyfin source")
+        try expect(sources.contains { $0.id == "emby" && $0.title == "Emby" }, "catalog includes Emby source")
+        try expect(sources.first(where: { $0.id == "mikan" })?.defaultEnabled == false, "BT source is not enabled automatically")
+
+        let rss = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <rss><channel>
+          <item>
+            <title>[字幕組] 葬送的芙莉蓮 第01話 [1080p][繁中]</title>
+            <link>magnet:?xt=urn:btih:ABCDEF123456</link>
+            <enclosure url="https://mikan.example/frieren.torrent" />
+          </item>
+        </channel></rss>
+        """.data(using: .utf8)!
+        let btProvider = BTFeedAnimeSourceProvider(
+            id: "mikan",
+            displayName: "Mikan Project",
+            searchURLTemplate: "https://mikanani.me/RSS/Search?searchstr={keyword}",
+            transport: StaticAnimeHTTPTransport(routes: [
+                "https://mikanani.me/RSS/Search?searchstr=%E8%8A%99%E8%8E%89%E8%93%AE": rss
+            ])
+        )
+        let btResults = try await btProvider.search(AnimeSearchQuery(keyword: "芙莉蓮"))
+        try expect(btResults.first?.title.contains("葬送的芙莉蓮") == true, "Mikan RSS provider parses item titles")
+        guard let btEpisode = btResults.first?.episodes.first else {
+            throw CheckFailure("missing BT feed episode")
+        }
+        let btStreams = try await btProvider.streams(for: btEpisode)
+        try expect(btStreams.first?.url.scheme == "magnet", "BT feed provider prefers magnet streams")
+        try expect(btStreams.first?.headers["resolver"] == "torrent", "BT feed stream marks torrent resolver")
+
+        let mediaConfigs = MediaServerAnimeSourceConfig.environment([
+            "TVSHELL_JELLYFIN_BASE_URL": "https://media.example",
+            "TVSHELL_JELLYFIN_API_KEY": "jf-key",
+            "TVSHELL_JELLYFIN_USER_ID": "user-1",
+            "TVSHELL_EMBY_BASE_URL": "https://emby.example",
+            "TVSHELL_EMBY_API_KEY": "emby-key"
+        ])
+        try expect(mediaConfigs.map(\.id) == ["jellyfin", "emby"], "media server configs load Jellyfin and Emby from environment")
+
+        let mediaTransport = HandlerAnimeHTTPTransport { request in
+            let path = request.url.path
+            let query = request.url.query ?? ""
+            if path == "/Items", query.contains("IncludeItemTypes=Series") {
+                return """
+                {
+                  "Items": [
+                    {
+                      "Id": "series-1",
+                      "Name": "葬送的芙莉蓮",
+                      "Overview": "自有媒體庫",
+                      "ProductionYear": 2023
+                    }
+                  ]
+                }
+                """.data(using: .utf8)!
+            }
+            if path == "/Shows/series-1/Episodes" {
+                return """
+                {
+                  "Items": [
+                    {
+                      "Id": "episode-1",
+                      "Name": "第 1 話",
+                      "IndexNumber": 1
+                    }
+                  ]
+                }
+                """.data(using: .utf8)!
+            }
+            throw AnimeHTTPError.missingRoute(request.url.absoluteString)
+        }
+        let mediaProvider = MediaServerAnimeSourceProvider(config: mediaConfigs[0], transport: mediaTransport)
+        let mediaResults = try await mediaProvider.search(AnimeSearchQuery(keyword: "芙莉蓮"))
+        try expect(mediaResults.first?.coverURL?.absoluteString.contains("/Items/series-1/Images/Primary") == true, "media server provider exposes cover url")
+        let mediaEpisodes = try await mediaProvider.episodes(for: mediaResults[0])
+        try expect(mediaEpisodes.first?.title == "第 1 話", "media server provider loads episodes")
+        let mediaStreams = try await mediaProvider.streams(for: mediaEpisodes[0])
+        try expect(mediaStreams.first?.url.absoluteString.contains("/Videos/episode-1/stream.mp4") == true, "media server provider creates direct stream url")
+        try expect(mediaStreams.first?.headers["X-Emby-Token"] == "jf-key", "media server stream carries auth header")
     }
 
     @MainActor

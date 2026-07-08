@@ -214,20 +214,38 @@ public enum AnimeSourceProviderFactory {
         catalog: AnimeSourceCatalogState,
         youtubeCredentials: YouTubeCredentials = .environment(),
         transport: any AnimeHTTPTransport = URLSessionAnimeHTTPTransport(),
-        selectorConfigs: [SelectorAnimeSourceConfig] = (try? SelectorAnimeSourceConfig.environment()) ?? []
+        selectorConfigs: [SelectorAnimeSourceConfig] = (try? SelectorAnimeSourceConfig.environment()) ?? [],
+        mediaServerConfigs: [MediaServerAnimeSourceConfig] = MediaServerAnimeSourceConfig.environment()
     ) -> any AnimeSourceProvider {
         let selectorAdapters = selectorConfigs.map { config in
             SelectorAnimeSourceProvider(config: config, transport: transport) as any AnimeMediaSourceAdapter
+        }
+        let mediaServerAdapters = mediaServerConfigs.map { config in
+            MediaServerAnimeSourceProvider(config: config, transport: transport) as any AnimeMediaSourceAdapter
         }
         let adapters: [any AnimeMediaSourceAdapter] = [
             BangumiYouTubeAnimeSourceProvider(
                 youtubeCredentials: youtubeCredentials,
                 transport: transport
+            ),
+            BTFeedAnimeSourceProvider(
+                id: "mikan",
+                displayName: "Mikan Project",
+                searchURLTemplate: "https://mikanani.me/RSS/Search?searchstr={keyword}",
+                transport: transport
+            ),
+            BTFeedAnimeSourceProvider(
+                id: "dmhy",
+                displayName: "動漫花園",
+                searchURLTemplate: "https://share.dmhy.org/topics/rss/rss.xml?keyword={keyword}",
+                transport: transport
             )
-        ] + selectorAdapters
+        ] + mediaServerAdapters + selectorAdapters
         let registry = AnimeSourceRegistry(adapters: adapters)
         let catalogProvider = CatalogAnimeSourceProvider(
-            catalog: catalog.includingDynamicDefinitions(selectorConfigs.map(\.catalogDefinition)),
+            catalog: catalog
+                .includingDynamicDefinitions(mediaServerConfigs.map(\.catalogDefinition))
+                .includingDynamicDefinitions(selectorConfigs.map(\.catalogDefinition)),
             registry: registry
         )
         return AnimeHomeSourceProvider(base: catalogProvider)

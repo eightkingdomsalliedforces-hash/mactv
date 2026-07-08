@@ -600,6 +600,15 @@ final class AnimeRuntimeController: ObservableObject {
             return
         }
 
+        if stream.url.scheme == "magnet" || stream.headers["resolver"] == "torrent" {
+            currentYouTubeVideoID = nil
+            player.pause()
+            player.replaceCurrentItem(with: nil)
+            subtitleStatusText = "字幕：等待 BT 引擎"
+            statusText = "已找到 BT 來源：\(stream.quality)。下一階段接入 BT 邊下邊播引擎後可直接播放。"
+            return
+        }
+
         currentYouTubeVideoID = nil
         subtitleStatusText = "字幕：正在尋找中文軌"
         let item = AVPlayerItem(url: stream.url)

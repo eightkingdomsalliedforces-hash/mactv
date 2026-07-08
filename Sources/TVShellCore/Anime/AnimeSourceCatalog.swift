@@ -185,6 +185,10 @@ public struct AnimeSourceCatalogState: Codable, Equatable, Sendable {
 public enum AnimeSourceCatalog {
     public static let defaultSources: [AnimeSourceDefinition] = [
         source("bangumi-youtube", "Bangumi + YouTube", "BY", ["官方 API"]),
+        source("mikan", "Mikan Project", "MK", ["RSS / BT"], health: .available, defaultEnabled: false),
+        source("dmhy", "動漫花園", "花", ["RSS / BT"], health: .available, defaultEnabled: false),
+        source("jellyfin", "Jellyfin", "JF", ["自有媒體庫"], health: .available, defaultEnabled: false),
+        source("emby", "Emby", "E", ["自有媒體庫"], health: .available, defaultEnabled: false),
         pendingSource("girigiri", "girigiri 愛動漫", "G", ["在線"]),
         source("omofun111", "omofun111", "O", ["授權 Adapter", "WebView 入口"], health: .needsAdapter, defaultEnabled: false),
         pendingSource("e-acg", "E-ACG", "EA", ["E-ACG"]),
