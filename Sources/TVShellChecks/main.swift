@@ -93,8 +93,10 @@ struct TVShellChecks {
         try await checkBangumiYouTubeAnimeSourceFindsPlayableCandidates()
         try await checkBuiltInAnimekoStyleSources()
         try await checkAniSubsBTSubscriptionProvider()
+        try await checkAniSubsCSS1SubscriptionProvider()
         try checkAnimeEpisodeGridLayout()
         try checkTorrentPlaybackEngine()
+        try checkInternalVLCPlaybackStrategy()
         try await checkAnimeHomeProviderAggregatesDistinctTitles()
         try checkAnimekoStyleSourceCatalog()
         try await checkAnimeSourceRegistryUsesCatalog()
@@ -1278,6 +1280,73 @@ struct TVShellChecks {
         try expect(streams.first?.headers["resolver"] == "torrent", "ani-subs stream marks torrent resolver")
     }
 
+    static func checkAniSubsCSS1SubscriptionProvider() async throws {
+        let subscriptionURL = URL(string: "https://sub.example/css1.json")!
+        let subscription = """
+        {
+          "exportedMediaSourceDataList": {
+            "mediaSources": [
+              {
+                "factoryId": "web-selector",
+                "version": 2,
+                "arguments": {
+                  "name": "omofun111",
+                  "searchConfig": {
+                    "searchUrl": "https://web.example/search?wd={keyword}",
+                    "selectorSubjectFormatA": {
+                      "selectLists": ".module-card-item>.module-card-item-info>.module-card-item-title>a"
+                    },
+                    "selectorChannelFormatFlattened": {
+                      "selectEpisodeLists": ".module-play-list-content",
+                      "selectEpisodesFromList": "a",
+                      "matchEpisodeSortFromName": "第\\\\s*(?<ep>.+)\\\\s*[话集]"
+                    },
+                    "matchVideo": {
+                      "matchVideoUrl": "url=(?<v>http(s)?:\\\\/\\\\/.+\\\\.(mp4|m3u8|flv|mkv))|(^http(s)?:\\\\/\\\\/.+\\\\.(mp4|m3u8|flv|mkv))"
+                    }
+                  }
+                }
+              },
+              {
+                "factoryId": "rss",
+                "version": 1,
+                "arguments": {
+                  "name": "BT Source",
+                  "searchConfig": { "searchUrl": "https://bt.example/rss?q={keyword}" }
+                }
+              }
+            ]
+          }
+        }
+        """.data(using: .utf8)!
+        let searchHTML = """
+        <div class="module-card-item"><div class="module-card-item-info"><div class="module-card-item-title"><a href="/show/frieren">葬送的芙莉蓮</a></div></div></div>
+        """.data(using: .utf8)!
+        let detailHTML = """
+        <div class="module-play-list-content">
+          <a href="/watch/frieren-1">第 1 話</a>
+          <a href="/watch/frieren-2">第 2 話</a>
+        </div>
+        """.data(using: .utf8)!
+        let watchHTML = #"var player = {"url":"https://cdn.example/frieren-1.mkv"};"#.data(using: .utf8)!
+        let transport = StaticAnimeHTTPTransport(routes: [
+            subscriptionURL.absoluteString: subscription,
+            "https://web.example/search?wd=%E8%8A%99%E8%8E%89%E8%93%AE": searchHTML,
+            "https://web.example/show/frieren": detailHTML,
+            "https://web.example/watch/frieren-1": watchHTML
+        ])
+        let provider = AniSubsCSS1SubscriptionProvider(subscriptionURL: subscriptionURL, transport: transport)
+        let results = try await provider.search(AnimeSearchQuery(keyword: "芙莉蓮"))
+        try expect(results.first?.title == "葬送的芙莉蓮", "css1 provider parses web-selector search result")
+        try expect(results.first?.episodes.count == 2, "css1 provider parses episode list")
+        guard let episode = results.first?.episodes.first else {
+            throw CheckFailure("missing css1 episode")
+        }
+        let streams = try await provider.streams(for: episode)
+        try expect(streams.first?.url.absoluteString == "https://cdn.example/frieren-1.mkv", "css1 provider parses nested video url")
+        try expect(streams.first?.headers["resolver"] == "web-selector", "css1 stream marks web selector resolver")
+    }
+
     static func checkTorrentPlaybackEngine() throws {
         let stream = AnimeStreamCandidate(
             url: URL(string: "magnet:?xt=urn:btih:ABCDEF1234567890&dn=Frieren")!,
@@ -1316,6 +1385,18 @@ struct TVShellChecks {
         try expect(engineSource.contains("terminationHandler"), "torrent playback engine records aria2 termination instead of waiting silently")
         try expect(engineSource.contains("lastErrorOutput"), "torrent playback engine exposes aria2 stderr when BT cannot start")
         try expect(engineSource.contains("protocol TorrentPlaybackEngine"), "torrent playback engine can be swapped for a future libtorrent backend")
+    }
+
+    static func checkInternalVLCPlaybackStrategy() throws {
+        try expect(AnimePlaybackRenderer.renderer(for: URL(string: "https://cdn.example/movie.mp4")!) == .avPlayer, "mp4 uses native AVPlayer")
+        try expect(AnimePlaybackRenderer.renderer(for: URL(fileURLWithPath: "/tmp/movie.mkv")) == .vlc, "mkv uses internal VLC renderer")
+        try expect(AnimePlaybackRenderer.renderer(for: URL(fileURLWithPath: "/tmp/movie.avi")) == .vlc, "avi uses internal VLC renderer")
+        try expect(AnimePlaybackRenderer.renderer(for: URL(fileURLWithPath: "/tmp/movie.webm")) == .vlc, "webm uses internal VLC renderer")
+
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        let animeRuntime = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Anime/AnimeRuntimeView.swift"))
+        try expect(animeRuntime.contains("InternalVLCPlayerSurface"), "anime runtime includes an internal VLC player surface")
+        try expect(animeRuntime.contains("NSWorkspace.shared.open") == false, "unsupported anime containers are not opened by random system apps")
     }
 
     static func checkAnimeEpisodeGridLayout() throws {
@@ -1683,8 +1764,8 @@ struct TVShellChecks {
         try expect(animeRuntime.contains("LazyVStack"), "anime episode grid uses manual rows instead of LazyVGrid diffing")
         try expect(animeRuntime.contains("lineLimit(2)") && animeRuntime.contains("animeHeader"), "anime headers constrain long BT titles")
         try expect(animeRuntime.contains("downloadProgress"), "anime player exposes torrent download progress")
-        try expect(animeRuntime.contains("nativePlayableURL"), "anime player avoids handing unsupported files to AVPlayer")
-        try expect(animeRuntime.contains("openExternalPlayer"), "anime player can fall back to an external player for unsupported anime containers")
+        try expect(animeRuntime.contains("AnimePlaybackRenderer.renderer"), "anime player chooses AVPlayer or internal VLC by media format")
+        try expect(animeRuntime.contains("InternalVLCPlayerSurface"), "anime player can use an internal VLC surface for unsupported anime containers")
         try expect(animeRuntime.contains("settings.density"), "danmaku overlay uses the configured density")
         try expect(animeRuntime.contains("settings.speedScale"), "danmaku overlay uses the configured speed")
         try expect(animeRuntime.contains("settings.opacity"), "danmaku overlay uses the configured opacity")

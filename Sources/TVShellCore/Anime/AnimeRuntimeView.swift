@@ -340,6 +340,14 @@ public struct AnimeRuntimeView: View {
                     }
                 )
                     .ignoresSafeArea()
+            } else if let vlcURL = controller.currentVLCURL {
+                InternalVLCPlayerSurface(
+                    url: vlcURL,
+                    onStatus: { status in
+                        controller.updateInternalVLCStatus(status)
+                    }
+                )
+                    .ignoresSafeArea()
             } else {
                 AnimePlayerSurface(player: controller.player)
                     .ignoresSafeArea()
@@ -400,6 +408,7 @@ final class AnimeRuntimeController: ObservableObject {
     @Published private(set) var statusText = "正在載入動畫源..."
     @Published private(set) var visibleDanmaku: [DanmakuComment] = []
     @Published private(set) var currentYouTubeVideoID: String?
+    @Published private(set) var currentVLCURL: URL?
     @Published private(set) var currentYouTubeResumeTime: Double = 0
     @Published private(set) var danmakuStatusText = "彈幕未載入"
     @Published private(set) var subtitleStatusText = "字幕：中文字幕優先"
@@ -516,6 +525,7 @@ final class AnimeRuntimeController: ObservableObject {
         player.pause()
         player.replaceCurrentItem(with: nil)
         currentYouTubeVideoID = nil
+        currentVLCURL = nil
         currentYouTubeResumeTime = 0
         isDanmakuClockRunning = false
         hidePlayerHUDTask?.cancel()
@@ -761,6 +771,7 @@ final class AnimeRuntimeController: ObservableObject {
         lastRecordedTime = -1
         if stream.url.scheme == "youtube" {
             currentYouTubeVideoID = stream.url.host ?? stream.url.absoluteString.replacingOccurrences(of: "youtube://", with: "")
+            currentVLCURL = nil
             currentYouTubeResumeTime = resumeTime(for: watchMediaID(for: episode))
             subtitleStatusText = "字幕：YouTube 中文字幕優先"
             if currentYouTubeResumeTime > 1 {
@@ -774,6 +785,7 @@ final class AnimeRuntimeController: ObservableObject {
 
         if stream.url.scheme == "magnet" || stream.headers["resolver"] == "torrent" {
             currentYouTubeVideoID = nil
+            currentVLCURL = nil
             currentYouTubeResumeTime = 0
             isDanmakuClockRunning = false
             player.pause()
@@ -785,6 +797,7 @@ final class AnimeRuntimeController: ObservableObject {
         }
 
         currentYouTubeVideoID = nil
+        currentVLCURL = nil
         currentYouTubeResumeTime = 0
         playAVURL(stream.url)
     }
@@ -803,6 +816,7 @@ final class AnimeRuntimeController: ObservableObject {
                 }
             }
             currentYouTubeVideoID = nil
+            currentVLCURL = nil
             subtitleStatusText = "字幕：正在尋找中文軌"
             statusText = "BT 已開始邊下邊播：\(fileURL.lastPathComponent)"
             playAVURL(fileURL)
@@ -872,8 +886,8 @@ final class AnimeRuntimeController: ObservableObject {
     }
 
     private func playAVURL(_ url: URL) {
-        guard let playableURL = nativePlayableURL(url) else {
-            openExternalPlayer(url, reason: "此格式需要外部播放器")
+        guard AnimePlaybackRenderer.renderer(for: url) == .avPlayer else {
+            playInternalVLCURL(url)
             return
         }
 
@@ -881,7 +895,7 @@ final class AnimeRuntimeController: ObservableObject {
         let resumeTime = currentPlayingEpisode
             .map(watchMediaID(for:))
             .map(resumeTime(for:)) ?? 0
-        let item = AVPlayerItem(url: playableURL)
+        let item = AVPlayerItem(url: url)
         itemObserver?.invalidate()
         itemObserver = item.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
             Task { @MainActor in
@@ -893,11 +907,7 @@ final class AnimeRuntimeController: ObservableObject {
                     }
                     self?.player.play()
                 } else if case .failed = item.status {
-                    if let asset = item.asset as? AVURLAsset {
-                        self?.openExternalPlayer(asset.url, reason: item.error?.localizedDescription ?? "原生播放器無法播放此來源")
-                    } else {
-                        self?.statusText = item.error?.localizedDescription ?? "動畫播放失敗。"
-                    }
+                    self?.statusText = item.error?.localizedDescription ?? "動畫播放失敗。"
                 }
             }
         }
@@ -908,32 +918,19 @@ final class AnimeRuntimeController: ObservableObject {
         installTimeObserverIfNeeded()
     }
 
-    private func nativePlayableURL(_ url: URL) -> URL? {
-        guard url.isFileURL || url.scheme == "http" || url.scheme == "https" else {
-            return nil
-        }
-
-        let compatibleExtensions = Set(["mp4", "m4v", "mov", "m3u8", "mp3", "aac"])
-        let pathExtension = url.pathExtension.lowercased()
-        if pathExtension.isEmpty {
-            return url
-        }
-        return compatibleExtensions.contains(pathExtension) ? url : nil
-    }
-
-    private func openExternalPlayer(_ url: URL, reason: String) {
+    private func playInternalVLCURL(_ url: URL) {
         player.pause()
         player.replaceCurrentItem(with: nil)
-        isDanmakuClockRunning = false
-        mediaState = MediaControlState(isPlaying: false)
-        subtitleStatusText = "字幕：外部播放器"
+        currentYouTubeVideoID = nil
+        currentVLCURL = url
+        isDanmakuClockRunning = true
+        mediaState = MediaControlState(isPlaying: true)
+        subtitleStatusText = "字幕：內建 VLC"
+        statusText = "正在使用內建 VLC 播放：\(url.lastPathComponent)"
+    }
 
-        let didOpen = NSWorkspace.shared.open(url)
-        if didOpen {
-            statusText = "\(reason)：已交給 macOS 外部播放器。Back 可回選集，Home 可回主畫面。"
-        } else {
-            statusText = "\(reason)：macOS 找不到能開啟 \(url.lastPathComponent) 的播放器。建議安裝 IINA 或 VLC。"
-        }
+    func updateInternalVLCStatus(_ status: String) {
+        statusText = status
     }
 
     private func selectChineseSubtitleIfAvailable(for item: AVPlayerItem) async {
@@ -1277,6 +1274,173 @@ private struct AnimePlayerSurface: NSViewRepresentable {
     func updateNSView(_ view: AVPlayerView, context: Context) {
         if view.player !== player {
             view.player = player
+        }
+    }
+}
+
+private struct InternalVLCPlayerSurface: NSViewRepresentable {
+    let url: URL
+    let onStatus: @MainActor (String) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onStatus: onStatus)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.black.cgColor
+        context.coordinator.play(url: url, in: view)
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        context.coordinator.updateStatusHandler(onStatus)
+        context.coordinator.play(url: url, in: view)
+    }
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+        coordinator.stop()
+    }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        private var player: NSObject?
+        private var media: NSObject?
+        private var currentURL: URL?
+        private var statusHandler: @MainActor (String) -> Void
+        private var commandObserver: NSObjectProtocol?
+        private var isPlaying = false
+
+        init(onStatus: @escaping @MainActor (String) -> Void) {
+            statusHandler = onStatus
+            super.init()
+            commandObserver = NotificationCenter.default.addObserver(
+                forName: .tvShellRuntimeCommand,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                guard let command = notification.object as? RemoteCommand else {
+                    return
+                }
+                Task { @MainActor [weak self] in
+                    self?.handle(command)
+                }
+            }
+        }
+
+        deinit {
+            MainActor.assumeIsolated {
+                player?.perform(NSSelectorFromString("stop"))
+                if let commandObserver {
+                    NotificationCenter.default.removeObserver(commandObserver)
+                }
+            }
+        }
+
+        func updateStatusHandler(_ onStatus: @escaping @MainActor (String) -> Void) {
+            statusHandler = onStatus
+        }
+
+        func play(url: URL, in view: NSView) {
+            if currentURL == url, player != nil {
+                return
+            }
+            currentURL = url
+
+            guard loadVLCKitIfNeeded() else {
+                report("內建 VLC 引擎尚未打包：請把 VLCKit.framework 放到 app 的 Contents/Frameworks。")
+                return
+            }
+            guard let playerClass = vlcClass(named: "VLCMediaPlayer"),
+                  let mediaClass = vlcClass(named: "VLCMedia"),
+                  let newMedia = mediaClass.perform(NSSelectorFromString("mediaWithURL:"), with: url)?.takeUnretainedValue() as? NSObject
+            else {
+                report("內建 VLC 引擎載入失敗：找不到 VLCMediaPlayer 或 VLCMedia。")
+                return
+            }
+
+            let initializedPlayer = playerClass.init()
+            player?.perform(NSSelectorFromString("stop"))
+            player = initializedPlayer
+            media = newMedia
+            initializedPlayer.setValue(view, forKey: "drawable")
+            initializedPlayer.setValue(newMedia, forKey: "media")
+            initializedPlayer.perform(NSSelectorFromString("play"))
+            isPlaying = true
+            report("內建 VLC 播放中：\(url.lastPathComponent)")
+        }
+
+        func stop() {
+            player?.perform(NSSelectorFromString("stop"))
+            player = nil
+            media = nil
+            currentURL = nil
+            isPlaying = false
+        }
+
+        private func handle(_ command: RemoteCommand) {
+            switch command {
+            case .playPause, .select:
+                togglePlayback()
+            case .left, .rewind:
+                seek(by: -15)
+            case .right, .fastForward:
+                seek(by: 15)
+            case .back:
+                player?.perform(NSSelectorFromString("stop"))
+                isPlaying = false
+            default:
+                break
+            }
+        }
+
+        private func togglePlayback() {
+            if isPlaying {
+                player?.perform(NSSelectorFromString("pause"))
+                isPlaying = false
+                report("內建 VLC 已暫停")
+            } else {
+                player?.perform(NSSelectorFromString("play"))
+                isPlaying = true
+                report("內建 VLC 播放中")
+            }
+        }
+
+        private func seek(by seconds: Int) {
+            guard let player else {
+                return
+            }
+            let current = (player.value(forKey: "time") as? NSNumber)?.intValue ?? 0
+            player.setValue(NSNumber(value: max(0, current + seconds * 1000)), forKey: "time")
+            report(seconds > 0 ? "內建 VLC 快轉 15 秒" : "內建 VLC 倒退 15 秒")
+        }
+
+        private func loadVLCKitIfNeeded() -> Bool {
+            if vlcClass(named: "VLCMediaPlayer") != nil {
+                return true
+            }
+            let candidates = [
+                Bundle.main.privateFrameworksURL?.appendingPathComponent("VLCKit.framework"),
+                Bundle.main.bundleURL.appendingPathComponent("Contents/Frameworks/VLCKit.framework"),
+                URL(fileURLWithPath: "/Library/Frameworks/VLCKit.framework"),
+                URL(fileURLWithPath: "/Applications/VLC.app/Contents/Frameworks/VLCKit.framework")
+            ].compactMap(\.self)
+
+            for url in candidates where FileManager.default.fileExists(atPath: url.path) {
+                if Bundle(url: url)?.load() == true, vlcClass(named: "VLCMediaPlayer") != nil {
+                    return true
+                }
+            }
+            return false
+        }
+
+        private func vlcClass(named name: String) -> NSObject.Type? {
+            (NSClassFromString(name) ?? NSClassFromString("VLCKit.\(name)")) as? NSObject.Type
+        }
+
+        private func report(_ status: String) {
+            statusHandler(status)
         }
     }
 }

@@ -277,7 +277,8 @@ public enum AnimeSourceProviderFactory {
                 searchURLTemplate: "https://share.dmhy.org/topics/rss/rss.xml?keyword={keyword}",
                 transport: transport
             ),
-            AniSubsBTSubscriptionProvider(transport: transport)
+            AniSubsBTSubscriptionProvider(transport: transport),
+            AniSubsCSS1SubscriptionProvider(transport: transport)
         ] + mediaServerAdapters + selectorAdapters
         let registry = AnimeSourceRegistry(adapters: adapters)
         let catalogProvider = CatalogAnimeSourceProvider(

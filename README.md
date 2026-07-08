@@ -72,6 +72,21 @@ git push origin v0.1.0
 
 workflow 會打包 `TVShell` release binary；`main` 會更新 `latest` release，`v*` tag 會發布到對應版本的 GitHub Release。
 
+## 內建播放器
+
+動漫播放會依格式自動選擇播放核心：
+
+- `mp4`、`m4v`、`mov`、`m3u8` 等 AVFoundation 原生格式會走 `AVPlayer`。
+- `mkv`、`avi`、`webm`、`flv`、`wmv`、`ts`、`m2ts` 會走內建 VLC 播放 surface，不再交給 macOS 外部 App，避免誤開 Baidu Netdisk 或其他程式。
+
+內建 VLC surface 會動態載入 `VLCKit.framework`，release app 請把 framework 放在：
+
+```text
+MacTV.app/Contents/Frameworks/VLCKit.framework
+```
+
+若本機已安裝全域 `/Library/Frameworks/VLCKit.framework` 或 VLC.app 內含 VLCKit，也會作為開發時 fallback。遙控器的播放/暫停、OK、左右快轉/倒退會同步控制 VLC surface。
+
 ## API 與環境變數
 
 ### YouTube
@@ -177,7 +192,7 @@ omofun111 如果你有授權 API 或 token，請看 [`docs/omofun111-api-adapter
 - `Mikan Project`：RSS/BT 搜尋來源，預設不自動啟用。可在動漫來源頁啟用；會解析磁力/種子候選並交給 BT 邊下邊播流程。
 - `動漫花園`：RSS/BT 搜尋來源，預設不自動啟用；同樣提供 torrent 候選。
 - `ani-subs BT 訂閱`：讀取 animeko 相容 `bt1.json` 影音源訂閱，預設不自動啟用。舊設定檔若缺少此來源，啟動時會自動補回。
-- `ani-subs CSS1`：預留 animeko 相容 `css1.json` web-selector 來源入口，預設不自動啟用；完整 CSS selector 解析器會在後續接入。
+- `ani-subs CSS1`：讀取 animeko 相容 `css1.json` web-selector 來源，預設不自動啟用。已支援搜尋頁、選集頁、播放頁中的 mp4/m3u8/flv/mkv URL 解析；需要 Cloudflare、驗證碼、登入或 DRM 的站點會自動略過。
 - `Jellyfin`：自有媒體庫來源。設定環境變數後會自動註冊並可啟用：
 
 ```bash
