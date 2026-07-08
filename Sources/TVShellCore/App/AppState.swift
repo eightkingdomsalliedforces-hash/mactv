@@ -25,13 +25,28 @@ public final class AppState: ObservableObject {
     @Published public var watchingHistory: [WatchHistoryEntry] = []
 
     private let nativeRuntime = NativeAppRuntime()
+    private let settingsStore: AppSettingsStore?
     private nonisolated(unsafe) var exitObserver: NSObjectProtocol?
     private nonisolated(unsafe) var historyObserver: NSObjectProtocol?
 
-    public init(apps: [TVAppProfile] = SeedApps.defaultApps) {
-        self.apps = apps
-        animeSourceCatalog = AnimeSourceCatalogState(definitions: AnimeSourceCatalog.defaultSources)
-        focusedAppID = apps.first?.id
+    public init(apps: [TVAppProfile] = SeedApps.defaultApps, settingsStore: AppSettingsStore? = nil) {
+        self.settingsStore = settingsStore
+        let loadedSnapshot: AppSettingsSnapshot?
+        if let settingsStore {
+            loadedSnapshot = try? settingsStore.load()
+        } else {
+            loadedSnapshot = nil
+        }
+        let restoredApps = loadedSnapshot?.apps.isEmpty == false ? loadedSnapshot?.apps : apps
+        self.apps = restoredApps ?? apps
+        animeSourceCatalog = loadedSnapshot?.animeSourceCatalog ?? AnimeSourceCatalogState(definitions: AnimeSourceCatalog.defaultSources)
+        displayScale = loadedSnapshot?.displayScale ?? .auto
+        wallpaperSource = loadedSnapshot?.wallpaperSource ?? .builtIn(.aurora)
+        webRemoteMode = loadedSnapshot?.webRemoteMode ?? .mouse
+        webZoom = loadedSnapshot?.webZoom ?? 1.25
+        videoSourceLabel = loadedSnapshot?.videoSourceLabel ?? "內建示範影片"
+        watchingHistory = loadedSnapshot?.watchingHistory ?? []
+        focusedAppID = self.apps.first?.id
         focusedAnimeSourceID = animeSourceCatalog.focusedID
         exitObserver = NotificationCenter.default.addObserver(
             forName: .tvShellRequestLauncher,
@@ -74,6 +89,24 @@ public final class AppState: ObservableObject {
         if watchingHistory.count > 24 {
             watchingHistory = Array(watchingHistory.prefix(24))
         }
+        saveSettings()
+    }
+
+    public func saveSettings() {
+        guard let settingsStore else {
+            return
+        }
+        let snapshot = AppSettingsSnapshot(
+            apps: apps,
+            displayScale: displayScale,
+            wallpaperSource: wallpaperSource,
+            webRemoteMode: webRemoteMode,
+            webZoom: webZoom,
+            videoSourceLabel: videoSourceLabel,
+            animeSourceCatalog: animeSourceCatalog,
+            watchingHistory: watchingHistory
+        )
+        try? settingsStore.save(snapshot)
     }
 
     public func handle(_ command: RemoteCommand) {
@@ -119,6 +152,7 @@ public final class AppState: ObservableObject {
 
         if case .web = activeRuntime, command == .menu {
             webRemoteMode = webRemoteMode.next
+            saveSettings()
             statusMessage = "網頁模式：\(webRemoteMode.title)"
             NotificationCenter.default.post(
                 name: .tvShellRuntimeCommand,
@@ -175,7 +209,9 @@ public final class AppState: ObservableObject {
             webZoom = min(max((webZoom + delta) * 10, 8), 24) / 10
         case .videoSource:
             chooseVideoFile()
+            return
         }
+        saveSettings()
     }
 
     private func chooseVideoFile() {
@@ -212,6 +248,7 @@ public final class AppState: ObservableObject {
         videoSourceLabel = label
         statusMessage = "影片來源：\(label)"
         focusedAppID = apps[index].id
+        saveSettings()
     }
 
     private func moveFocusedApp(_ command: RemoteCommand) {
@@ -299,6 +336,7 @@ public final class AppState: ObservableObject {
                 var catalog = AppCatalog(apps: apps)
                 catalog.toggleVisibility(for: focusedManagementAppID)
                 apps = catalog.apps
+                saveSettings()
             }
         case .home, .back:
             activeRuntime = .launcher
@@ -327,6 +365,7 @@ public final class AppState: ObservableObject {
         var catalog = AppCatalog(apps: apps)
         catalog.moveApp(id: focusedManagementAppID, direction: direction)
         apps = catalog.apps
+        saveSettings()
     }
 
     private func handleAnimeSourceManagement(_ command: RemoteCommand) {
@@ -351,9 +390,11 @@ public final class AppState: ObservableObject {
             }
             animeSourceCatalog.toggleEnabled(sourceID: focusedAnimeSourceID)
             statusMessage = animeSourceStatusMessage(for: focusedAnimeSourceID)
+            saveSettings()
         case .menu:
             animeSourceCatalog.displayMode = animeSourceCatalog.displayMode.next
             statusMessage = animeSourceCatalog.displayMode == .simple ? "來源：簡單模式" : "來源：詳細模式"
+            saveSettings()
         case .rewind:
             moveFocusedAnimeSource(offset: -1)
         case .fastForward:
@@ -371,6 +412,7 @@ public final class AppState: ObservableObject {
         }
         animeSourceCatalog.cycleLine(sourceID: focusedAnimeSourceID, forward: forward)
         statusMessage = animeSourceStatusMessage(for: focusedAnimeSourceID)
+        saveSettings()
     }
 
     private func moveFocusedAnimeSource(offset: Int) {
@@ -379,6 +421,7 @@ public final class AppState: ObservableObject {
         }
         animeSourceCatalog.moveSource(sourceID: focusedAnimeSourceID, offset: offset)
         self.focusedAnimeSourceID = animeSourceCatalog.focusedID
+        saveSettings()
     }
 
     private func animeSourceStatusMessage(for sourceID: String) -> String {

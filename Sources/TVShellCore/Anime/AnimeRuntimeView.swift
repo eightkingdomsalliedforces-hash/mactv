@@ -35,7 +35,7 @@ public struct AnimeRuntimeView: View {
                     detailBrowser(metrics: metrics)
                         .transition(.opacity.combined(with: .move(edge: .trailing)))
                 case .episodes:
-                    episodeBrowser(metrics: metrics)
+                    episodeBrowser(metrics: metrics, size: proxy.size)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 case .playing:
                     player(metrics: metrics)
@@ -136,6 +136,14 @@ public struct AnimeRuntimeView: View {
         )
     }
 
+    private func fixedEpisodeGridColumns(for metrics: TVMetrics, size: CGSize) -> [GridItem] {
+        let count = episodeGridColumns(for: metrics, size: size)
+        let spacing = 22 * metrics.scale
+        let availableWidth = max(230 * metrics.scale, size.width - (metrics.horizontalPadding * 2))
+        let cardWidth = (availableWidth - (Double(count - 1) * spacing)) / Double(count)
+        return Array(repeating: GridItem(.fixed(cardWidth), spacing: spacing, alignment: .topLeading), count: count)
+    }
+
     private func titleGridColumns(for metrics: TVMetrics, size: CGSize) -> Int {
         Self.adaptiveColumns(
             availableWidth: size.width - (metrics.horizontalPadding * 2),
@@ -192,7 +200,7 @@ public struct AnimeRuntimeView: View {
         }
     }
 
-    private func episodeBrowser(metrics: TVMetrics) -> some View {
+    private func episodeBrowser(metrics: TVMetrics, size: CGSize) -> some View {
         ScrollViewReader { scrollProxy in
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 34 * metrics.scale) {
@@ -203,7 +211,7 @@ public struct AnimeRuntimeView: View {
                     )
 
                     LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 230 * metrics.scale), spacing: 22 * metrics.scale)],
+                        columns: fixedEpisodeGridColumns(for: metrics, size: size),
                         alignment: .leading,
                         spacing: 22 * metrics.scale
                     ) {
@@ -249,6 +257,7 @@ public struct AnimeRuntimeView: View {
                 .font(.system(size: 28 * metrics.scale, weight: .medium))
                 .foregroundStyle(.white.opacity(0.68))
                 .lineLimit(2)
+                .minimumScaleFactor(0.72)
         }
     }
 

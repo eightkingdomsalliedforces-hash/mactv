@@ -3,7 +3,7 @@ import TVShellCore
 
 @main
 struct TVShellApp: App {
-    @StateObject private var appState = AppState()
+    @StateObject private var appState = AppState(settingsStore: .applicationSupport())
 
     var body: some Scene {
         WindowGroup {

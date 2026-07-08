@@ -32,29 +32,31 @@ public struct BTFeedAnimeSourceProvider: AnimeMediaSourceAdapter {
         ))
         let items = try BTFeedParser.parse(data)
         let metadata = await bangumiMetadata(keyword: query.keyword)
-        let releases = items.compactMap { item -> BTFeedRelease? in
+        let releases = items.flatMap { item -> [BTFeedRelease] in
             guard let streamURL = item.streamURL else {
-                return nil
+                return []
             }
             let rawTitle = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
             guard rawTitle.isEmpty == false else {
-                return nil
+                return []
             }
             let displayTitle = metadata.title ?? cleanTitle(rawTitle)
-            let episodeNumber = episodeNumber(from: rawTitle)
+            let episodeNumbers = episodeNumbers(from: rawTitle)
             let quality = qualityLabel(from: rawTitle)
-            let episode = AnimeEpisode(
-                id: "\(id)-\(stableID(rawTitle))-episode-\(episodeNumber)",
-                title: "第 \(episodeNumber) 話 · \(quality)",
-                number: episodeNumber,
-                identity: AnimeEpisodeIdentity(
-                    providerID: id,
-                    subjectID: displayTitle,
-                    episodeID: "\(episodeNumber)",
-                    playbackURL: streamURL
+            return episodeNumbers.map { episodeNumber in
+                let episode = AnimeEpisode(
+                    id: "\(id)-\(stableID(rawTitle))-episode-\(episodeNumber)",
+                    title: "第 \(episodeNumber) 話 · \(quality)",
+                    number: episodeNumber,
+                    identity: AnimeEpisodeIdentity(
+                        providerID: id,
+                        subjectID: displayTitle,
+                        episodeID: "\(episodeNumber)",
+                        playbackURL: streamURL
+                    )
                 )
-            )
-            return BTFeedRelease(title: displayTitle, rawTitle: rawTitle, episode: episode)
+                return BTFeedRelease(title: displayTitle, rawTitle: rawTitle, episode: episode)
+            }
         }
 
         var grouped: [String: [BTFeedRelease]] = [:]
@@ -119,19 +121,50 @@ public struct BTFeedAnimeSourceProvider: AnimeMediaSourceAdapter {
         return url
     }
 
-    private func episodeNumber(from title: String) -> Int {
+    private func episodeNumbers(from title: String) -> [Int] {
+        let rangePatterns = [
+            #"(?<![0-9])([0-9]{1,3})\s*[-~～]\s*([0-9]{1,3})(?![0-9])"#,
+            #"第\s*([0-9]{1,3})\s*[-~～]\s*([0-9]{1,3})\s*[話话集]"#
+        ]
+        for pattern in rangePatterns {
+            if let range = firstTwoCaptures(in: title, pattern: pattern),
+               range.0 > 0,
+               range.1 >= range.0,
+               range.1 - range.0 <= 80 {
+                return Array(range.0...range.1)
+            }
+        }
+
         let patterns = [
             #"第\s*([0-9]+)\s*[話话集]"#,
+            #"-\s*([0-9]{1,3})\s*(?:END|完|\[|$)"#,
             #"\[([0-9]{1,3})\]"#,
             #"EP\s*([0-9]+)"#,
             #"Episode\s*([0-9]+)"#
         ]
         for pattern in patterns {
             if let number = firstCapture(in: title, pattern: pattern).flatMap(Int.init) {
-                return number
+                return [number]
             }
         }
-        return 1
+        return [1]
+    }
+
+    private func firstTwoCaptures(in value: String, pattern: String) -> (Int, Int)? {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return nil
+        }
+        let range = NSRange(value.startIndex..<value.endIndex, in: value)
+        guard let match = regex.firstMatch(in: value, range: range),
+              match.numberOfRanges > 2,
+              let firstRange = Range(match.range(at: 1), in: value),
+              let secondRange = Range(match.range(at: 2), in: value),
+              let first = Int(value[firstRange]),
+              let second = Int(value[secondRange])
+        else {
+            return nil
+        }
+        return (first, second)
     }
 
     private func firstCapture(in value: String, pattern: String) -> String? {
@@ -179,7 +212,9 @@ public struct BTFeedAnimeSourceProvider: AnimeMediaSourceAdapter {
         var title = value
         title = title.replacingOccurrences(of: #"\[[^\]]+\]"#, with: " ", options: .regularExpression)
         title = title.replacingOccurrences(of: #"\([^\)]+\)"#, with: " ", options: .regularExpression)
+        title = title.replacingOccurrences(of: #"(?<![0-9])[0-9]{1,3}\s*[-~～]\s*[0-9]{1,3}(?![0-9])"#, with: " ", options: .regularExpression)
         title = title.replacingOccurrences(of: #"第\s*[0-9]+\s*[話话集]"#, with: " ", options: .regularExpression)
+        title = title.replacingOccurrences(of: #"-\s*[0-9]{1,3}\s*(?:END|完)"#, with: " ", options: [.regularExpression, .caseInsensitive])
         title = title.replacingOccurrences(of: #"EP\s*[0-9]+"#, with: " ", options: [.regularExpression, .caseInsensitive])
         title = title.replacingOccurrences(of: #"Episode\s*[0-9]+"#, with: " ", options: [.regularExpression, .caseInsensitive])
         title = title.replacingOccurrences(of: #"[0-9]{3,4}p|x264|x265|hevc|avc|繁中|簡中|简中|外挂|內封|内封|BIG5|GB|CHT|CHS"#, with: " ", options: [.regularExpression, .caseInsensitive])

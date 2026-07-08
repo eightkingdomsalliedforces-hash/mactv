@@ -74,6 +74,7 @@ struct TVShellChecks {
         try checkAppStateOpensFocusedApps()
         try checkTVMetricsScaleWithWindowSize()
         try checkAppCatalogVisibilityAndOrdering()
+        try checkSettingsPersistAcrossRelaunch()
         try checkWallpaperPresetCyclingAndProvider()
         try checkQuickActionsAndBrowserArePresent()
         try checkWebRemoteModeCycles()
@@ -342,6 +343,33 @@ struct TVShellChecks {
         let second = catalog.apps[1]
         catalog.moveApp(id: second.id, direction: .left)
         try expect(catalog.apps[0].id == second.id, "app can move left in catalog")
+    }
+
+    @MainActor
+    static func checkSettingsPersistAcrossRelaunch() throws {
+        let file = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("TVShellChecks-Settings-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+
+        let store = AppSettingsStore(fileURL: file)
+        let state = AppState(apps: SeedApps.defaultApps, settingsStore: store)
+        state.displayScale = .percent150
+        state.wallpaperSource = .builtIn(.ocean)
+        state.webRemoteMode = .scroll
+        state.webZoom = 1.7
+        state.videoSourceLabel = "收藏影片.mkv"
+        state.watchingHistory = [
+            WatchHistoryEntry(title: "葬送的芙莉蓮", subtitle: "第 1 話", kind: .anime)
+        ]
+        state.saveSettings()
+
+        let restored = AppState(apps: SeedApps.defaultApps, settingsStore: store)
+        try expect(restored.displayScale == .percent150, "display scale persists")
+        try expect(restored.wallpaperSource == .builtIn(.ocean), "wallpaper setting persists")
+        try expect(restored.webRemoteMode == .scroll, "web remote mode persists")
+        try expect(restored.webZoom == 1.7, "web zoom persists")
+        try expect(restored.videoSourceLabel == "收藏影片.mkv", "video source label persists")
+        try expect(restored.watchingHistory.first?.title == "葬送的芙莉蓮", "watch history persists")
     }
 
     static func checkWallpaperPresetCyclingAndProvider() throws {
@@ -961,6 +989,29 @@ struct TVShellChecks {
         try expect(btStreams.first?.url.scheme == "magnet", "BT feed provider prefers magnet streams")
         try expect(btStreams.first?.headers["resolver"] == "torrent", "BT feed stream marks torrent resolver")
 
+        let seasonRSS = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <rss><channel>
+          <item>
+            <title>[Jibaketa] 葬送的芙莉蓮 第二季 / Sousou no Frieren 2nd Season - 01-10 [1080p][繁中]</title>
+            <link>magnet:?xt=urn:btih:SEASONPACK123456</link>
+          </item>
+        </channel></rss>
+        """.data(using: .utf8)!
+        let seasonProvider = BTFeedAnimeSourceProvider(
+            id: "mikan",
+            displayName: "Mikan Project",
+            searchURLTemplate: "https://mikanani.me/RSS/Search?searchstr={keyword}",
+            transport: StaticAnimeHTTPTransport(routes: [
+                "https://mikanani.me/RSS/Search?searchstr=%E8%8A%99%E8%8E%89%E8%93%AE": seasonRSS,
+                btCoverRequest.url.absoluteString: btCoverResponse
+            ])
+        )
+        let seasonResults = try await seasonProvider.search(AnimeSearchQuery(keyword: "芙莉蓮"))
+        try expect(seasonResults.first?.episodeCount == 10, "BT season pack expands into episode choices")
+        try expect(seasonResults.first?.episodes.map(\.number) == Array(1...10), "BT season pack keeps episode numbers")
+        try expect(seasonResults.first?.episodes.allSatisfy { $0.identity.playbackURL?.scheme == "magnet" } == true, "BT season pack episodes share pack playback url")
+
         let mediaConfigs = MediaServerAnimeSourceConfig.environment([
             "TVSHELL_JELLYFIN_BASE_URL": "https://media.example",
             "TVSHELL_JELLYFIN_API_KEY": "jf-key",
@@ -1298,6 +1349,8 @@ struct TVShellChecks {
         try expect(animeRuntime.contains("anime-episode-\\(index)"), "anime episode cards expose stable scroll ids")
         try expect(animeRuntime.contains("scrollTo(\"anime-title-\\(index)\""), "anime title focus movement scrolls to focused poster")
         try expect(animeRuntime.contains("scrollTo(\"anime-episode-\\(index)\""), "anime episode focus movement scrolls to focused episode")
+        try expect(animeRuntime.contains("fixedEpisodeGridColumns"), "anime episode grid uses fixed columns matched to remote navigation")
+        try expect(animeRuntime.contains("lineLimit(2)") && animeRuntime.contains("animeHeader"), "anime headers constrain long BT titles")
         try expect(animeRuntime.contains("searchKeywordBar") == false, "anime title browser does not show the old keyword chip row")
         try expect(animeRuntime.contains(".animation(TVMotion.focus, value: comments)") == false, "danmaku overlay does not animate every comment refresh")
         try expect(animeRuntime.contains("DanmakuOverlay(comments: controller.visibleDanmaku"), "anime player renders danmaku overlay")
