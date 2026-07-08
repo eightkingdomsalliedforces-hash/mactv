@@ -3,6 +3,7 @@ import Foundation
 public enum WatchHistoryKind: String, Codable, Equatable, Sendable {
     case anime
     case youtube
+    case bilibili
     case media
     case web
 }

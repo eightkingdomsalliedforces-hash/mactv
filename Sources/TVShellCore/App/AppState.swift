@@ -158,7 +158,7 @@ public final class AppState: ObservableObject {
             handleAppManagement(command)
         case .animeSourceManagement:
             handleAnimeSourceManagement(command)
-        case .web, .media, .anime, .youtube, .native, .remoteLearning:
+        case .web, .media, .anime, .youtube, .bilibili, .native, .remoteLearning:
             handleRuntimeCommand(command)
         }
     }
@@ -338,6 +338,9 @@ public final class AppState: ObservableObject {
         case .youtube:
             statusMessage = "正在開啟 \(app.name)"
             setRuntime(.youtube(app))
+        case .bilibili:
+            statusMessage = "正在開啟 \(app.name)"
+            setRuntime(.bilibili(app))
         case .nativeApp:
             statusMessage = "正在開啟 \(app.name)"
             setRuntime(.native(app))
@@ -516,7 +519,7 @@ private extension AnimeSourceHealth {
 private extension ActiveRuntime {
     var handlesBackInternally: Bool {
         switch self {
-        case .anime, .youtube:
+        case .anime, .youtube, .bilibili:
             return true
         case .animeSourceManagement:
             return true

@@ -8,6 +8,11 @@ public enum SeedApps {
             controlMode: .web
         ),
         TVAppProfile(
+            name: "Bilibili",
+            target: .bilibili,
+            controlMode: .web
+        ),
+        TVAppProfile(
             name: "Apple",
             target: .web(URL(string: "https://www.apple.com")!),
             controlMode: .web

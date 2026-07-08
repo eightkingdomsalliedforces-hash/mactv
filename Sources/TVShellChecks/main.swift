@@ -88,6 +88,7 @@ struct TVShellChecks {
         try await checkDandanplayConfiguredProvider()
         try await checkDandanplaySearchEpisodesFallback()
         try checkYouTubeNativeRuntimeAndAPI()
+        try await checkBilibiliBangumiRuntimeAndAPI()
         try checkYouTubeEmbedPageIncludesOriginAndFallback()
         try checkYouTubeLayoutAndPlayerShell()
         try await checkBangumiYouTubeAnimeSourceFindsPlayableCandidates()
@@ -336,6 +337,11 @@ struct TVShellChecks {
         }, "seed apps include anime runtime")
 
         try expect(SeedApps.defaultApps.contains { app in
+            if case .bilibili = app.target { return true }
+            return false
+        }, "seed apps include native bilibili runtime")
+
+        try expect(SeedApps.defaultApps.contains { app in
             if case let .web(url) = app.target { return url.host == "settings" }
             return false
         }, "seed apps include settings runtime")
@@ -394,6 +400,19 @@ struct TVShellChecks {
         state.focusedAppID = anime.id
         state.handle(.select)
         try expect(state.activeRuntime == .anime(anime), "select opens focused anime app")
+
+        let bilibili = apps.first { app in
+            if case .bilibili = app.target { return true }
+            return false
+        }
+        guard let bilibili else {
+            throw CheckFailure("missing bilibili seed app")
+        }
+
+        state.activeRuntime = .launcher
+        state.focusedAppID = bilibili.id
+        state.handle(.select)
+        try expect(state.activeRuntime == .bilibili(bilibili), "select opens focused bilibili app")
     }
 
     static func checkTVMetricsScaleWithWindowSize() throws {
@@ -829,6 +848,146 @@ struct TVShellChecks {
         try expect(youtubeState.phase == .playing, "youtube select starts playback")
         youtubeState.apply(.back)
         try expect(youtubeState.phase == .browsing, "youtube back returns to native list")
+    }
+
+    @MainActor
+    static func checkBilibiliBangumiRuntimeAndAPI() async throws {
+        let bilibiliApp = SeedApps.defaultApps.first(where: { app in
+            if case .bilibili = app.target { return true }
+            return false
+        })
+        guard let bilibiliApp else {
+            throw CheckFailure("missing native bilibili app")
+        }
+        try expect(bilibiliApp.name == "Bilibili", "bilibili app keeps branded name")
+
+        let state = AppState(apps: SeedApps.defaultApps)
+        state.focusedAppID = bilibiliApp.id
+        state.handle(.select)
+        try expect(state.activeRuntime == .bilibili(bilibiliApp), "select opens native bilibili runtime")
+
+        let homeJSON = """
+        {
+          "code": 0,
+          "message": "0",
+          "data": {
+            "modules": [
+              {
+                "items": [
+                  {
+                    "title": "神奇数字马戏团",
+                    "cover": "https://example.com/poster.jpg",
+                    "desc": "限时免费",
+                    "link_value": 241806,
+                    "badge_info": { "text": "限免" },
+                    "bottom_right_badge": { "text": "全9话" }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+        """.data(using: .utf8)!
+        let home = try BilibiliAPI.decodeHome(homeJSON)
+        try expect(home.first?.id == 241806, "bilibili home parser reads season id")
+        try expect(home.first?.title == "神奇数字马戏团", "bilibili home parser reads title")
+        try expect(home.first?.badge == "限免", "bilibili home parser reads badge")
+
+        let searchJSON = """
+        {
+          "code": 0,
+          "message": "0",
+          "data": {
+            "result": [
+              {
+                "season_id": 3398,
+                "title": "<em class=\\"keyword\\">间谍过家家</em>",
+                "cover": "https://example.com/spy.jpg",
+                "season_type_name": "番剧",
+                "index_show": "全12话"
+              }
+            ]
+          }
+        }
+        """.data(using: .utf8)!
+        let search = try BilibiliAPI.decodeSearch(searchJSON)
+        try expect(search.first?.title == "间谍过家家", "bilibili search parser strips highlight html")
+        try expect(search.first?.totalText == "全12话", "bilibili search parser reads episode count text")
+
+        let detailJSON = """
+        {
+          "code": 0,
+          "message": "0",
+          "result": {
+            "season_id": 241806,
+            "title": "神奇数字马戏团",
+            "cover": "https://example.com/poster.jpg",
+            "subtitle": "Bilibili 番剧",
+            "evaluate": "戴了头套就回不去了",
+            "rating": { "score": 9.6 },
+            "stat": { "views": 12345, "danmakus": 678 },
+            "episodes": [
+              {
+                "id": 4353829,
+                "aid": 1806595774,
+                "cid": 39179976831,
+                "bvid": "BV1mb42177Hi",
+                "title": "1",
+                "long_title": "先行片 PILOT（中文配音）",
+                "cover": "https://example.com/ep1.jpg",
+                "badge": "限免"
+              }
+            ]
+          }
+        }
+        """.data(using: .utf8)!
+        let detail = try BilibiliAPI.decodeSeasonDetail(detailJSON)
+        try expect(detail.episodes.first?.id == 4_353_829, "bilibili detail parser reads episode id")
+        try expect(detail.episodes.first?.cid == 39_179_976_831, "bilibili detail parser reads cid")
+        try expect(detail.ratingScore == 9.6, "bilibili detail parser reads rating")
+
+        let playJSON = """
+        {
+          "code": 0,
+          "message": "0",
+          "result": {
+            "quality": 80,
+            "format": "mp4",
+            "duration": 60000,
+            "accept_description": ["1080P"],
+            "durl": [
+              {
+                "url": "https://upos.example.com/video.mp4",
+                "backup_url": ["https://backup.example.com/video.mp4"]
+              }
+            ]
+          }
+        }
+        """.data(using: .utf8)!
+        let stream = try BilibiliAPI.decodePlayback(playJSON)
+        try expect(stream.url.absoluteString == "https://upos.example.com/video.mp4", "bilibili playurl parser reads progressive url")
+        try expect(stream.headers["Referer"] == "https://www.bilibili.com/", "bilibili playback sets referer header")
+        try expect(stream.durationSeconds == 60, "bilibili playurl parser reads duration")
+
+        var runtime = BilibiliRuntimeState(seasonCount: 8, episodeCount: 3)
+        runtime.applyBrowsing(.right, columns: 4)
+        try expect(runtime.focusedSeasonIndex == 1, "bilibili right moves season focus")
+        runtime.applyBrowsing(.down, columns: 4)
+        try expect(runtime.focusedSeasonIndex == 5, "bilibili down moves season focus by visual row")
+        runtime.openDetail()
+        try expect(runtime.phase == .detail, "bilibili opens season detail")
+        runtime.applyDetail(.right, columns: 3)
+        try expect(runtime.focusedEpisodeIndex == 1, "bilibili right moves episode focus")
+        runtime.openPlayer()
+        try expect(runtime.phase == .playing, "bilibili opens player")
+        runtime.closePlayer()
+        try expect(runtime.phase == .detail, "bilibili back from player returns to detail")
+
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        let runtimeSource = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Bilibili/BilibiliRuntimeView.swift"))
+        try expect(runtimeSource.contains("ScrollViewReader"), "bilibili runtime keeps remote focus visible")
+        try expect(runtimeSource.contains("VirtualKeyboardView"), "bilibili runtime supports remote search")
+        try expect(runtimeSource.contains("AVURLAssetHTTPHeaderFieldsKey"), "bilibili player sends required playback headers")
     }
 
     static func checkYouTubeEmbedPageIncludesOriginAndFallback() throws {
