@@ -181,6 +181,10 @@ public struct AnimeSourceCatalogState: Codable, Equatable, Sendable {
         return next
     }
 
+    public func includingDefaultSources() -> AnimeSourceCatalogState {
+        includingDynamicDefinitions(AnimeSourceCatalog.defaultSources)
+    }
+
     public func removingUnusableSources() -> AnimeSourceCatalogState {
         var next = self
         next.instances = instances.filter { $0.definition.health == .available }
@@ -199,6 +203,7 @@ public enum AnimeSourceCatalog {
         source("mikan", "Mikan Project", "MK", ["RSS / BT"], health: .available, defaultEnabled: false),
         source("dmhy", "動漫花園", "花", ["RSS / BT"], health: .available, defaultEnabled: false),
         source("ani-subs-bt", "ani-subs BT 訂閱", "AS", ["RSS / BT 訂閱"], health: .available, defaultEnabled: false),
+        source("ani-subs-css1", "ani-subs CSS1", "CSS", ["Web Selector"], health: .available, defaultEnabled: false),
         source("jellyfin", "Jellyfin", "JF", ["自有媒體庫"], health: .available, defaultEnabled: false),
         source("emby", "Emby", "E", ["自有媒體庫"], health: .available, defaultEnabled: false)
     ]

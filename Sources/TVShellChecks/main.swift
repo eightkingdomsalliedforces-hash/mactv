@@ -1060,9 +1060,11 @@ struct TVShellChecks {
         try expect(sources.contains { $0.id == "mikan" && $0.title == "Mikan Project" }, "catalog includes built-in Mikan source")
         try expect(sources.contains { $0.id == "dmhy" && $0.title == "動漫花園" }, "catalog includes built-in DMHY source")
         try expect(sources.contains { $0.id == "ani-subs-bt" && $0.title == "ani-subs BT 訂閱" }, "catalog includes ani-subs BT subscription source")
+        try expect(sources.contains { $0.id == "ani-subs-css1" && $0.title == "ani-subs CSS1" }, "catalog includes ani-subs CSS1 web selector subscription source")
         try expect(sources.contains { $0.id == "jellyfin" && $0.title == "Jellyfin" }, "catalog includes Jellyfin source")
         try expect(sources.contains { $0.id == "emby" && $0.title == "Emby" }, "catalog includes Emby source")
         try expect(sources.first(where: { $0.id == "mikan" })?.defaultEnabled == false, "BT source is not enabled automatically")
+        try expect(sources.first(where: { $0.id == "ani-subs-css1" })?.defaultEnabled == false, "CSS1 source is opt-in until enabled by the user")
 
         let rss = """
         <?xml version="1.0" encoding="utf-8"?>
@@ -1328,7 +1330,7 @@ struct TVShellChecks {
     @MainActor
     static func checkAnimekoStyleSourceCatalog() throws {
         let sources = AnimeSourceCatalog.defaultSources
-        try expect(sources.count == 6, "anime source catalog only keeps currently playable built-in sources")
+        try expect(sources.count == 7, "anime source catalog only keeps currently supported built-in sources")
         try expect(sources.first?.id == "bangumi-youtube", "catalog starts with playable bangumi youtube source")
         try expect(sources.allSatisfy { $0.health == .available }, "catalog removes sources without working adapters")
         try expect(sources.contains { $0.id == "girigiri" } == false, "catalog removes girigiri until a working adapter exists")
@@ -1557,6 +1559,14 @@ struct TVShellChecks {
         let sources = AnimeSourceCatalog.defaultSources
         try expect(sources.first(where: { $0.id == "bangumi-youtube" })?.health == .available, "bangumi youtube remains playable by default")
         try expect(sources.contains { $0.health != .available } == false, "default anime source list does not show unusable sources")
+        let oldSavedCatalog = AnimeSourceCatalogState(definitions: [
+            AnimeSourceDefinition(id: "bangumi-youtube", title: "Bangumi + YouTube", iconLabel: "BY", lines: [])
+        ])
+        let migratedDefaults = oldSavedCatalog
+            .includingDefaultSources()
+            .removingUnusableSources()
+        try expect(migratedDefaults.instances.contains { $0.id == "ani-subs-bt" }, "saved source catalog migration restores missing ani-subs BT source")
+        try expect(migratedDefaults.instances.contains { $0.id == "ani-subs-css1" }, "saved source catalog migration restores missing ani-subs CSS1 source")
         var oldCatalog = AnimeSourceCatalogState(definitions: [
             AnimeSourceDefinition(id: "ok", title: "可用", iconLabel: "OK", lines: [], health: .available),
             AnimeSourceDefinition(id: "pending", title: "待接入", iconLabel: "P", lines: [], health: .needsAdapter),
