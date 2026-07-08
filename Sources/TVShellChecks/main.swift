@@ -193,6 +193,23 @@ struct TVShellChecks {
         try expect(ZhuyinComposer.candidates(for: "ㄓㄨˋㄧㄣ").first == "注音", "zhuyin keyboard composes multi-syllable words")
         try expect(ZhuyinComposer.candidates(for: "ㄎㄜˇㄎㄜˇ").first == "可可", "zhuyin keyboard segments repeated syllables")
         try expect(ZhuyinComposer.candidates(for: "ㄉㄧㄢˋ").first == "電", "zhuyin keyboard suggests dian fourth tone as electric")
+        try expect(ZhuyinComposer.candidates(for: "ㄨㄛˇ").contains("我"), "zhuyin keyboard includes basic pronouns")
+        try expect(ZhuyinComposer.candidates(for: "ㄕˋ").contains("是"), "zhuyin keyboard includes basic verbs")
+        try expect(ZhuyinComposer.candidates(for: "ㄋㄧˇ").contains("你"), "zhuyin keyboard includes common second-person pronouns")
+        try expect(ZhuyinComposer.candidates(for: "ㄗㄞˋ").contains("在"), "zhuyin keyboard includes common location verbs")
+        try expect(ZhuyinComposer.candidates(for: "ㄎㄢˋ").contains("看"), "zhuyin keyboard includes common media search verbs")
+        try expect(ZhuyinComposer.candidates(for: "ㄕㄨㄛ").contains("說"), "zhuyin keyboard includes common speaking verbs")
+        try expect(ZhuyinComposer.candidates(for: "ㄌㄠˇㄕ").first == "老師", "zhuyin keyboard composes common two-syllable words")
+        try expect(ZhuyinComposer.candidates(for: "ㄒㄩㄝˊㄕㄥ").first == "學生", "zhuyin keyboard composes basic study words")
+        try expect(ZhuyinComposer.candidates(for: "ㄨㄤˇㄌㄨˋ").first == "網路", "zhuyin keyboard composes common internet words")
+        try expect(ZhuyinComposer.candidates(for: "ㄉㄧㄢˋㄧㄥˇ").first == "電影", "zhuyin keyboard composes common media words")
+        try expect(ZhuyinComposer.candidates(for: "ㄅㄚ").contains("八"), "zhuyin keyboard loads basic candidates from chewing data")
+        try expect(ZhuyinComposer.candidates(for: "ㄅㄚˋ").contains("爸"), "zhuyin keyboard loads tone-specific candidates from chewing data")
+
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        let chewingDictionary = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Input/ZhuyinChewingDictionary.swift"))
+        try expect(chewingDictionary.contains("LGPL-2.1-or-later"), "chewing zhuyin dictionary keeps source license notice")
+        try expect(chewingDictionary.contains("libchewing-data"), "chewing zhuyin dictionary keeps source project notice")
     }
 
     static func checkRemoteMappingStore() throws {

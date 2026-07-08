@@ -205,15 +205,71 @@ public struct VirtualKeyboardState: Equatable, Sendable {
 }
 
 public enum ZhuyinComposer {
-    private static let dictionary: [String: [String]] = [
+    private static let curatedDictionary: [String: [String]] = [
         "ㄅ": ["不", "ㄅ"],
         "ㄆ": ["片", "ㄆ"],
         "ㄇ": ["嗎", "魔", "ㄇ"],
         "ㄈ": ["非", "ㄈ"],
+        "ㄧ": ["一"],
+        "ㄨㄛˇ": ["我"],
+        "ㄋㄧˇ": ["你"],
+        "ㄊㄚ": ["他", "她", "它"],
+        "ㄕˋ": ["是", "事", "市", "式"],
+        "ㄧㄡˇ": ["有"],
+        "ㄗㄞˋ": ["在", "再"],
+        "ㄅㄨˋ": ["不"],
+        "ㄓㄜˋ": ["這"],
+        "ㄌㄜ˙": ["了"],
+        "ㄧˇ": ["以", "已"],
+        "ㄉㄚˋ": ["大"],
+        "ㄒㄧㄠˇ": ["小"],
+        "ㄍㄜˋ": ["個"],
+        "ㄏㄨㄟˋ": ["會"],
+        "ㄨㄟˋ": ["為", "位"],
+        "ㄌㄞˊ": ["來"],
+        "ㄐㄧㄡˋ": ["就"],
+        "ㄉㄠˋ": ["到", "道"],
+        "ㄧㄠˋ": ["要"],
+        "ㄧㄡˋ": ["又"],
+        "ㄑㄩˋ": ["去"],
+        "ㄏㄠˇ": ["好"],
+        "ㄇㄟˊ": ["沒"],
+        "ㄏㄣˇ": ["很"],
+        "ㄉㄨㄛ": ["多"],
+        "ㄕㄠˇ": ["少"],
+        "ㄎㄢˋ": ["看"],
+        "ㄊㄧㄥ": ["聽"],
+        "ㄕㄨㄛ": ["說"],
+        "ㄒㄧㄤˇ": ["想"],
+        "ㄔ": ["吃"],
+        "ㄏㄜ": ["喝"],
+        "ㄇㄞˇ": ["買"],
+        "ㄇㄞˋ": ["賣"],
+        "ㄕㄨㄟˇ": ["水"],
+        "ㄏㄨㄛˇ": ["火"],
+        "ㄕㄢ": ["山"],
+        "ㄖˋ": ["日"],
+        "ㄩㄝˋ": ["月"],
+        "ㄋㄧㄢˊ": ["年"],
+        "ㄊㄧㄢ": ["天"],
+        "ㄇㄧㄥˊ": ["名", "明"],
+        "ㄗˋ": ["字"],
+        "ㄑㄧㄥˇ": ["請"],
+        "ㄒㄧㄝˋ": ["謝"],
+        "ㄌㄠˇ": ["老"],
+        "ㄕ": ["師"],
+        "ㄌㄠˇㄕ": ["老師"],
+        "ㄒㄩㄝˊㄕㄥ": ["學生"],
+        "ㄨㄤˇ": ["網"],
+        "ㄌㄨˋ": ["路"],
+        "ㄨㄤˇㄌㄨˋ": ["網路"],
+        "ㄩㄢˊ": ["源", "員", "原"],
+        "ㄓㄨˇ": ["主"],
+        "ㄧㄝˇ": ["也"],
         "ㄎㄜˇ": ["可"],
         "ㄎㄚˇ": ["卡"],
         "ㄇㄚˇ": ["馬"],
-        "ㄋㄚˋ": ["娜"],
+        "ㄋㄚˋ": ["那", "娜"],
         "ㄧㄚˋ": ["亞"],
         "ㄌㄧˇ": ["里", "理"],
         "ㄞˋ": ["愛"],
@@ -268,9 +324,26 @@ public enum ZhuyinComposer {
         "ㄓㄡˋㄕㄨˋㄏㄨㄟˊㄓㄢˋ": ["咒術迴戰"]
     ]
 
+    private static let dictionary = mergeDictionaries(
+        curatedDictionary,
+        ZhuyinChewingDictionary.candidates
+    )
+
     private static let aliases: [String: String] = [
         "ㄎㄧㄚˇ": "ㄎㄚˇ"
     ]
+
+    private static func mergeDictionaries(_ preferred: [String: [String]], _ fallback: [String: [String]]) -> [String: [String]] {
+        var merged = fallback
+        for (key, values) in preferred {
+            var uniqueValues: [String] = []
+            for value in values + (merged[key] ?? []) where uniqueValues.contains(value) == false {
+                uniqueValues.append(value)
+            }
+            merged[key] = Array(uniqueValues.prefix(10))
+        }
+        return merged
+    }
 
     public static func candidates(for composition: String) -> [String] {
         guard composition.isEmpty == false else { return [] }
