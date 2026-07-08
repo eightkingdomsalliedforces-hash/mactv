@@ -423,14 +423,16 @@ struct TVShellChecks {
     }
 
     static func checkQuickActionsAndBrowserArePresent() throws {
-        let quickActions = LauncherLayout.quickActions(for: SeedApps.defaultApps)
-        let quickHosts = quickActions.compactMap { app -> String? in
-            if case let .web(url) = app.target { return url.host }
-            return nil
-        }
-        try expect(quickHosts.contains("settings"), "settings is always available as a quick action")
-        try expect(quickHosts.contains("remote-learning"), "remote setup is always available as a quick action")
-        try expect(quickHosts.contains("app-management"), "app management is always available as a quick action")
+        let toolHosts = LauncherLayout.sections(for: SeedApps.defaultApps)
+            .first { $0.id == "tools" }?
+            .apps
+            .compactMap { app -> String? in
+                if case let .web(url) = app.target { return url.host }
+                return nil
+            } ?? []
+        try expect(toolHosts.contains("settings"), "settings remains available in the launcher tools row")
+        try expect(toolHosts.contains("remote-learning"), "remote setup remains available in the launcher tools row")
+        try expect(toolHosts.contains("app-management"), "app management remains available in the launcher tools row")
 
         try expect(SeedApps.defaultApps.contains { app in
             if case let .web(url) = app.target { return url.host == "duckduckgo.com" }
@@ -1172,10 +1174,16 @@ struct TVShellChecks {
 
         try FileManager.default.createDirectory(at: downloadDirectory, withIntermediateDirectories: true)
         let sample = downloadDirectory.appendingPathComponent("第01話.mp4")
+        let secondSample = downloadDirectory.appendingPathComponent("第02話.mp4")
         FileManager.default.createFile(atPath: sample.path, contents: Data(repeating: 1, count: 2_048))
-        try expect(engine.playableFiles(in: downloadDirectory).first?.lastPathComponent == sample.lastPathComponent, "torrent playback discovers playable media files")
-        try expect(engine.downloadProgress(in: downloadDirectory).downloadedBytes == 2_048, "torrent playback reports downloaded bytes")
+        FileManager.default.createFile(atPath: secondSample.path, contents: Data(repeating: 1, count: 4_096))
+        try expect(engine.playableFiles(in: downloadDirectory).contains { $0.lastPathComponent == sample.lastPathComponent }, "torrent playback discovers playable media files")
+        try expect(engine.downloadProgress(in: downloadDirectory).downloadedBytes == 6_144, "torrent playback reports downloaded bytes")
         try expect(engine.downloadProgress(in: downloadDirectory).statusText.contains("已下載"), "torrent playback exposes readable progress text")
+        try expect(engine.preferredPlayableFile(in: downloadDirectory, episodeNumber: 1)?.lastPathComponent == sample.lastPathComponent, "torrent playback picks the focused episode file from season packs")
+        try expect(engine.downloadProgress(in: downloadDirectory, episodeNumber: 1).largestPlayableFileName == sample.lastPathComponent, "torrent progress labels the focused episode instead of the largest file")
+        try engine.deleteDownload(for: stream)
+        try expect(FileManager.default.fileExists(atPath: downloadDirectory.path) == false, "torrent playback can delete cached BT downloads")
 
         let engineSource = try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true).appending(path: "Sources/TVShellCore/Anime/TorrentPlaybackEngine.swift"))
         try expect(engineSource.contains("terminationHandler"), "torrent playback engine records aria2 termination instead of waiting silently")
@@ -1385,7 +1393,7 @@ struct TVShellChecks {
         try expect(sources.first(where: { $0.id == "miaowu" })?.health == .needsCloudflare, "cloudflare sources still show verification status")
 
         let keywords = AnimeSearchKeywordCatalog.defaultKeywords
-        try expect(keywords.count >= 12, "anime runtime offers more than one sample title")
+        try expect(keywords.count >= 36, "anime runtime offers a broad homepage search range")
         try expect(keywords.contains("進擊的巨人"), "anime runtime includes mainstream search choices")
         try expect(keywords.contains("葬送的芙莉蓮"), "anime runtime uses full title rather than only short demo keyword")
 
@@ -1405,6 +1413,8 @@ struct TVShellChecks {
         try expect(launcher.contains("ScrollViewReader"), "launcher keeps focused app rows visible after watch history appears")
         try expect(launcher.contains("launcher-section-\\(section.id)"), "launcher sections expose stable scroll ids")
         try expect(launcher.contains(".scrollIndicators(.hidden)"), "launcher hides TV-unfriendly scroll indicators")
+        try expect(launcher.contains("quickActionBar") == false, "launcher removes oversized quick action chips from the home screen")
+        try expect(launcher.contains("34 * metrics.scale"), "launcher rows keep enough vertical padding for focus rings")
 
         for path in [
             "Sources/TVShellCore/Settings/SettingsView.swift",
@@ -1434,6 +1444,7 @@ struct TVShellChecks {
         try expect(windowManager.contains(".resizable"), "window explicitly keeps resizable behavior")
         try expect(windowManager.contains("standardWindowButton(.zoomButton)"), "window explicitly enables the green zoom/maximize button")
         try expect(windowManager.contains("toggleFullScreen"), "window manager maximizes by entering macOS full screen")
+        try expect(windowManager.contains("requestInitialFullScreen"), "window enters macOS full screen automatically for TV mode")
     }
 
     static func checkRuntimeNavigationAndPerformanceBudget() throws {
@@ -1450,6 +1461,11 @@ struct TVShellChecks {
         try expect(bangumiYouTube.contains("木棉花") && bangumiYouTube.contains("Muse"), "anime youtube source prioritizes licensed anime channels")
 
         let animeRuntime = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Anime/AnimeRuntimeView.swift"))
+        try expect(animeRuntime.contains("isPlayerHUDVisible"), "anime player can hide the large playback HUD")
+        try expect(animeRuntime.contains("hidePlayerHUDTask"), "anime player schedules HUD auto-hide")
+        try expect(animeRuntime.contains("5_000_000_000"), "anime player hides HUD after five seconds")
+        try expect(animeRuntime.contains("deleteFocusedTorrentDownload"), "anime episode screen can delete BT downloads")
+        try expect(animeRuntime.contains("loadPlayer(stream, episode: episode)"), "anime torrent playback receives the selected episode")
         try expect(animeRuntime.contains("updateTitleColumns"), "anime runtime updates poster grid columns from current window size")
         try expect(animeRuntime.contains("updateEpisodeColumns"), "anime runtime updates episode navigation columns from current window size")
         try expect(animeRuntime.contains("anime-title-\\(index)"), "anime title cards expose stable scroll ids")

@@ -87,8 +87,6 @@ public struct LauncherView: View {
                             }
                             .padding(.top, 16 * metrics.scale)
 
-                            quickActionBar(metrics: metrics)
-
                             if appState.watchingHistory.isEmpty == false {
                                 WatchHistoryRowView(entries: appState.watchingHistory, metrics: metrics)
                                     .id("launcher-history")
@@ -189,30 +187,6 @@ public struct LauncherView: View {
         .padding(.horizontal, 28 * metrics.scale)
         .padding(.vertical, 18 * metrics.scale)
         .liquidGlassCard(isFocused: false, cornerRadius: 26)
-    }
-
-    private func quickActionBar(metrics: TVMetrics) -> some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 16 * metrics.scale) {
-                ForEach(LauncherLayout.quickActions(for: appState.apps)) { app in
-                    Button {
-                        appState.focusedAppID = app.id
-                        appState.handle(.select)
-                    } label: {
-                        Text(app.name)
-                            .font(.system(size: 23 * metrics.scale, weight: .bold))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
-                            .padding(.horizontal, 22 * metrics.scale)
-                            .padding(.vertical, 14 * metrics.scale)
-                            .liquidGlassCard(isFocused: app.id == appState.focusedAppID, cornerRadius: 22)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.vertical, 8 * metrics.scale)
-        }
-        .scrollIndicators(.hidden)
     }
 
     private var heroBackground: some View {
@@ -323,8 +297,8 @@ private struct WatchHistoryRowView: View {
                         .liquidGlassCard(isFocused: false, cornerRadius: 24 * metrics.scale)
                     }
                 }
-                .padding(.horizontal, 8 * metrics.scale)
-                .padding(.vertical, 10 * metrics.scale)
+                .padding(.horizontal, 12 * metrics.scale)
+                .padding(.vertical, 34 * metrics.scale)
             }
             .scrollIndicators(.hidden)
         }
@@ -348,8 +322,8 @@ private struct LauncherRowView: View {
                         AppCardView(title: app.name, isFocused: app.id == focusedAppID, metrics: metrics)
                     }
                 }
-                .padding(.horizontal, 22 * metrics.scale)
-                .padding(.vertical, 20 * metrics.scale)
+                .padding(.horizontal, 28 * metrics.scale)
+                .padding(.vertical, 34 * metrics.scale)
             }
             .scrollIndicators(.hidden)
         }

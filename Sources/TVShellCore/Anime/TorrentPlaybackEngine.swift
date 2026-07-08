@@ -115,6 +115,7 @@ public struct Aria2TorrentPlaybackEngine: Sendable {
 
     public func startStreaming(
         _ stream: AnimeStreamCandidate,
+        episodeNumber: Int? = nil,
         onProgress: (@Sendable (TorrentDownloadProgress) -> Void)? = nil
     ) async throws -> URL {
         guard let executable = resolvedExecutablePath() else {
@@ -125,16 +126,50 @@ public struct Aria2TorrentPlaybackEngine: Sendable {
         let processID = stableIdentifier(for: stream.url.absoluteString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try launchAria2(executable: executable, stream: stream, directory: directory)
-        return try await waitForPlayableFile(in: directory, processID: processID, onProgress: onProgress)
+        return try await waitForPlayableFile(in: directory, episodeNumber: episodeNumber, processID: processID, onProgress: onProgress)
     }
 
-    public func downloadProgress(in directory: URL) -> TorrentDownloadProgress {
+    public func downloadProgress(in directory: URL, episodeNumber: Int? = nil) -> TorrentDownloadProgress {
         let playableFiles = playableFiles(in: directory)
-        let largestFile = playableFiles.first
+        let displayedFile = episodeNumber
+            .flatMap { preferredPlayableFile(in: directory, episodeNumber: $0) }
+            ?? playableFiles.first
         return TorrentDownloadProgress(
             downloadedBytes: downloadedBytes(in: directory),
-            largestPlayableFileName: largestFile?.lastPathComponent
+            largestPlayableFileName: displayedFile?.lastPathComponent
         )
+    }
+
+    public func preferredPlayableFile(in directory: URL, episodeNumber: Int) -> URL? {
+        let files = playableFiles(in: directory)
+        guard files.isEmpty == false else {
+            return nil
+        }
+        let padded = String(format: "%02d", episodeNumber)
+        let plain = "\(episodeNumber)"
+        let patterns = [
+            "第\(padded)話", "第\(plain)話",
+            "第\(padded)集", "第\(plain)集",
+            "[\(padded)]", "[\(plain)]",
+            "EP\(padded)", "EP\(plain)",
+            "E\(padded)", "E\(plain)",
+            "- \(padded)", "- \(plain)",
+            "_\(padded)", "_\(plain)"
+        ]
+        return files.first { file in
+            let name = file.deletingPathExtension().lastPathComponent
+            return patterns.contains { pattern in
+                name.localizedCaseInsensitiveContains(pattern)
+            }
+        }
+    }
+
+    public func deleteDownload(for stream: AnimeStreamCandidate) throws {
+        let directory = downloadDirectory(for: stream)
+        guard FileManager.default.fileExists(atPath: directory.path) else {
+            return
+        }
+        try FileManager.default.removeItem(at: directory)
     }
 
     private var playableExtensions: Set<String> {
@@ -193,13 +228,14 @@ public struct Aria2TorrentPlaybackEngine: Sendable {
 
     private func waitForPlayableFile(
         in directory: URL,
+        episodeNumber: Int?,
         processID: String,
         onProgress: (@Sendable (TorrentDownloadProgress) -> Void)?
     ) async throws -> URL {
         for _ in 0..<pollLimit {
-            let progress = downloadProgress(in: directory)
+            let progress = downloadProgress(in: directory, episodeNumber: episodeNumber)
             onProgress?(progress)
-            if let file = readyPlayableFile(in: directory) {
+            if let file = readyPlayableFile(in: directory, episodeNumber: episodeNumber) {
                 return file
             }
             if TorrentProcessRegistry.shared.hasTerminated(id: processID),
@@ -232,8 +268,15 @@ public struct Aria2TorrentPlaybackEngine: Sendable {
         }
     }
 
-    private func readyPlayableFile(in directory: URL) -> URL? {
-        playableFiles(in: directory).first { url in
+    private func readyPlayableFile(in directory: URL, episodeNumber: Int?) -> URL? {
+        let candidates: [URL]
+        if let episodeNumber,
+           let preferred = preferredPlayableFile(in: directory, episodeNumber: episodeNumber) {
+            candidates = [preferred]
+        } else {
+            candidates = playableFiles(in: directory)
+        }
+        return candidates.first { url in
             let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
             return UInt64(max(0, size)) >= readinessMinimumBytes
         }

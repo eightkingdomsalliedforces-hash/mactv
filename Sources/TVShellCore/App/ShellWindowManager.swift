@@ -2,6 +2,8 @@ import AppKit
 import SwiftUI
 
 public struct ShellWindowConfigurator: NSViewRepresentable {
+    private static var didRequestInitialFullScreen = false
+
     public init() {}
 
     public static func toggleFocusedWindowFullScreen() {
@@ -41,5 +43,18 @@ public struct ShellWindowConfigurator: NSViewRepresentable {
         window.isMovableByWindowBackground = true
         window.standardWindowButton(.zoomButton)?.isHidden = false
         window.standardWindowButton(.zoomButton)?.isEnabled = true
+        requestInitialFullScreen(window)
+    }
+
+    private func requestInitialFullScreen(_ window: NSWindow) {
+        guard Self.didRequestInitialFullScreen == false,
+              window.styleMask.contains(.fullScreen) == false
+        else {
+            return
+        }
+        Self.didRequestInitialFullScreen = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            window.toggleFullScreen(nil)
+        }
     }
 }

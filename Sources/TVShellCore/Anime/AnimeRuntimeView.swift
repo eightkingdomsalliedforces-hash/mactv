@@ -231,7 +231,7 @@ public struct AnimeRuntimeView: View {
                         }
                     }
 
-                    Text("方向鍵選集，OK 播放，Back 回詳情，播放中 Menu 開關彈幕。")
+                    Text("方向鍵選集，OK 播放，Back 回詳情，Menu 刪除目前 BT 下載。")
                         .font(.system(size: 25 * metrics.scale, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.62))
                 }
@@ -291,16 +291,19 @@ public struct AnimeRuntimeView: View {
                     .zIndex(3)
             }
 
-            VStack(alignment: .leading, spacing: 12 * metrics.scale) {
-                Text(controller.playingTitle)
-                    .font(.system(size: 38 * metrics.scale, weight: .bold))
-                Text("播放/暫停控制播放，左右快轉倒退，Back 回選集，Menu 彈幕。")
-                    .font(.system(size: 22 * metrics.scale, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.72))
+            if controller.isPlayerHUDVisible {
+                VStack(alignment: .leading, spacing: 12 * metrics.scale) {
+                    Text(controller.playingTitle)
+                        .font(.system(size: 38 * metrics.scale, weight: .bold))
+                    Text("播放/暫停控制播放，左右快轉倒退，Back 回選集，Menu 彈幕。")
+                        .font(.system(size: 22 * metrics.scale, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.72))
+                }
+                .padding(28 * metrics.scale)
+                .liquidGlassCard(isFocused: true, cornerRadius: 22 * metrics.scale)
+                .padding(50 * metrics.scale)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
-            .padding(28 * metrics.scale)
-            .liquidGlassCard(isFocused: true, cornerRadius: 22 * metrics.scale)
-            .padding(50 * metrics.scale)
 
             HStack(spacing: 12 * metrics.scale) {
                 Text(controller.state.isDanmakuVisible ? "彈幕 ON" : "彈幕 OFF")
@@ -335,6 +338,7 @@ final class AnimeRuntimeController: ObservableObject {
     @Published private(set) var danmakuPlaybackTime: Double = 0
     @Published private(set) var danmakuPlaybackDate = Date()
     @Published private(set) var isDanmakuClockRunning = false
+    @Published private(set) var isPlayerHUDVisible = false
     @Published private(set) var isKeyboardVisible = false
     @Published private(set) var keyboardState = VirtualKeyboardState(text: "", layout: .zhuyin)
 
@@ -347,6 +351,7 @@ final class AnimeRuntimeController: ObservableObject {
     private nonisolated(unsafe) var observer: NSObjectProtocol?
     private nonisolated(unsafe) var timeObserver: Any?
     private nonisolated(unsafe) var itemObserver: NSKeyValueObservation?
+    private var hidePlayerHUDTask: Task<Void, Never>?
     private var mediaState = MediaControlState()
     private let torrentPlaybackEngine = Aria2TorrentPlaybackEngine()
 
@@ -378,6 +383,7 @@ final class AnimeRuntimeController: ObservableObject {
             player.removeTimeObserver(timeObserver)
         }
         itemObserver?.invalidate()
+        hidePlayerHUDTask?.cancel()
     }
 
     var playingTitle: String {
@@ -434,6 +440,8 @@ final class AnimeRuntimeController: ObservableObject {
         player.replaceCurrentItem(with: nil)
         currentYouTubeVideoID = nil
         isDanmakuClockRunning = false
+        hidePlayerHUDTask?.cancel()
+        isPlayerHUDVisible = false
     }
 
     func updateEpisodeColumns(_ columns: Int) {
@@ -459,6 +467,10 @@ final class AnimeRuntimeController: ObservableObject {
 
         let previousPhase = state.phase
         state.apply(command, titleColumns: titleColumns, episodeColumns: episodeColumns)
+
+        if previousPhase == .titles, state.phase == .titles {
+            currentTitle = focusedTitle
+        }
 
         if previousPhase == .titles, command == .back {
             NotificationCenter.default.post(name: .tvShellRequestLauncher, object: nil)
@@ -491,6 +503,11 @@ final class AnimeRuntimeController: ObservableObject {
                     ]
                 )
             }
+            return
+        }
+
+        if previousPhase == .episodes, state.phase == .episodes, command == .menu {
+            deleteFocusedTorrentDownload()
             return
         }
 
@@ -583,7 +600,7 @@ final class AnimeRuntimeController: ObservableObject {
                 return
             }
 
-            loadPlayer(stream)
+            loadPlayer(stream, episode: episode)
             await loadDanmaku(for: episode, stream: stream)
         } catch {
             if error as? YouTubeAPIError == .missingAPIKey {
@@ -619,7 +636,8 @@ final class AnimeRuntimeController: ObservableObject {
         }
     }
 
-    private func loadPlayer(_ stream: AnimeStreamCandidate) {
+    private func loadPlayer(_ stream: AnimeStreamCandidate, episode: AnimeEpisode) {
+        showPlayerHUD()
         if stream.url.scheme == "youtube" {
             currentYouTubeVideoID = stream.url.host ?? stream.url.absoluteString.replacingOccurrences(of: "youtube://", with: "")
             subtitleStatusText = "字幕：YouTube 中文字幕優先"
@@ -636,7 +654,7 @@ final class AnimeRuntimeController: ObservableObject {
             player.replaceCurrentItem(with: nil)
             subtitleStatusText = "字幕：BT 下載中"
             statusText = "正在啟動 BT 邊下邊播：\(stream.quality)..."
-            Task { await playTorrent(stream) }
+            Task { await playTorrent(stream, episode: episode) }
             return
         }
 
@@ -644,9 +662,9 @@ final class AnimeRuntimeController: ObservableObject {
         playAVURL(stream.url)
     }
 
-    private func playTorrent(_ stream: AnimeStreamCandidate) async {
+    private func playTorrent(_ stream: AnimeStreamCandidate, episode: AnimeEpisode) async {
         do {
-            let fileURL = try await torrentPlaybackEngine.startStreaming(stream) { [weak self] progress in
+            let fileURL = try await torrentPlaybackEngine.startStreaming(stream, episodeNumber: episode.number) { [weak self] progress in
                 Task { @MainActor [weak self] in
                     self?.updateTorrentProgress(progress)
                 }
@@ -655,7 +673,7 @@ final class AnimeRuntimeController: ObservableObject {
             subtitleStatusText = "字幕：正在尋找中文軌"
             statusText = "BT 已開始邊下邊播：\(fileURL.lastPathComponent)"
             playAVURL(fileURL)
-            Task { await monitorTorrentProgress(stream) }
+            Task { await monitorTorrentProgress(stream, episode: episode) }
         } catch {
             subtitleStatusText = "字幕：BT 未就緒"
             statusText = error.localizedDescription
@@ -670,11 +688,31 @@ final class AnimeRuntimeController: ObservableObject {
         }
     }
 
-    private func monitorTorrentProgress(_ stream: AnimeStreamCandidate) async {
+    private func monitorTorrentProgress(_ stream: AnimeStreamCandidate, episode: AnimeEpisode) async {
         let directory = torrentPlaybackEngine.downloadDirectory(for: stream)
         for _ in 0..<900 where state.phase == .playing {
-            updateTorrentProgress(torrentPlaybackEngine.downloadProgress(in: directory))
+            updateTorrentProgress(torrentPlaybackEngine.downloadProgress(in: directory, episodeNumber: episode.number))
             try? await Task.sleep(nanoseconds: 2_000_000_000)
+        }
+    }
+
+    private func deleteFocusedTorrentDownload() {
+        guard episodes.indices.contains(state.focusedEpisodeIndex),
+              let streamURL = episodes[state.focusedEpisodeIndex].identity.playbackURL
+        else {
+            statusText = "目前集數沒有可刪除的 BT 下載。"
+            return
+        }
+        let stream = AnimeStreamCandidate(
+            url: streamURL,
+            quality: "BT / RSS",
+            headers: ["resolver": "torrent"]
+        )
+        do {
+            try torrentPlaybackEngine.deleteDownload(for: stream)
+            statusText = "已刪除目前 BT 下載快取。"
+        } catch {
+            statusText = "刪除 BT 下載失敗：\(error.localizedDescription)"
         }
     }
 
@@ -748,6 +786,7 @@ final class AnimeRuntimeController: ObservableObject {
         }
 
         if command == .playPause || command == .select {
+            showPlayerHUD()
             if mediaState.isPlaying {
                 player.play()
                 isDanmakuClockRunning = true
@@ -755,6 +794,15 @@ final class AnimeRuntimeController: ObservableObject {
                 player.pause()
                 isDanmakuClockRunning = false
             }
+        }
+    }
+
+    private func showPlayerHUD() {
+        isPlayerHUDVisible = true
+        hidePlayerHUDTask?.cancel()
+        hidePlayerHUDTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            self?.isPlayerHUDVisible = false
         }
     }
 
