@@ -59,6 +59,17 @@ swift build -c release --product TVShell
 swift run TVShellChecks
 ```
 
+## GitHub Release
+
+GitHub Actions 會在 push / PR 時自動執行檢查與 release build。若要發布 GitHub Release，建立並推送 `v*` tag：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+workflow 會打包 `TVShell` release binary，並把 zip 上傳到該 tag 的 GitHub Release。
+
 ## API 與環境變數
 
 ### YouTube

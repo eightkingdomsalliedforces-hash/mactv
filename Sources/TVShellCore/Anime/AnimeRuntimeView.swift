@@ -64,6 +64,7 @@ public struct AnimeRuntimeView: View {
             }
         }
         .task {
+            controller.updateWatchHistory(appState.watchingHistory)
             await controller.load(
                 sourceProvider: AnimeSourceProviderFactory.provider(
                     catalog: appState.animeSourceCatalog,
@@ -71,6 +72,9 @@ public struct AnimeRuntimeView: View {
                 ),
                 danmakuProvider: DandanplayDanmakuProvider(credentials: appState.dandanplayCredentials)
             )
+        }
+        .onChange(of: appState.watchingHistory) { _, history in
+            controller.updateWatchHistory(history)
         }
         .onDisappear {
             controller.stop()
@@ -348,6 +352,10 @@ final class AnimeRuntimeController: ObservableObject {
     private var titleColumns = 6
     private var episodeColumns = 4
     private var currentQuery = ""
+    private var watchHistory: [WatchHistoryEntry] = []
+    private var currentPlayingEpisode: AnimeEpisode?
+    private var lastRecordedMediaID: String?
+    private var lastRecordedTime: Double = -1
     private nonisolated(unsafe) var observer: NSObjectProtocol?
     private nonisolated(unsafe) var timeObserver: Any?
     private nonisolated(unsafe) var itemObserver: NSKeyValueObservation?
@@ -436,12 +444,17 @@ final class AnimeRuntimeController: ObservableObject {
     }
 
     func stop() {
+        recordPlaybackProgress(force: true)
         player.pause()
         player.replaceCurrentItem(with: nil)
         currentYouTubeVideoID = nil
         isDanmakuClockRunning = false
         hidePlayerHUDTask?.cancel()
         isPlayerHUDVisible = false
+    }
+
+    func updateWatchHistory(_ history: [WatchHistoryEntry]) {
+        watchHistory = history
     }
 
     func updateEpisodeColumns(_ columns: Int) {
@@ -491,6 +504,7 @@ final class AnimeRuntimeController: ObservableObject {
             Task { await playFocusedEpisode() }
             if episodes.indices.contains(state.focusedEpisodeIndex) {
                 let episode = episodes[state.focusedEpisodeIndex]
+                let mediaID = watchMediaID(for: episode)
                 NotificationCenter.default.post(
                     name: .tvShellRecordWatch,
                     object: nil,
@@ -498,7 +512,9 @@ final class AnimeRuntimeController: ObservableObject {
                         WatchHistoryNotification.entryKey: WatchHistoryEntry(
                             title: currentTitle?.title ?? episode.title,
                             subtitle: episode.title,
-                            kind: .anime
+                            kind: .anime,
+                            mediaID: mediaID,
+                            resumeTimeSeconds: resumeTime(for: mediaID)
                         )
                     ]
                 )
@@ -638,6 +654,9 @@ final class AnimeRuntimeController: ObservableObject {
 
     private func loadPlayer(_ stream: AnimeStreamCandidate, episode: AnimeEpisode) {
         showPlayerHUD()
+        currentPlayingEpisode = episode
+        lastRecordedMediaID = nil
+        lastRecordedTime = -1
         if stream.url.scheme == "youtube" {
             currentYouTubeVideoID = stream.url.host ?? stream.url.absoluteString.replacingOccurrences(of: "youtube://", with: "")
             subtitleStatusText = "字幕：YouTube 中文字幕優先"
@@ -723,12 +742,19 @@ final class AnimeRuntimeController: ObservableObject {
 
     private func playAVURL(_ url: URL) {
         subtitleStatusText = "字幕：正在尋找中文軌"
+        let resumeTime = currentPlayingEpisode
+            .map(watchMediaID(for:))
+            .map(resumeTime(for:)) ?? 0
         let item = AVPlayerItem(url: url)
         itemObserver?.invalidate()
         itemObserver = item.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
             Task { @MainActor in
                 if case .readyToPlay = item.status {
                     await self?.selectChineseSubtitleIfAvailable(for: item)
+                    if resumeTime > 1 {
+                        await self?.player.seek(to: CMTime(seconds: resumeTime, preferredTimescale: 600))
+                        self?.statusText = "已從 \(WatchHistoryEntry.timeLabel(for: resumeTime)) 繼續播放，按 OK 可回到 00:00。"
+                    }
                     self?.player.play()
                 } else if case .failed = item.status {
                     self?.statusText = item.error?.localizedDescription ?? "動畫播放失敗。"
@@ -785,6 +811,15 @@ final class AnimeRuntimeController: ObservableObject {
             player.seek(to: CMTime(seconds: target, preferredTimescale: 600))
         }
 
+        if mediaState.shouldRestartFromBeginning {
+            player.seek(to: .zero)
+            recordPlaybackProgress(time: 0, force: true)
+            showPlayerHUD()
+            player.play()
+            isDanmakuClockRunning = true
+            return
+        }
+
         if command == .playPause || command == .select {
             showPlayerHUD()
             if mediaState.isPlaying {
@@ -833,6 +868,53 @@ final class AnimeRuntimeController: ObservableObject {
         visibleDanmaku = comments
             .filter { time >= $0.time && time - $0.time < 4.2 }
             .suffix(5)
+        recordPlaybackProgress(time: time)
+    }
+
+    private func resumeTime(for mediaID: String) -> Double {
+        watchHistory.first { $0.mediaID == mediaID }?.resumeTimeSeconds ?? 0
+    }
+
+    private func watchMediaID(for episode: AnimeEpisode) -> String {
+        [
+            "anime",
+            episode.identity.providerID,
+            episode.identity.subjectID,
+            episode.identity.episodeID
+        ].joined(separator: ":")
+    }
+
+    private func recordPlaybackProgress(force: Bool = false) {
+        recordPlaybackProgress(time: player.currentTime().seconds, force: force)
+    }
+
+    private func recordPlaybackProgress(time: Double, force: Bool = false) {
+        guard let episode = currentPlayingEpisode,
+              time.isFinite
+        else {
+            return
+        }
+        let mediaID = watchMediaID(for: episode)
+        guard force || mediaID != lastRecordedMediaID || abs(time - lastRecordedTime) >= 5 else {
+            return
+        }
+        lastRecordedMediaID = mediaID
+        lastRecordedTime = time
+        let duration = player.currentItem?.duration.seconds
+        NotificationCenter.default.post(
+            name: .tvShellRecordWatch,
+            object: nil,
+            userInfo: [
+                WatchHistoryNotification.entryKey: WatchHistoryEntry(
+                    title: currentTitle?.title ?? episode.title,
+                    subtitle: episode.title,
+                    kind: .anime,
+                    mediaID: mediaID,
+                    resumeTimeSeconds: max(0, time),
+                    durationSeconds: duration?.isFinite == true ? duration : nil
+                )
+            ]
+        )
     }
 }
 

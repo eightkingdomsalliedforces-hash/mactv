@@ -81,9 +81,20 @@ public final class AppState: ObservableObject {
         }
     }
 
+    public func resumeTime(for mediaID: String) -> Double? {
+        watchingHistory.first { $0.mediaID == mediaID }?.resumeTimeSeconds
+    }
+
+    public func recordWatchForTesting(_ entry: WatchHistoryEntry) {
+        recordWatch(entry)
+    }
+
     private func recordWatch(_ entry: WatchHistoryEntry) {
         watchingHistory.removeAll { existing in
-            existing.title == entry.title && existing.kind == entry.kind
+            if let mediaID = entry.mediaID {
+                return existing.mediaID == mediaID
+            }
+            return existing.title == entry.title && existing.kind == entry.kind
         }
         watchingHistory.insert(entry, at: 0)
         if watchingHistory.count > 24 {

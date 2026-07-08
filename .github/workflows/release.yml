@@ -1,0 +1,53 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build TVShell
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Swift Version
+        run: swift --version
+
+      - name: Run Checks
+        run: swift run TVShellChecks
+
+      - name: Build Release Product
+        run: swift build -c release --product TVShell
+
+      - name: Package Binary
+        run: |
+          mkdir -p dist
+          cp .build/release/TVShell dist/TVShell
+          (cd dist && zip -9 TVShell-macOS-${{ github.sha }}.zip TVShell)
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TVShell-macOS
+          path: dist/TVShell-macOS-${{ github.sha }}.zip
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            "dist/TVShell-macOS-${{ github.sha }}.zip" \
+            --title "MacTV ${{ github.ref_name }}" \
+            --notes "Automated macOS release for ${{ github.ref_name }}."

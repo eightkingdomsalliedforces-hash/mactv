@@ -114,6 +114,12 @@ final class MediaRuntimeController: ObservableObject {
             player.seek(to: CMTime(seconds: target, preferredTimescale: 600))
         }
 
+        if state.shouldRestartFromBeginning {
+            player.seek(to: .zero)
+            player.play()
+            return
+        }
+
         if state.isPlaying {
             player.play()
         } else {

@@ -75,6 +75,7 @@ struct TVShellChecks {
         try checkTVMetricsScaleWithWindowSize()
         try checkAppCatalogVisibilityAndOrdering()
         try checkSettingsPersistAcrossRelaunch()
+        try checkWatchHistoryMergesByMediaID()
         try checkWallpaperPresetCyclingAndProvider()
         try checkQuickActionsAndBrowserArePresent()
         try checkWebRemoteModeCycles()
@@ -99,6 +100,7 @@ struct TVShellChecks {
         try checkAnimeSourcesExposePlayableStatusAndSearchChoices()
         try checkBigScreenViewsStayScrollableAndWindowIsResizable()
         try checkRuntimeNavigationAndPerformanceBudget()
+        try checkGitHubReleaseWorkflow()
         print("TVShellChecks passed")
     }
 
@@ -289,6 +291,8 @@ struct TVShellChecks {
         var state = MediaControlState()
         state.apply(.playPause)
         try expect(state.isPlaying, "playPause starts playback")
+        state.apply(.select)
+        try expect(state.shouldRestartFromBeginning, "OK restarts playback from the beginning")
         state.apply(.right)
         try expect(state.pendingSeekOffset == 10, "right seeks forward")
         state.apply(.rewind)
@@ -400,7 +404,13 @@ struct TVShellChecks {
         state.webZoom = 1.7
         state.videoSourceLabel = "收藏影片.mkv"
         state.watchingHistory = [
-            WatchHistoryEntry(title: "葬送的芙莉蓮", subtitle: "第 1 話", kind: .anime)
+            WatchHistoryEntry(
+                title: "葬送的芙莉蓮",
+                subtitle: "第 1 話",
+                kind: .anime,
+                mediaID: "anime:frieren:1",
+                resumeTimeSeconds: 125
+            )
         ]
         state.saveSettings()
 
@@ -411,6 +421,29 @@ struct TVShellChecks {
         try expect(restored.webZoom == 1.7, "web zoom persists")
         try expect(restored.videoSourceLabel == "收藏影片.mkv", "video source label persists")
         try expect(restored.watchingHistory.first?.title == "葬送的芙莉蓮", "watch history persists")
+        try expect(restored.watchingHistory.first?.resumeTimeLabel == "02:05", "watch history persists exact playback time")
+        try expect(restored.resumeTime(for: "anime:frieren:1") == 125, "app state can look up resume time by media id")
+    }
+
+    @MainActor
+    static func checkWatchHistoryMergesByMediaID() throws {
+        let state = AppState(apps: SeedApps.defaultApps)
+        state.recordWatchForTesting(WatchHistoryEntry(
+            title: "葬送的芙莉蓮",
+            subtitle: "第 1 話",
+            kind: .anime,
+            mediaID: "anime:frieren:1",
+            resumeTimeSeconds: 60
+        ))
+        state.recordWatchForTesting(WatchHistoryEntry(
+            title: "葬送的芙莉蓮",
+            subtitle: "第 1 話",
+            kind: .anime,
+            mediaID: "anime:frieren:1",
+            resumeTimeSeconds: 185
+        ))
+        try expect(state.watchingHistory.count == 1, "watch history merges the same media id")
+        try expect(state.watchingHistory.first?.resumeTimeLabel == "03:05", "watch history stores minutes and seconds")
     }
 
     static func checkWallpaperPresetCyclingAndProvider() throws {
@@ -1464,6 +1497,9 @@ struct TVShellChecks {
         try expect(animeRuntime.contains("isPlayerHUDVisible"), "anime player can hide the large playback HUD")
         try expect(animeRuntime.contains("hidePlayerHUDTask"), "anime player schedules HUD auto-hide")
         try expect(animeRuntime.contains("5_000_000_000"), "anime player hides HUD after five seconds")
+        try expect(animeRuntime.contains("resumeTime(for:"), "anime player looks up resume time")
+        try expect(animeRuntime.contains("recordPlaybackProgress"), "anime player records playback progress")
+        try expect(animeRuntime.contains("shouldRestartFromBeginning"), "anime player lets OK return to 00:00")
         try expect(animeRuntime.contains("deleteFocusedTorrentDownload"), "anime episode screen can delete BT downloads")
         try expect(animeRuntime.contains("loadPlayer(stream, episode: episode)"), "anime torrent playback receives the selected episode")
         try expect(animeRuntime.contains("updateTitleColumns"), "anime runtime updates poster grid columns from current window size")
@@ -1498,6 +1534,17 @@ struct TVShellChecks {
         try expect(liquidGlass.contains("radius: isFocused ? 42") == false, "liquid glass avoids very large focus shadows")
         try expect(liquidGlass.contains(".clipShape(shape)"), "liquid glass clips material to rounded shape")
         try expect(liquidGlass.contains(".compositingGroup()"), "liquid glass composites rounded material without square corner artifacts")
+    }
+
+    static func checkGitHubReleaseWorkflow() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        let workflowURL = root.appending(path: ".github/workflows/release.yml")
+        let workflow = try String(contentsOf: workflowURL)
+        try expect(workflow.contains("macos-14"), "release workflow builds on macOS")
+        try expect(workflow.contains("swift run TVShellChecks"), "release workflow runs TVShellChecks")
+        try expect(workflow.contains("swift build -c release --product TVShell"), "release workflow builds release product")
+        try expect(workflow.contains("gh release create"), "release workflow publishes GitHub releases for tags")
+        try expect(workflow.contains("upload-artifact"), "release workflow uploads build artifacts")
     }
 }
 

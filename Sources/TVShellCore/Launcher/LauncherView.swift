@@ -286,7 +286,7 @@ private struct WatchHistoryRowView: View {
                             Text(entry.title)
                                 .font(.system(size: 28 * metrics.scale, weight: .bold))
                                 .lineLimit(2)
-                            Text(entry.subtitle ?? entry.kind.rawValue)
+                            Text(entry.progressSubtitle)
                                 .font(.system(size: 20 * metrics.scale, weight: .semibold))
                                 .foregroundStyle(.white.opacity(0.62))
                                 .lineLimit(1)
