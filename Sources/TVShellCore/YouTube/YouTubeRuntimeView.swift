@@ -339,9 +339,10 @@ private struct MacTVYouTubeControls: View {
 
 struct YouTubePlayerView: NSViewRepresentable {
     let videoID: String
+    var onPlaybackTime: (@MainActor (Double, Bool) -> Void)?
 
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(onPlaybackTime: onPlaybackTime)
     }
 
     func makeNSView(context: Context) -> WKWebView {
@@ -359,6 +360,7 @@ struct YouTubePlayerView: NSViewRepresentable {
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
+        context.coordinator.onPlaybackTime = onPlaybackTime
         if context.coordinator.videoID != videoID {
             context.coordinator.videoID = videoID
             let page = YouTubeEmbedPage(videoID: videoID)
@@ -369,17 +371,25 @@ struct YouTubePlayerView: NSViewRepresentable {
     @MainActor
     final class Coordinator {
         var videoID: String = ""
+        var onPlaybackTime: (@MainActor (Double, Bool) -> Void)?
         private weak var webView: WKWebView?
         private nonisolated(unsafe) var observer: NSObjectProtocol?
+        private nonisolated(unsafe) var telemetryTimer: Timer?
+
+        init(onPlaybackTime: (@MainActor (Double, Bool) -> Void)?) {
+            self.onPlaybackTime = onPlaybackTime
+        }
 
         deinit {
             if let observer {
                 NotificationCenter.default.removeObserver(observer)
             }
+            telemetryTimer?.invalidate()
         }
 
         func attach(to webView: WKWebView) {
             self.webView = webView
+            startTelemetryTimerIfNeeded()
             if observer == nil {
                 observer = NotificationCenter.default.addObserver(
                     forName: .tvShellRuntimeCommand,
@@ -409,6 +419,35 @@ struct YouTubePlayerView: NSViewRepresentable {
                 return
             }
             webView?.evaluateJavaScript("window.tvShellYouTubeCommand && window.tvShellYouTubeCommand('\(jsCommand)')") { _, _ in }
+        }
+
+        private func startTelemetryTimerIfNeeded() {
+            guard telemetryTimer == nil else {
+                return
+            }
+            telemetryTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.pollPlaybackState()
+                }
+            }
+        }
+
+        private func pollPlaybackState() {
+            guard onPlaybackTime != nil else {
+                return
+            }
+            webView?.evaluateJavaScript("window.tvShellYouTubeState && window.tvShellYouTubeState()") { [weak self] result, _ in
+                guard let self,
+                      let state = result as? [String: Any],
+                      let currentTime = state["currentTime"] as? Double
+                else {
+                    return
+                }
+                let isPlaying = state["isPlaying"] as? Bool ?? false
+                Task { @MainActor in
+                    self.onPlaybackTime?(currentTime, isPlaying)
+                }
+            }
         }
     }
 

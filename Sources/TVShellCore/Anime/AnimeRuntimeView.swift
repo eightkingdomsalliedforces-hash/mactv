@@ -270,7 +270,9 @@ public struct AnimeRuntimeView: View {
     private func player(metrics: TVMetrics) -> some View {
         ZStack(alignment: .bottomLeading) {
             if let youtubeVideoID = controller.currentYouTubeVideoID {
-                YouTubePlayerView(videoID: youtubeVideoID)
+                YouTubePlayerView(videoID: youtubeVideoID, onPlaybackTime: { time, isPlaying in
+                    controller.updateYouTubeDanmaku(time: time, isPlaying: isPlaying)
+                })
                     .ignoresSafeArea()
             } else {
                 AnimePlayerSurface(player: controller.player)
@@ -278,7 +280,13 @@ public struct AnimeRuntimeView: View {
             }
 
             if controller.state.isDanmakuVisible {
-                DanmakuOverlay(comments: controller.visibleDanmaku, currentTime: controller.danmakuPlaybackTime, metrics: metrics)
+                DanmakuOverlay(
+                    comments: controller.visibleDanmaku,
+                    currentTime: controller.danmakuPlaybackTime,
+                    sampleDate: controller.danmakuPlaybackDate,
+                    isClockRunning: controller.isDanmakuClockRunning,
+                    metrics: metrics
+                )
                     .transition(.opacity)
                     .zIndex(3)
             }
@@ -325,6 +333,8 @@ final class AnimeRuntimeController: ObservableObject {
     @Published private(set) var danmakuStatusText = "彈幕未載入"
     @Published private(set) var subtitleStatusText = "字幕：中文字幕優先"
     @Published private(set) var danmakuPlaybackTime: Double = 0
+    @Published private(set) var danmakuPlaybackDate = Date()
+    @Published private(set) var isDanmakuClockRunning = false
     @Published private(set) var isKeyboardVisible = false
     @Published private(set) var keyboardState = VirtualKeyboardState(text: "", layout: .zhuyin)
 
@@ -423,6 +433,7 @@ final class AnimeRuntimeController: ObservableObject {
         player.pause()
         player.replaceCurrentItem(with: nil)
         currentYouTubeVideoID = nil
+        isDanmakuClockRunning = false
     }
 
     func updateEpisodeColumns(_ columns: Int) {
@@ -612,6 +623,7 @@ final class AnimeRuntimeController: ObservableObject {
         if stream.url.scheme == "youtube" {
             currentYouTubeVideoID = stream.url.host ?? stream.url.absoluteString.replacingOccurrences(of: "youtube://", with: "")
             subtitleStatusText = "字幕：YouTube 中文字幕優先"
+            isDanmakuClockRunning = true
             player.pause()
             player.replaceCurrentItem(with: nil)
             return
@@ -619,6 +631,7 @@ final class AnimeRuntimeController: ObservableObject {
 
         if stream.url.scheme == "magnet" || stream.headers["resolver"] == "torrent" {
             currentYouTubeVideoID = nil
+            isDanmakuClockRunning = false
             player.pause()
             player.replaceCurrentItem(with: nil)
             subtitleStatusText = "字幕：BT 下載中"
@@ -687,6 +700,7 @@ final class AnimeRuntimeController: ObservableObject {
 
         player.replaceCurrentItem(with: item)
         mediaState = MediaControlState(isPlaying: true)
+        isDanmakuClockRunning = true
         installTimeObserverIfNeeded()
     }
 
@@ -736,8 +750,10 @@ final class AnimeRuntimeController: ObservableObject {
         if command == .playPause || command == .select {
             if mediaState.isPlaying {
                 player.play()
+                isDanmakuClockRunning = true
             } else {
                 player.pause()
+                isDanmakuClockRunning = false
             }
         }
     }
@@ -747,7 +763,7 @@ final class AnimeRuntimeController: ObservableObject {
             return
         }
 
-        let interval = CMTime(seconds: 0.5, preferredTimescale: 600)
+        let interval = CMTime(seconds: 0.2, preferredTimescale: 600)
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             Task { @MainActor in
                 self?.updateDanmaku(time: time.seconds)
@@ -755,8 +771,17 @@ final class AnimeRuntimeController: ObservableObject {
         }
     }
 
+    func updateYouTubeDanmaku(time: Double, isPlaying: Bool) {
+        guard currentYouTubeVideoID != nil else {
+            return
+        }
+        isDanmakuClockRunning = isPlaying
+        updateDanmaku(time: time)
+    }
+
     private func updateDanmaku(time: Double) {
         danmakuPlaybackTime = time
+        danmakuPlaybackDate = Date()
         visibleDanmaku = comments
             .filter { time >= $0.time && time - $0.time < 4.2 }
             .suffix(5)
@@ -850,31 +875,45 @@ private struct EpisodeCard: View {
 private struct DanmakuOverlay: View {
     let comments: [DanmakuComment]
     let currentTime: Double
+    let sampleDate: Date
+    let isClockRunning: Bool
     let metrics: TVMetrics
 
     var body: some View {
         GeometryReader { proxy in
-            ForEach(Array(comments.enumerated()), id: \.offset) { index, comment in
-                let age = max(0, currentTime - comment.time)
-                let progress = min(max(age / 4.2, 0), 1)
-                let travel = proxy.size.width + 620 * metrics.scale
-                Text(verbatim: comment.text)
-                    .modifier(DanmakuTextStyle(metrics: metrics))
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.92), radius: 8, x: 0, y: 3)
-                    .padding(.horizontal, 20 * metrics.scale)
-                    .padding(.vertical, 8 * metrics.scale)
-                    .background(.black.opacity(0.22), in: Capsule())
-                    .offset(
-                        x: proxy.size.width - CGFloat(progress) * CGFloat(travel),
-                        y: CGFloat(index % 5) * CGFloat(54 * metrics.scale)
-                    )
-                    .transition(.opacity)
+            TimelineView(.animation) { timeline in
+                let interpolatedTime = currentTime + (isClockRunning ? timeline.date.timeIntervalSince(sampleDate) : 0)
+                ForEach(Array(comments.enumerated()), id: \.element.stableIdentity) { index, comment in
+                    let age = max(0, interpolatedTime - comment.time)
+                    let progress = min(max(age / 4.2, 0), 1)
+                    let travel = proxy.size.width + 620 * metrics.scale
+                    Text(verbatim: comment.text)
+                        .modifier(DanmakuTextStyle(metrics: metrics))
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.92), radius: 8, x: 0, y: 3)
+                        .padding(.horizontal, 20 * metrics.scale)
+                        .padding(.vertical, 8 * metrics.scale)
+                        .background(.black.opacity(0.22), in: Capsule())
+                        .offset(
+                            x: proxy.size.width - CGFloat(progress) * CGFloat(travel),
+                            y: CGFloat(index % 5) * CGFloat(54 * metrics.scale)
+                        )
+                        .transaction { transaction in
+                            transaction.animation = nil
+                        }
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.top, 78 * metrics.scale)
         .padding(.leading, 78 * metrics.scale)
+        .drawingGroup()
+    }
+}
+
+private extension DanmakuComment {
+    var stableIdentity: String {
+        "\(time)-\(text)-\(colorHex)-\(mode.rawValue)"
     }
 }
 
