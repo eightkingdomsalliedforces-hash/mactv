@@ -282,6 +282,7 @@ public struct AnimeRuntimeView: View {
             HStack(spacing: 12 * metrics.scale) {
                 Text(controller.state.isDanmakuVisible ? "彈幕 ON" : "彈幕 OFF")
                 Text(controller.danmakuStatusText)
+                Text(controller.subtitleStatusText)
             }
             .font(.system(size: 22 * metrics.scale, weight: .bold))
             .foregroundStyle(.white.opacity(0.88))
@@ -307,6 +308,7 @@ final class AnimeRuntimeController: ObservableObject {
     @Published private(set) var visibleDanmaku: [DanmakuComment] = []
     @Published private(set) var currentYouTubeVideoID: String?
     @Published private(set) var danmakuStatusText = "彈幕未載入"
+    @Published private(set) var subtitleStatusText = "字幕：中文字幕優先"
     @Published private(set) var isKeyboardVisible = false
     @Published private(set) var keyboardState = VirtualKeyboardState(text: "", layout: .zhuyin)
 
@@ -592,26 +594,64 @@ final class AnimeRuntimeController: ObservableObject {
     private func loadPlayer(_ stream: AnimeStreamCandidate) {
         if stream.url.scheme == "youtube" {
             currentYouTubeVideoID = stream.url.host ?? stream.url.absoluteString.replacingOccurrences(of: "youtube://", with: "")
+            subtitleStatusText = "字幕：YouTube 中文字幕優先"
             player.pause()
             player.replaceCurrentItem(with: nil)
             return
         }
 
         currentYouTubeVideoID = nil
+        subtitleStatusText = "字幕：正在尋找中文軌"
         let item = AVPlayerItem(url: stream.url)
         itemObserver?.invalidate()
         itemObserver = item.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
             Task { @MainActor in
-                if case .failed = item.status {
+                if case .readyToPlay = item.status {
+                    await self?.selectChineseSubtitleIfAvailable(for: item)
+                    self?.player.play()
+                } else if case .failed = item.status {
                     self?.statusText = item.error?.localizedDescription ?? "動畫播放失敗。"
                 }
             }
         }
 
         player.replaceCurrentItem(with: item)
-        player.play()
         mediaState = MediaControlState(isPlaying: true)
         installTimeObserverIfNeeded()
+    }
+
+    private func selectChineseSubtitleIfAvailable(for item: AVPlayerItem) async {
+        guard let group = try? await item.asset.loadMediaSelectionGroup(for: .legible) else {
+            subtitleStatusText = "字幕：此來源沒有字幕軌"
+            return
+        }
+
+        guard let option = group.options.first(where: isChineseSubtitleOption) else {
+            subtitleStatusText = "字幕：沒有找到中文字幕"
+            return
+        }
+
+        item.select(option, in: group)
+        subtitleStatusText = "字幕：已選 \(option.displayName)"
+    }
+
+    private func isChineseSubtitleOption(_ option: AVMediaSelectionOption) -> Bool {
+        let values = [
+            option.displayName,
+            option.extendedLanguageTag ?? "",
+            option.locale?.identifier ?? "",
+            option.locale?.localizedString(forLanguageCode: option.locale?.language.languageCode?.identifier ?? "") ?? ""
+        ]
+        let joined = values.joined(separator: " ").lowercased()
+        return joined.contains("zh")
+            || joined.contains("chi")
+            || joined.contains("zho")
+            || joined.contains("中文")
+            || joined.contains("繁體")
+            || joined.contains("繁体")
+            || joined.contains("簡體")
+            || joined.contains("简体")
+            || joined.contains("chinese")
     }
 
     private func handlePlayback(_ command: RemoteCommand) {

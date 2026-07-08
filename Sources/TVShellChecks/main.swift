@@ -672,6 +672,8 @@ struct TVShellChecks {
         try expect(html.contains("onError"), "youtube iframe handles player errors")
         try expect(html.contains("前往 YouTube 觀看影片"), "youtube iframe includes user-facing fallback link")
         try expect(html.contains("controls=0"), "youtube player hides youtube web controls behind MacTV controls")
+        try expect(html.contains("cc_load_policy=1"), "youtube player requests captions by default")
+        try expect(html.contains("cc_lang_pref=zh-Hant"), "youtube player prefers Traditional Chinese captions")
         try expect(html.contains("getDuration"), "youtube player exposes duration to custom shell")
         try expect(html.contains("tvShellYouTubeState"), "youtube player exposes state for custom shell")
     }
@@ -1133,6 +1135,9 @@ struct TVShellChecks {
         try expect(animeRuntime.contains(".animation(TVMotion.focus, value: comments)") == false, "danmaku overlay does not animate every comment refresh")
         try expect(animeRuntime.contains("DanmakuOverlay(comments: controller.visibleDanmaku"), "anime player renders danmaku overlay")
         try expect(animeRuntime.contains(".zIndex(3)"), "danmaku overlay is above player surfaces")
+        try expect(animeRuntime.contains("subtitleStatusText"), "anime player exposes subtitle status")
+        try expect(animeRuntime.contains("loadMediaSelectionGroup(for: .legible)"), "anime player inspects subtitle tracks")
+        try expect(animeRuntime.contains("isChineseSubtitleOption"), "anime player prefers Chinese subtitles")
 
         let liquidGlass = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Design/LiquidGlass.swift"))
         try expect(liquidGlass.contains(".regularMaterial"), "liquid glass uses frosted glass material")

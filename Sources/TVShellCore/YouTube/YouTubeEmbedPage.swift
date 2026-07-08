@@ -61,7 +61,7 @@ public struct YouTubeEmbedPage: Equatable, Sendable {
           <iframe
             id="playerFrame"
             type="text/html"
-            src="https://www.youtube.com/embed/\(videoID)?enablejsapi=1&autoplay=1&controls=0&playsinline=1&rel=0&modestbranding=1&iv_load_policy=3&origin=\(originValue)"
+            src="https://www.youtube.com/embed/\(videoID)?enablejsapi=1&autoplay=1&controls=0&playsinline=1&rel=0&modestbranding=1&iv_load_policy=3&cc_load_policy=1&cc_lang_pref=zh-Hant&origin=\(originValue)"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowfullscreen
             referrerpolicy="strict-origin-when-cross-origin"
