@@ -3,6 +3,7 @@ import WebKit
 
 public struct YouTubeRuntimeView: View {
     public let app: TVAppProfile
+    @EnvironmentObject private var appState: AppState
     @StateObject private var controller = YouTubeRuntimeController()
 
     public init(app: TVAppProfile) {
@@ -54,7 +55,11 @@ public struct YouTubeRuntimeView: View {
             }
         }
         .task {
+            controller.updateWatchHistory(appState.watchingHistory)
             await controller.load()
+        }
+        .onChange(of: appState.watchingHistory) { _, history in
+            controller.updateWatchHistory(history)
         }
     }
 
@@ -124,21 +129,31 @@ public struct YouTubeRuntimeView: View {
     private func player(metrics: TVMetrics) -> some View {
         ZStack(alignment: .bottomLeading) {
             if let video = controller.focusedVideo {
-                YouTubePlayerView(videoID: video.id)
+                YouTubePlayerView(
+                    videoID: video.id,
+                    startSeconds: controller.resumeTime(for: video),
+                    restartOnSelect: controller.canRestartFromBeginningWithSelect,
+                    onPlaybackTime: { time, isPlaying in
+                        controller.recordPlaybackTime(time, isPlaying: isPlaying)
+                    }
+                )
                     .ignoresSafeArea()
             }
 
-            VStack(alignment: .leading, spacing: 12 * metrics.scale) {
-                Text(controller.focusedVideo?.title ?? "YouTube")
-                    .font(.system(size: 38 * metrics.scale, weight: .bold))
-                    .lineLimit(2)
-                Text("播放/暫停控制播放，左右快轉倒退，Back 回列表。")
-                    .font(.system(size: 22 * metrics.scale, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.72))
+            if controller.isPlayerHUDVisible {
+                VStack(alignment: .leading, spacing: 12 * metrics.scale) {
+                    Text(controller.focusedVideo?.title ?? "YouTube")
+                        .font(.system(size: 38 * metrics.scale, weight: .bold))
+                        .lineLimit(2)
+                    Text("播放/暫停控制播放，HUD 顯示時 OK 從 0:00 重播，HUD 消失後 OK 播放暫停。")
+                        .font(.system(size: 22 * metrics.scale, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.72))
+                }
+                .padding(28 * metrics.scale)
+                .liquidGlassCard(isFocused: true, cornerRadius: 22 * metrics.scale)
+                .padding(50 * metrics.scale)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
-            .padding(28 * metrics.scale)
-            .liquidGlassCard(isFocused: true, cornerRadius: 22 * metrics.scale)
-            .padding(50 * metrics.scale)
 
             MacTVYouTubeControls(metrics: metrics)
                 .padding(.horizontal, 50 * metrics.scale)
@@ -154,9 +169,15 @@ final class YouTubeRuntimeController: ObservableObject {
     @Published private(set) var videos: [YouTubeVideo] = []
     @Published private(set) var statusText = "正在載入 YouTube..."
     @Published private(set) var isKeyboardVisible = false
+    @Published private(set) var isPlayerHUDVisible = false
+    @Published private(set) var canRestartFromBeginningWithSelect = false
     @Published private(set) var keyboardState = VirtualKeyboardState(text: "anime", layout: .zhuyin)
     private var gridColumns = 3
     private var currentQuery = "anime"
+    private var watchHistory: [WatchHistoryEntry] = []
+    private var lastRecordedVideoID: String?
+    private var lastRecordedTime: Double = -1
+    private var hidePlayerHUDTask: Task<Void, Never>?
 
     private let provider: any YouTubeVideoProvider
     private nonisolated(unsafe) var observer: NSObjectProtocol?
@@ -181,6 +202,7 @@ final class YouTubeRuntimeController: ObservableObject {
         if let observer {
             NotificationCenter.default.removeObserver(observer)
         }
+        hidePlayerHUDTask?.cancel()
     }
 
     var focusedVideo: YouTubeVideo? {
@@ -192,6 +214,14 @@ final class YouTubeRuntimeController: ObservableObject {
 
     func updateGridColumns(_ columns: Int) {
         gridColumns = max(1, columns)
+    }
+
+    func updateWatchHistory(_ history: [WatchHistoryEntry]) {
+        watchHistory = history
+    }
+
+    func resumeTime(for video: YouTubeVideo) -> Double {
+        watchHistory.first { $0.mediaID == watchMediaID(for: video) }?.resumeTimeSeconds ?? 0
     }
 
     func load() async {
@@ -233,6 +263,7 @@ final class YouTubeRuntimeController: ObservableObject {
         state.apply(command, columns: gridColumns)
 
         if previousPhase == .browsing, state.phase == .playing, let focusedVideo {
+            showPlayerHUD(allowRestart: true)
             NotificationCenter.default.post(
                 name: .tvShellRecordWatch,
                 object: nil,
@@ -240,7 +271,9 @@ final class YouTubeRuntimeController: ObservableObject {
                     WatchHistoryNotification.entryKey: WatchHistoryEntry(
                         title: focusedVideo.title,
                         subtitle: focusedVideo.channelTitle,
-                        kind: .youtube
+                        kind: .youtube,
+                        mediaID: watchMediaID(for: focusedVideo),
+                        resumeTimeSeconds: resumeTime(for: focusedVideo)
                     )
                 ]
             )
@@ -249,6 +282,17 @@ final class YouTubeRuntimeController: ObservableObject {
         if previousPhase == .browsing, command == .back {
             NotificationCenter.default.post(name: .tvShellRequestLauncher, object: nil)
             return
+        }
+
+        if previousPhase == .playing, state.phase == .browsing {
+            hidePlayerHUDTask?.cancel()
+            isPlayerHUDVisible = false
+            canRestartFromBeginningWithSelect = false
+            return
+        }
+
+        if state.phase == .playing && (command == .playPause || command == .select) {
+            showPlayerHUD(allowRestart: false)
         }
     }
 
@@ -264,6 +308,48 @@ final class YouTubeRuntimeController: ObservableObject {
         case .cancelled:
             isKeyboardVisible = false
             statusText = "已關閉搜尋"
+        }
+    }
+
+    func recordPlaybackTime(_ time: Double, isPlaying: Bool) {
+        guard isPlaying,
+              time.isFinite,
+              let video = focusedVideo
+        else {
+            return
+        }
+        guard video.id != lastRecordedVideoID || abs(time - lastRecordedTime) >= 5 else {
+            return
+        }
+        lastRecordedVideoID = video.id
+        lastRecordedTime = time
+        NotificationCenter.default.post(
+            name: .tvShellRecordWatch,
+            object: nil,
+            userInfo: [
+                WatchHistoryNotification.entryKey: WatchHistoryEntry(
+                    title: video.title,
+                    subtitle: video.channelTitle,
+                    kind: .youtube,
+                    mediaID: watchMediaID(for: video),
+                    resumeTimeSeconds: max(0, time)
+                )
+            ]
+        )
+    }
+
+    private func watchMediaID(for video: YouTubeVideo) -> String {
+        "youtube:\(video.id)"
+    }
+
+    private func showPlayerHUD(allowRestart: Bool = false) {
+        isPlayerHUDVisible = true
+        canRestartFromBeginningWithSelect = allowRestart
+        hidePlayerHUDTask?.cancel()
+        hidePlayerHUDTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            self?.isPlayerHUDVisible = false
+            self?.canRestartFromBeginningWithSelect = false
         }
     }
 }
@@ -327,7 +413,7 @@ private struct MacTVYouTubeControls: View {
             Text("播放 / 暫停")
             Text("10 ▶︎")
             Spacer()
-            Text("遙控器：OK 播放暫停，左右快轉倒退，Back 回列表")
+            Text("遙控器：HUD 顯示時 OK 回 0:00，之後 OK 播放暫停")
         }
         .font(.system(size: 23 * metrics.scale, weight: .bold))
         .foregroundStyle(.white.opacity(0.86))
@@ -339,6 +425,8 @@ private struct MacTVYouTubeControls: View {
 
 struct YouTubePlayerView: NSViewRepresentable {
     let videoID: String
+    var startSeconds: Double = 0
+    var restartOnSelect = false
     var onPlaybackTime: (@MainActor (Double, Bool) -> Void)?
 
     func makeCoordinator() -> Coordinator {
@@ -353,17 +441,22 @@ struct YouTubePlayerView: NSViewRepresentable {
         webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
         webView.setValue(false, forKey: "drawsBackground")
         context.coordinator.videoID = videoID
+        context.coordinator.startSeconds = startSeconds
+        context.coordinator.restartOnSelect = restartOnSelect
         context.coordinator.attach(to: webView)
-        let page = YouTubeEmbedPage(videoID: videoID)
+        let page = YouTubeEmbedPage(videoID: videoID, startSeconds: startSeconds)
         webView.loadHTMLString(page.html, baseURL: page.baseURL)
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.onPlaybackTime = onPlaybackTime
-        if context.coordinator.videoID != videoID {
+        context.coordinator.restartOnSelect = restartOnSelect
+        let startChanged = abs(context.coordinator.startSeconds - startSeconds) > 0.5
+        if context.coordinator.videoID != videoID || startChanged {
             context.coordinator.videoID = videoID
-            let page = YouTubeEmbedPage(videoID: videoID)
+            context.coordinator.startSeconds = startSeconds
+            let page = YouTubeEmbedPage(videoID: videoID, startSeconds: startSeconds)
             webView.loadHTMLString(page.html, baseURL: page.baseURL)
         }
     }
@@ -371,6 +464,8 @@ struct YouTubePlayerView: NSViewRepresentable {
     @MainActor
     final class Coordinator {
         var videoID: String = ""
+        var startSeconds: Double = 0
+        var restartOnSelect = false
         var onPlaybackTime: (@MainActor (Double, Bool) -> Void)?
         private weak var webView: WKWebView?
         private nonisolated(unsafe) var observer: NSObjectProtocol?
@@ -409,7 +504,14 @@ struct YouTubePlayerView: NSViewRepresentable {
         private func send(_ command: RemoteCommand) {
             let jsCommand: String
             switch command {
-            case .select, .playPause:
+            case .select:
+                if restartOnSelect {
+                    restartOnSelect = false
+                    jsCommand = "restart"
+                } else {
+                    jsCommand = "playPause"
+                }
+            case .playPause:
                 jsCommand = "playPause"
             case .left, .rewind:
                 jsCommand = "seekBack"

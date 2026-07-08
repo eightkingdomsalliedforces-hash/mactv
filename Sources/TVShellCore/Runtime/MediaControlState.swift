@@ -16,7 +16,7 @@ public struct MediaControlState: Equatable, Sendable {
         self.shouldExit = shouldExit
     }
 
-    public mutating func apply(_ command: RemoteCommand) {
+    public mutating func apply(_ command: RemoteCommand, restartOnSelect: Bool = false) {
         pendingSeekOffset = 0
         shouldRestartFromBeginning = false
 
@@ -24,8 +24,12 @@ public struct MediaControlState: Equatable, Sendable {
         case .playPause:
             isPlaying.toggle()
         case .select:
-            shouldRestartFromBeginning = true
-            isPlaying = true
+            if restartOnSelect {
+                shouldRestartFromBeginning = true
+                isPlaying = true
+            } else {
+                isPlaying.toggle()
+            }
         case .left, .rewind:
             pendingSeekOffset = -10
         case .right, .fastForward:

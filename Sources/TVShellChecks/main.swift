@@ -292,7 +292,9 @@ struct TVShellChecks {
         state.apply(.playPause)
         try expect(state.isPlaying, "playPause starts playback")
         state.apply(.select)
-        try expect(state.shouldRestartFromBeginning, "OK restarts playback from the beginning")
+        try expect(state.isPlaying == false, "OK toggles playback after the HUD has gone away")
+        state.apply(.select, restartOnSelect: true)
+        try expect(state.shouldRestartFromBeginning, "OK restarts playback from the beginning while the HUD is visible")
         state.apply(.right)
         try expect(state.pendingSeekOffset == 10, "right seeks forward")
         state.apply(.rewind)
@@ -801,7 +803,7 @@ struct TVShellChecks {
     }
 
     static func checkYouTubeEmbedPageIncludesOriginAndFallback() throws {
-        let page = YouTubeEmbedPage(videoID: "abcXYZ")
+        let page = YouTubeEmbedPage(videoID: "abcXYZ", startSeconds: 65)
         try expect(page.origin.absoluteString == "https://mactv.local", "youtube embed uses stable origin")
         try expect(page.watchURL.absoluteString == "https://www.youtube.com/watch?v=abcXYZ", "youtube embed exposes watch fallback url")
 
@@ -815,6 +817,8 @@ struct TVShellChecks {
         try expect(html.contains("cc_lang_pref=zh-Hant"), "youtube player prefers Traditional Chinese captions")
         try expect(html.contains("getDuration"), "youtube player exposes duration to custom shell")
         try expect(html.contains("tvShellYouTubeState"), "youtube player exposes state for custom shell")
+        try expect(html.contains("start=65"), "youtube player can resume from a saved start second")
+        try expect(html.contains("command === 'restart'"), "youtube player can restart from zero through the custom shell")
     }
 
     static func checkYouTubeLayoutAndPlayerShell() throws {
@@ -823,6 +827,9 @@ struct TVShellChecks {
         try expect(youtubeRuntime.contains("let cardWidth = 360 * metrics.scale"), "youtube cards use stable card width")
         try expect(youtubeRuntime.contains("let thumbnailHeight = 202 * metrics.scale"), "youtube cards use stable thumbnail height")
         try expect(youtubeRuntime.contains("MacTVYouTubeControls"), "youtube runtime renders custom player controls")
+        try expect(youtubeRuntime.contains("startSeconds: controller.resumeTime(for: video)"), "youtube runtime resumes from saved history")
+        try expect(youtubeRuntime.contains("recordPlaybackTime"), "youtube runtime records playback progress")
+        try expect(youtubeRuntime.contains("restartOnSelect: controller.canRestartFromBeginningWithSelect"), "youtube OK restarts only from the initial playback HUD")
 
         let webRuntime = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Runtime/WebAppRuntimeView.swift"))
         try expect(webRuntime.contains("remoteScrollByCommand"), "browser runtime exposes remote scroll command")
@@ -1499,7 +1506,9 @@ struct TVShellChecks {
         try expect(animeRuntime.contains("5_000_000_000"), "anime player hides HUD after five seconds")
         try expect(animeRuntime.contains("resumeTime(for:"), "anime player looks up resume time")
         try expect(animeRuntime.contains("recordPlaybackProgress"), "anime player records playback progress")
-        try expect(animeRuntime.contains("shouldRestartFromBeginning"), "anime player lets OK return to 00:00")
+        try expect(animeRuntime.contains("restartOnSelect: canRestartFromBeginningWithSelect"), "anime player lets OK return to 00:00 only from the initial playback HUD")
+        try expect(animeRuntime.contains("showPlayerHUD(allowRestart: true)"), "anime player enables restart only when playback first opens")
+        try expect(animeRuntime.contains("currentYouTubeResumeTime"), "anime youtube playback receives saved resume time")
         try expect(animeRuntime.contains("deleteFocusedTorrentDownload"), "anime episode screen can delete BT downloads")
         try expect(animeRuntime.contains("loadPlayer(stream, episode: episode)"), "anime torrent playback receives the selected episode")
         try expect(animeRuntime.contains("updateTitleColumns"), "anime runtime updates poster grid columns from current window size")

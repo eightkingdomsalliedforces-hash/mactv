@@ -274,9 +274,14 @@ public struct AnimeRuntimeView: View {
     private func player(metrics: TVMetrics) -> some View {
         ZStack(alignment: .bottomLeading) {
             if let youtubeVideoID = controller.currentYouTubeVideoID {
-                YouTubePlayerView(videoID: youtubeVideoID, onPlaybackTime: { time, isPlaying in
-                    controller.updateYouTubeDanmaku(time: time, isPlaying: isPlaying)
-                })
+                YouTubePlayerView(
+                    videoID: youtubeVideoID,
+                    startSeconds: controller.currentYouTubeResumeTime,
+                    restartOnSelect: controller.canRestartFromBeginningWithSelect,
+                    onPlaybackTime: { time, isPlaying in
+                        controller.updateYouTubeDanmaku(time: time, isPlaying: isPlaying)
+                    }
+                )
                     .ignoresSafeArea()
             } else {
                 AnimePlayerSurface(player: controller.player)
@@ -299,7 +304,7 @@ public struct AnimeRuntimeView: View {
                 VStack(alignment: .leading, spacing: 12 * metrics.scale) {
                     Text(controller.playingTitle)
                         .font(.system(size: 38 * metrics.scale, weight: .bold))
-                    Text("播放/暫停控制播放，左右快轉倒退，Back 回選集，Menu 彈幕。")
+                    Text("播放/暫停控制播放，HUD 顯示時 OK 從 0:00 重播，HUD 消失後 OK 播放暫停。")
                         .font(.system(size: 22 * metrics.scale, weight: .medium))
                         .foregroundStyle(.white.opacity(0.72))
                 }
@@ -337,12 +342,14 @@ final class AnimeRuntimeController: ObservableObject {
     @Published private(set) var statusText = "正在載入動畫源..."
     @Published private(set) var visibleDanmaku: [DanmakuComment] = []
     @Published private(set) var currentYouTubeVideoID: String?
+    @Published private(set) var currentYouTubeResumeTime: Double = 0
     @Published private(set) var danmakuStatusText = "彈幕未載入"
     @Published private(set) var subtitleStatusText = "字幕：中文字幕優先"
     @Published private(set) var danmakuPlaybackTime: Double = 0
     @Published private(set) var danmakuPlaybackDate = Date()
     @Published private(set) var isDanmakuClockRunning = false
     @Published private(set) var isPlayerHUDVisible = false
+    @Published private(set) var canRestartFromBeginningWithSelect = false
     @Published private(set) var isKeyboardVisible = false
     @Published private(set) var keyboardState = VirtualKeyboardState(text: "", layout: .zhuyin)
 
@@ -448,9 +455,11 @@ final class AnimeRuntimeController: ObservableObject {
         player.pause()
         player.replaceCurrentItem(with: nil)
         currentYouTubeVideoID = nil
+        currentYouTubeResumeTime = 0
         isDanmakuClockRunning = false
         hidePlayerHUDTask?.cancel()
         isPlayerHUDVisible = false
+        canRestartFromBeginningWithSelect = false
     }
 
     func updateWatchHistory(_ history: [WatchHistoryEntry]) {
@@ -653,13 +662,17 @@ final class AnimeRuntimeController: ObservableObject {
     }
 
     private func loadPlayer(_ stream: AnimeStreamCandidate, episode: AnimeEpisode) {
-        showPlayerHUD()
+        showPlayerHUD(allowRestart: true)
         currentPlayingEpisode = episode
         lastRecordedMediaID = nil
         lastRecordedTime = -1
         if stream.url.scheme == "youtube" {
             currentYouTubeVideoID = stream.url.host ?? stream.url.absoluteString.replacingOccurrences(of: "youtube://", with: "")
+            currentYouTubeResumeTime = resumeTime(for: watchMediaID(for: episode))
             subtitleStatusText = "字幕：YouTube 中文字幕優先"
+            if currentYouTubeResumeTime > 1 {
+                statusText = "已從 \(WatchHistoryEntry.timeLabel(for: currentYouTubeResumeTime)) 繼續播放，HUD 顯示時按 OK 可回到 00:00。"
+            }
             isDanmakuClockRunning = true
             player.pause()
             player.replaceCurrentItem(with: nil)
@@ -668,6 +681,7 @@ final class AnimeRuntimeController: ObservableObject {
 
         if stream.url.scheme == "magnet" || stream.headers["resolver"] == "torrent" {
             currentYouTubeVideoID = nil
+            currentYouTubeResumeTime = 0
             isDanmakuClockRunning = false
             player.pause()
             player.replaceCurrentItem(with: nil)
@@ -678,6 +692,7 @@ final class AnimeRuntimeController: ObservableObject {
         }
 
         currentYouTubeVideoID = nil
+        currentYouTubeResumeTime = 0
         playAVURL(stream.url)
     }
 
@@ -753,7 +768,7 @@ final class AnimeRuntimeController: ObservableObject {
                     await self?.selectChineseSubtitleIfAvailable(for: item)
                     if resumeTime > 1 {
                         await self?.player.seek(to: CMTime(seconds: resumeTime, preferredTimescale: 600))
-                        self?.statusText = "已從 \(WatchHistoryEntry.timeLabel(for: resumeTime)) 繼續播放，按 OK 可回到 00:00。"
+                        self?.statusText = "已從 \(WatchHistoryEntry.timeLabel(for: resumeTime)) 繼續播放，HUD 顯示時按 OK 可回到 00:00。"
                     }
                     self?.player.play()
                 } else if case .failed = item.status {
@@ -803,7 +818,7 @@ final class AnimeRuntimeController: ObservableObject {
     }
 
     private func handlePlayback(_ command: RemoteCommand) {
-        mediaState.apply(command)
+        mediaState.apply(command, restartOnSelect: canRestartFromBeginningWithSelect)
 
         if mediaState.pendingSeekOffset != 0 {
             let current = player.currentTime().seconds
@@ -812,16 +827,17 @@ final class AnimeRuntimeController: ObservableObject {
         }
 
         if mediaState.shouldRestartFromBeginning {
+            canRestartFromBeginningWithSelect = false
             player.seek(to: .zero)
             recordPlaybackProgress(time: 0, force: true)
-            showPlayerHUD()
+            showPlayerHUD(allowRestart: false)
             player.play()
             isDanmakuClockRunning = true
             return
         }
 
         if command == .playPause || command == .select {
-            showPlayerHUD()
+            showPlayerHUD(allowRestart: false)
             if mediaState.isPlaying {
                 player.play()
                 isDanmakuClockRunning = true
@@ -832,12 +848,14 @@ final class AnimeRuntimeController: ObservableObject {
         }
     }
 
-    private func showPlayerHUD() {
+    private func showPlayerHUD(allowRestart: Bool = false) {
         isPlayerHUDVisible = true
+        canRestartFromBeginningWithSelect = allowRestart
         hidePlayerHUDTask?.cancel()
         hidePlayerHUDTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 5_000_000_000)
             self?.isPlayerHUDVisible = false
+            self?.canRestartFromBeginningWithSelect = false
         }
     }
 

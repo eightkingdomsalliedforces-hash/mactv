@@ -3,10 +3,16 @@ import Foundation
 public struct YouTubeEmbedPage: Equatable, Sendable {
     public let videoID: String
     public let origin: URL
+    public let startSeconds: Double
 
-    public init(videoID: String, origin: URL = URL(string: "https://mactv.local")!) {
+    public init(
+        videoID: String,
+        origin: URL = URL(string: "https://mactv.local")!,
+        startSeconds: Double = 0
+    ) {
         self.videoID = videoID
         self.origin = origin
+        self.startSeconds = max(0, startSeconds)
     }
 
     public var baseURL: URL {
@@ -20,6 +26,7 @@ public struct YouTubeEmbedPage: Equatable, Sendable {
     public var html: String {
         let originValue = origin.absoluteString.addingPercentEncoding(withAllowedCharacters: .tvShellQueryValueAllowed) ?? origin.absoluteString
         let watchValue = watchURL.absoluteString
+        let startValue = Int(startSeconds.rounded(.down))
         return """
         <!doctype html>
         <html>
@@ -61,7 +68,7 @@ public struct YouTubeEmbedPage: Equatable, Sendable {
           <iframe
             id="playerFrame"
             type="text/html"
-            src="https://www.youtube.com/embed/\(videoID)?enablejsapi=1&autoplay=1&controls=0&playsinline=1&rel=0&modestbranding=1&iv_load_policy=3&cc_load_policy=1&cc_lang_pref=zh-Hant&origin=\(originValue)"
+            src="https://www.youtube.com/embed/\(videoID)?enablejsapi=1&autoplay=1&controls=0&playsinline=1&rel=0&modestbranding=1&iv_load_policy=3&cc_load_policy=1&cc_lang_pref=zh-Hant&start=\(startValue)&origin=\(originValue)"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowfullscreen
             referrerpolicy="strict-origin-when-cross-origin"
@@ -87,7 +94,10 @@ public struct YouTubeEmbedPage: Equatable, Sendable {
             function onYouTubeIframeAPIReady() {
               player = new YT.Player('playerFrame', {
                 events: {
-                  onReady: function(event) { event.target.playVideo(); },
+                  onReady: function(event) {
+                    if (\(startValue) > 0) event.target.seekTo(\(startValue), true);
+                    event.target.playVideo();
+                  },
                   onStateChange: function(event) { isPlaying = event.data === YT.PlayerState.PLAYING; },
                   onError: function(event) { showFallback(event.data); }
                 }
@@ -115,6 +125,11 @@ public struct YouTubeEmbedPage: Equatable, Sendable {
               }
               if (command === 'seekForward') {
                 player.seekTo(player.getCurrentTime() + 10, true);
+              }
+              if (command === 'restart') {
+                player.seekTo(0, true);
+                player.playVideo();
+                isPlaying = true;
               }
               if (command === 'volumeUp' && player.setVolume) {
                 player.setVolume(Math.min(100, player.getVolume() + 8));
