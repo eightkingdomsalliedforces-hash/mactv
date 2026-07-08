@@ -66,6 +66,7 @@ public struct BTFeedAnimeSourceProvider: AnimeMediaSourceAdapter {
 
         let results = grouped
             .map { title, releases in
+                var seenEpisodeNumbers = Set<Int>()
                 let sortedEpisodes = releases
                     .map(\.episode)
                     .sorted { left, right in
@@ -73,6 +74,13 @@ public struct BTFeedAnimeSourceProvider: AnimeMediaSourceAdapter {
                             return left.title < right.title
                         }
                         return left.number < right.number
+                    }
+                    .filter { episode in
+                        if seenEpisodeNumbers.contains(episode.number) {
+                            return false
+                        }
+                        seenEpisodeNumbers.insert(episode.number)
+                        return true
                     }
                 let rawSubtitle = releases.first?.rawTitle ?? "\(displayName) · BT/RSS"
                 return AnimeSearchResult(
@@ -123,8 +131,9 @@ public struct BTFeedAnimeSourceProvider: AnimeMediaSourceAdapter {
 
     private func episodeNumbers(from title: String) -> [Int] {
         let rangePatterns = [
-            #"(?<![0-9])([0-9]{1,3})\s*[-~～]\s*([0-9]{1,3})(?![0-9])"#,
-            #"第\s*([0-9]{1,3})\s*[-~～]\s*([0-9]{1,3})\s*[話话集]"#
+            #"\[([0-9]{1,3})\s*[-~～]\s*([0-9]{1,3})\]"#,
+            #"第\s*([0-9]{1,3})\s*[-~～]\s*([0-9]{1,3})\s*[話话集]"#,
+            #"-\s*(0[0-9]{1,2})\s*[-~～]\s*([0-9]{1,3})(?=\s|\[|\]|$)"#
         ]
         for pattern in rangePatterns {
             if let range = firstTwoCaptures(in: title, pattern: pattern),

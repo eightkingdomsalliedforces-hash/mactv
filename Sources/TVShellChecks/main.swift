@@ -180,6 +180,14 @@ struct TVShellChecks {
         phraseKeyboard.typeZhuyinForTesting("ㄌㄧㄢˊ")
         _ = phraseKeyboard.apply(.select)
         try expect(phraseKeyboard.text == "芙莉蓮", "zhuyin keyboard can compose a Chinese anime title")
+
+        var cocoaKeyboard = VirtualKeyboardState(layout: .zhuyin)
+        cocoaKeyboard.typeZhuyinForTesting("ㄎㄜˇ")
+        try expect(cocoaKeyboard.candidates.first == "可", "zhuyin keyboard suggests common Chinese syllables")
+        _ = cocoaKeyboard.apply(.select)
+        cocoaKeyboard.typeZhuyinForTesting("ㄎㄜˇ")
+        _ = cocoaKeyboard.apply(.select)
+        try expect(cocoaKeyboard.text == "可可", "zhuyin keyboard can compose repeated Chinese syllables")
     }
 
     static func checkRemoteMappingStore() throws {
@@ -795,7 +803,7 @@ struct TVShellChecks {
               "id": { "videoId": "frieren01" },
               "snippet": {
                 "title": "葬送的芙莉蓮 第 1 話",
-                "channelTitle": "動畫頻道",
+                "channelTitle": "Muse木棉花-TW",
                 "description": "合法上架片段",
                 "thumbnails": {
                   "high": { "url": "https://example.com/frieren.jpg" }
@@ -807,7 +815,7 @@ struct TVShellChecks {
         """.data(using: .utf8)!
         let bangumiRequest = try BangumiAPI.searchSubjectsRequest(keyword: "芙莉蓮")
         let youtubeRequest = try YouTubeDataAPI.searchRequest(
-            query: "葬送的芙莉蓮 Sousou no Frieren 第1話 EP1 完整版 動畫",
+            query: "葬送的芙莉蓮 Sousou no Frieren 第1話 EP1 木棉花 Muse Ani-One 羚邦 動畫",
             credentials: YouTubeCredentials(apiKey: "yt-key"),
             maxResults: 10,
             profile: .animeEpisode
@@ -875,7 +883,7 @@ struct TVShellChecks {
               "id": { "videoId": "frierenEnglish01" },
               "snippet": {
                 "title": "Frieren Episode 1",
-                "channelTitle": "官方動畫頻道",
+                "channelTitle": "Muse Asia",
                 "description": "別名標題",
                 "thumbnails": {
                   "high": { "url": "https://example.com/frieren-english.jpg" }
@@ -1013,6 +1021,35 @@ struct TVShellChecks {
         try expect(seasonResults.first?.episodes.map(\.number) == Array(1...10), "BT season pack keeps episode numbers")
         try expect(seasonResults.first?.episodes.allSatisfy { $0.identity.playbackURL?.scheme == "magnet" } == true, "BT season pack episodes share pack playback url")
 
+        let singleEpisodeRSS = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <rss><channel>
+          <item>
+            <title>[Jibaketa] 不時輕聲地以俄語遮羞的鄰座艾莉同學 2nd Season - 10 END [1080p][繁中]</title>
+            <link>magnet:?xt=urn:btih:ALYAEP10A</link>
+          </item>
+          <item>
+            <title>[Jibaketa] 不時輕聲地以俄語遮羞的鄰座艾莉同學 2nd Season - 10 END [1080p][繁中][Mirror]</title>
+            <link>magnet:?xt=urn:btih:ALYAEP10B</link>
+          </item>
+        </channel></rss>
+        """.data(using: .utf8)!
+        let alyaRequest = try BangumiAPI.searchSubjectsRequest(keyword: "艾莉")
+        let alyaResponse = """
+        { "data": [ { "id": 1, "name": "Alya", "name_cn": "不時輕聲地以俄語遮羞的鄰座艾莉同學" } ] }
+        """.data(using: .utf8)!
+        let singleEpisodeProvider = BTFeedAnimeSourceProvider(
+            id: "mikan",
+            displayName: "Mikan Project",
+            searchURLTemplate: "https://mikanani.me/RSS/Search?searchstr={keyword}",
+            transport: StaticAnimeHTTPTransport(routes: [
+                "https://mikanani.me/RSS/Search?searchstr=%E8%89%BE%E8%8E%89": singleEpisodeRSS,
+                alyaRequest.url.absoluteString: alyaResponse
+            ])
+        )
+        let singleEpisodeResults = try await singleEpisodeProvider.search(AnimeSearchQuery(keyword: "艾莉"))
+        try expect(singleEpisodeResults.first?.episodes.map(\.number) == [10], "BT single episode release is not expanded or duplicated")
+
         let mediaConfigs = MediaServerAnimeSourceConfig.environment([
             "TVSHELL_JELLYFIN_BASE_URL": "https://media.example",
             "TVSHELL_JELLYFIN_API_KEY": "jf-key",
@@ -1088,6 +1125,7 @@ struct TVShellChecks {
         FileManager.default.createFile(atPath: sample.path, contents: Data(repeating: 1, count: 2_048))
         try expect(engine.playableFiles(in: downloadDirectory).first?.lastPathComponent == sample.lastPathComponent, "torrent playback discovers playable media files")
         try expect(engine.downloadProgress(in: downloadDirectory).downloadedBytes == 2_048, "torrent playback reports downloaded bytes")
+        try expect(engine.downloadProgress(in: downloadDirectory).statusText.contains("已下載"), "torrent playback exposes readable progress text")
     }
 
     static func checkAnimeEpisodeGridLayout() throws {
@@ -1352,6 +1390,10 @@ struct TVShellChecks {
         try expect(youtubeRuntime.contains("ScrollViewReader"), "youtube runtime auto-scrolls focused cards into view")
         try expect(youtubeRuntime.contains("youtube-video-\\(index)"), "youtube video cards expose stable scroll ids")
         try expect(youtubeRuntime.contains("scrollTo(\"youtube-video-\\(index)\""), "youtube focus movement scrolls to focused card")
+        try expect(youtubeRuntime.contains("videos = []"), "youtube runtime clears failed search results instead of showing demo items")
+
+        let bangumiYouTube = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Anime/BangumiYouTubeAnimeSourceProvider.swift"))
+        try expect(bangumiYouTube.contains("木棉花") && bangumiYouTube.contains("Muse"), "anime youtube source prioritizes licensed anime channels")
 
         let animeRuntime = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Anime/AnimeRuntimeView.swift"))
         try expect(animeRuntime.contains("updateTitleColumns"), "anime runtime updates poster grid columns from current window size")
@@ -1368,6 +1410,8 @@ struct TVShellChecks {
         try expect(animeRuntime.contains("searchKeywordBar") == false, "anime title browser does not show the old keyword chip row")
         try expect(animeRuntime.contains(".animation(TVMotion.focus, value: comments)") == false, "danmaku overlay does not animate every comment refresh")
         try expect(animeRuntime.contains("DanmakuOverlay(comments: controller.visibleDanmaku"), "anime player renders danmaku overlay")
+        try expect(animeRuntime.contains("currentTime: controller.danmakuPlaybackTime"), "danmaku overlay receives playback time for movement")
+        try expect(animeRuntime.contains("progress = min(max(age / 4.2"), "danmaku overlay scrolls comments across the screen")
         try expect(animeRuntime.contains(".zIndex(3)"), "danmaku overlay is above player surfaces")
         try expect(animeRuntime.contains("subtitleStatusText"), "anime player exposes subtitle status")
         try expect(animeRuntime.contains("loadMediaSelectionGroup(for: .legible)"), "anime player inspects subtitle tracks")

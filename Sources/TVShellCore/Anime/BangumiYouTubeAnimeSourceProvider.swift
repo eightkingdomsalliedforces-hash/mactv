@@ -107,6 +107,9 @@ public struct BangumiYouTubeAnimeSourceProvider: AnimeMediaSourceAdapter {
         if matchesEpisodeNumber(title, episode: episode.number) {
             value += 44
         }
+        if isAuthorizedAnimeChannel(video.channelTitle) {
+            value += 80
+        }
         if isExcludedClip(title) {
             value -= 70
         }
@@ -114,14 +117,33 @@ public struct BangumiYouTubeAnimeSourceProvider: AnimeMediaSourceAdapter {
     }
 
     private func youtubeSearchQuery(for episode: AnimeEpisode) -> String {
-        "\(subjectSearchText(for: episode)) 第\(episode.number)話 EP\(episode.number) 完整版 動畫"
+        "\(subjectSearchText(for: episode)) 第\(episode.number)話 EP\(episode.number) 木棉花 Muse Ani-One 羚邦 動畫"
     }
 
     private func isPlayableEpisodeMatch(video: YouTubeVideo, episode: AnimeEpisode) -> Bool {
         let title = video.title
         return hasSubjectMatch(title: title, episode: episode)
             && matchesEpisodeNumber(title, episode: episode.number)
+            && isAuthorizedAnimeChannel(video.channelTitle)
             && isExcludedClip(title) == false
+    }
+
+    private func isAuthorizedAnimeChannel(_ channelTitle: String) -> Bool {
+        let licensedTerms = [
+            "木棉花",
+            "Muse",
+            "Muse Asia",
+            "Muse木棉花",
+            "Ani-One",
+            "Ani-One Asia",
+            "羚邦",
+            "Medialink",
+            "KADOKAWA",
+            "BANDAI",
+            "Toei",
+            "Crunchyroll"
+        ]
+        return licensedTerms.contains { channelTitle.localizedCaseInsensitiveContains($0) }
     }
 
     private func hasSubjectMatch(title: String, episode: AnimeEpisode) -> Bool {

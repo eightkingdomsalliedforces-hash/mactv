@@ -204,11 +204,15 @@ final class YouTubeRuntimeController: ObservableObject {
             keyboardState = VirtualKeyboardState(text: query, layout: .zhuyin)
             videos = try await provider.search(query: query)
             state.updateItemCount(videos.count)
-            statusText = "來源：\(provider.displayName) · 搜尋：\(query) · 已載入 \(videos.count) 部影片"
+            if videos.isEmpty {
+                statusText = "來源：\(provider.displayName) · 找不到：\(query)"
+            } else {
+                statusText = "來源：\(provider.displayName) · 搜尋：\(query) · 已載入 \(videos.count) 部影片"
+            }
         } catch {
-            videos = try! await YouTubeProviderFactory.demoProvider().search(query: "")
+            videos = []
             state.updateItemCount(videos.count)
-            statusText = "YouTube API 尚未配置或載入失敗，正在使用示範資料。"
+            statusText = "YouTube 找不到可播放結果或 API 載入失敗：\(error.localizedDescription)"
         }
     }
 

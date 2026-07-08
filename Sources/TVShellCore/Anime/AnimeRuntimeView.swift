@@ -278,7 +278,7 @@ public struct AnimeRuntimeView: View {
             }
 
             if controller.state.isDanmakuVisible {
-                DanmakuOverlay(comments: controller.visibleDanmaku, metrics: metrics)
+                DanmakuOverlay(comments: controller.visibleDanmaku, currentTime: controller.danmakuPlaybackTime, metrics: metrics)
                     .transition(.opacity)
                     .zIndex(3)
             }
@@ -324,6 +324,7 @@ final class AnimeRuntimeController: ObservableObject {
     @Published private(set) var currentYouTubeVideoID: String?
     @Published private(set) var danmakuStatusText = "彈幕未載入"
     @Published private(set) var subtitleStatusText = "字幕：中文字幕優先"
+    @Published private(set) var danmakuPlaybackTime: Double = 0
     @Published private(set) var isKeyboardVisible = false
     @Published private(set) var keyboardState = VirtualKeyboardState(text: "", layout: .zhuyin)
 
@@ -665,9 +666,8 @@ final class AnimeRuntimeController: ObservableObject {
     }
 
     private func updateTorrentProgress(_ progress: TorrentDownloadProgress) {
-        let fileName = progress.largestPlayableFileName ?? "等待影片檔"
         subtitleStatusText = "BT：已下載 \(progress.megabytesText)"
-        statusText = "BT 下載中：\(progress.megabytesText) · \(fileName)"
+        statusText = "BT 下載中：\(progress.statusText)"
     }
 
     private func playAVURL(_ url: URL) {
@@ -756,8 +756,9 @@ final class AnimeRuntimeController: ObservableObject {
     }
 
     private func updateDanmaku(time: Double) {
+        danmakuPlaybackTime = time
         visibleDanmaku = comments
-            .filter { abs($0.time - time) < 2.2 }
+            .filter { time >= $0.time && time - $0.time < 4.2 }
             .suffix(5)
     }
 }
@@ -848,11 +849,15 @@ private struct EpisodeCard: View {
 
 private struct DanmakuOverlay: View {
     let comments: [DanmakuComment]
+    let currentTime: Double
     let metrics: TVMetrics
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18 * metrics.scale) {
+        GeometryReader { proxy in
             ForEach(Array(comments.enumerated()), id: \.offset) { index, comment in
+                let age = max(0, currentTime - comment.time)
+                let progress = min(max(age / 4.2, 0), 1)
+                let travel = proxy.size.width + 620 * metrics.scale
                 Text(verbatim: comment.text)
                     .modifier(DanmakuTextStyle(metrics: metrics))
                     .foregroundStyle(.white)
@@ -860,8 +865,11 @@ private struct DanmakuOverlay: View {
                     .padding(.horizontal, 20 * metrics.scale)
                     .padding(.vertical, 8 * metrics.scale)
                     .background(.black.opacity(0.22), in: Capsule())
-                    .offset(x: CGFloat(index) * CGFloat(34 * metrics.scale))
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .offset(
+                        x: proxy.size.width - CGFloat(progress) * CGFloat(travel),
+                        y: CGFloat(index % 5) * CGFloat(54 * metrics.scale)
+                    )
+                    .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

@@ -33,6 +33,13 @@ public struct TorrentDownloadProgress: Equatable, Sendable {
         }
         return String(format: "%.0f MB", megabytes)
     }
+
+    public var statusText: String {
+        if let largestPlayableFileName {
+            return "已下載 \(megabytesText) · \(largestPlayableFileName)"
+        }
+        return "正在連接 peers / 取得 metadata · 已下載 \(megabytesText)"
+    }
 }
 
 public struct Aria2TorrentPlaybackEngine: Sendable {

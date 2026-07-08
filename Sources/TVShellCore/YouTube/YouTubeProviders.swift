@@ -57,7 +57,7 @@ public enum YouTubeProviderFactory {
         if credentials.isConfigured {
             return YouTubeDataAPIProvider(credentials: credentials)
         }
-        return demoProvider()
+        return StaticYouTubeVideoProvider(displayName: "YouTube 未配置", videos: [])
     }
 
     public static func demoProvider() -> StaticYouTubeVideoProvider {
