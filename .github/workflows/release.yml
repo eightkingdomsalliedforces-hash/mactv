@@ -40,19 +40,51 @@ jobs:
       - name: Build Release Product
         run: swift build -c release --product TVShell
 
-      - name: Download VLCKit
+      - name: Resolve VLCKit
+        id: vlckit
         run: |
           set -euo pipefail
           VLCKIT_METADATA="https://code.videolan.org/videolan/VLCKit/raw/master/Packaging/VLCKit.json"
-          VLCKIT_URL="$(curl -fsSL "$VLCKIT_METADATA" | jq -r 'to_entries | sort_by(.key | split(".") | map(tonumber)) | last.value')"
+          VLCKIT_URL="$(curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "$VLCKIT_METADATA" | jq -r 'to_entries | sort_by(.key | split(".") | map(tonumber)) | last.value')"
           if [ -z "$VLCKIT_URL" ] || [ "$VLCKIT_URL" = "null" ]; then
             echo "Could not resolve VLCKit download URL from $VLCKIT_METADATA" >&2
             exit 1
           fi
 
-          mkdir -p "$RUNNER_TEMP/vlckit"
-          curl -fL --retry 3 --retry-delay 5 -o "$RUNNER_TEMP/VLCKit.tar.xz" "$VLCKIT_URL"
-          tar -xJf "$RUNNER_TEMP/VLCKit.tar.xz" -C "$RUNNER_TEMP/vlckit"
+          VLCKIT_CACHE_KEY="vlckit-$(printf '%s' "$VLCKIT_URL" | shasum -a 256 | awk '{print $1}')"
+          echo "url=$VLCKIT_URL" >> "$GITHUB_OUTPUT"
+          echo "cache-key=$VLCKIT_CACHE_KEY" >> "$GITHUB_OUTPUT"
+          echo "VLCKIT_URL=$VLCKIT_URL" >> "$GITHUB_ENV"
+          echo "VLCKIT_CACHE_KEY=$VLCKIT_CACHE_KEY" >> "$GITHUB_ENV"
+          echo "Resolved VLCKit from $VLCKIT_URL"
+
+      - name: Cache VLCKit Archive
+        uses: actions/cache@v4
+        with:
+          path: .cache/VLCKit.tar.xz
+          key: ${{ steps.vlckit.outputs.cache-key }}
+
+      - name: Download VLCKit
+        run: |
+          set -euo pipefail
+
+          mkdir -p ".cache" "$RUNNER_TEMP/vlckit"
+          ARCHIVE=".cache/VLCKit.tar.xz"
+          if [ ! -s "$ARCHIVE" ]; then
+            curl -fL \
+              --retry 10 \
+              --retry-all-errors \
+              --retry-delay 5 \
+              --connect-timeout 30 \
+              --speed-time 30 \
+              --speed-limit 1024 \
+              --continue-at - \
+              --output "$ARCHIVE" \
+              "$VLCKIT_URL"
+          else
+            echo "Using cached VLCKit archive for $VLCKIT_CACHE_KEY"
+          fi
+          tar -xJf "$ARCHIVE" -C "$RUNNER_TEMP/vlckit"
 
           VLCKIT_FRAMEWORK="$(find "$RUNNER_TEMP/vlckit" -name VLCKit.framework -type d | head -n 1)"
           if [ -z "$VLCKIT_FRAMEWORK" ] || [ ! -d "$VLCKIT_FRAMEWORK" ]; then
@@ -61,7 +93,6 @@ jobs:
             exit 1
           fi
 
-          echo "VLCKIT_URL=$VLCKIT_URL" >> "$GITHUB_ENV"
           echo "VLCKIT_FRAMEWORK=$VLCKIT_FRAMEWORK" >> "$GITHUB_ENV"
           echo "Using VLCKit from $VLCKIT_URL"
 
