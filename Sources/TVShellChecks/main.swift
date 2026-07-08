@@ -91,6 +91,7 @@ struct TVShellChecks {
         try checkYouTubeLayoutAndPlayerShell()
         try await checkBangumiYouTubeAnimeSourceFindsPlayableCandidates()
         try await checkBuiltInAnimekoStyleSources()
+        try await checkAniSubsBTSubscriptionProvider()
         try checkAnimeEpisodeGridLayout()
         try checkTorrentPlaybackEngine()
         try await checkAnimeHomeProviderAggregatesDistinctTitles()
@@ -506,8 +507,10 @@ struct TVShellChecks {
     static func checkSettingsFocusIncludesVideoAndWebZoom() throws {
         try expect(SettingsFocus.scale.next == .wallpaper, "settings moves from scale to wallpaper")
         try expect(SettingsFocus.wallpaper.next == .webZoom, "settings moves from wallpaper to web zoom")
-        try expect(SettingsFocus.webZoom.next == .videoSource, "settings moves from web zoom to video source")
+        try expect(SettingsFocus.webZoom.next == .danmakuSize, "settings moves from web zoom to danmaku size")
+        try expect(SettingsFocus.danmakuSize.next == .videoSource, "settings moves from danmaku size to video source")
         try expect(SettingsFocus.videoSource.next == .scale, "settings wraps to scale")
+        try expect(DanmakuDisplaySettings(sizeScale: 1.0).adjusted(previous: false).sizeScale == 1.1, "danmaku size setting grows in readable steps")
     }
 
     static func checkAnimeSourceAndDanmakuProviders() async throws {
@@ -1033,6 +1036,7 @@ struct TVShellChecks {
         let sources = AnimeSourceCatalog.defaultSources
         try expect(sources.contains { $0.id == "mikan" && $0.title == "Mikan Project" }, "catalog includes built-in Mikan source")
         try expect(sources.contains { $0.id == "dmhy" && $0.title == "動漫花園" }, "catalog includes built-in DMHY source")
+        try expect(sources.contains { $0.id == "ani-subs-bt" && $0.title == "ani-subs BT 訂閱" }, "catalog includes ani-subs BT subscription source")
         try expect(sources.contains { $0.id == "jellyfin" && $0.title == "Jellyfin" }, "catalog includes Jellyfin source")
         try expect(sources.contains { $0.id == "emby" && $0.title == "Emby" }, "catalog includes Emby source")
         try expect(sources.first(where: { $0.id == "mikan" })?.defaultEnabled == false, "BT source is not enabled automatically")
@@ -1194,6 +1198,61 @@ struct TVShellChecks {
         try expect(mediaStreams.first?.headers["X-Emby-Token"] == "jf-key", "media server stream carries auth header")
     }
 
+    static func checkAniSubsBTSubscriptionProvider() async throws {
+        let subscriptionURL = URL(string: "https://sub.example/bt1.json")!
+        let subscription = """
+        {
+          "exportedMediaSourceDataList": {
+            "mediaSources": [
+              {
+                "factoryId": "rss",
+                "version": 1,
+                "arguments": {
+                  "name": "AnimeGarden",
+                  "searchConfig": {
+                    "searchUrl": "https://garden.example/feed.xml?keyword={keyword}"
+                  }
+                }
+              },
+              {
+                "factoryId": "web-selector",
+                "version": 2,
+                "arguments": {
+                  "name": "Web Source",
+                  "searchConfig": {
+                    "searchUrl": "https://web.example/search?wd={keyword}"
+                  }
+                }
+              }
+            ]
+          }
+        }
+        """.data(using: .utf8)!
+        let rss = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <rss><channel>
+          <item>
+            <title>[字幕組] 葬送的芙莉蓮 第01話 [1080p][繁中]</title>
+            <link>magnet:?xt=urn:btih:ANISUBS0001</link>
+          </item>
+        </channel></rss>
+        """.data(using: .utf8)!
+        let transport = StaticAnimeHTTPTransport(routes: [
+            subscriptionURL.absoluteString: subscription,
+            "https://garden.example/feed.xml?keyword=%E8%8A%99%E8%8E%89%E8%93%AE": rss
+        ])
+        let provider = AniSubsBTSubscriptionProvider(subscriptionURL: subscriptionURL, transport: transport)
+        let results = try await provider.search(AnimeSearchQuery(keyword: "芙莉蓮"))
+        try expect(results.count == 1, "ani-subs bt provider searches rss subscriptions")
+        try expect(results.first?.episodes.first?.identity.providerID == "ani-subs-bt", "ani-subs episodes route streams through the parent adapter")
+        guard let episode = results.first?.episodes.first else {
+            throw CheckFailure("missing ani-subs episode")
+        }
+        let streams = try await provider.streams(for: episode)
+        try expect(streams.first?.url.scheme == "magnet", "ani-subs bt provider returns torrent streams")
+        try expect(streams.first?.headers["resolver"] == "torrent", "ani-subs stream marks torrent resolver")
+    }
+
     static func checkTorrentPlaybackEngine() throws {
         let stream = AnimeStreamCandidate(
             url: URL(string: "magnet:?xt=urn:btih:ABCDEF1234567890&dn=Frieren")!,
@@ -1223,12 +1282,15 @@ struct TVShellChecks {
         try expect(engine.downloadProgress(in: downloadDirectory).statusText.contains("已下載"), "torrent playback exposes readable progress text")
         try expect(engine.preferredPlayableFile(in: downloadDirectory, episodeNumber: 1)?.lastPathComponent == sample.lastPathComponent, "torrent playback picks the focused episode file from season packs")
         try expect(engine.downloadProgress(in: downloadDirectory, episodeNumber: 1).largestPlayableFileName == sample.lastPathComponent, "torrent progress labels the focused episode instead of the largest file")
+        try engine.rememberDownload(for: stream, title: "葬送的芙莉蓮", subtitle: "第 1 話")
+        try expect(engine.cachedDownloads().first?.title == "葬送的芙莉蓮", "torrent playback lists cached downloads with manifest titles")
         try engine.deleteDownload(for: stream)
         try expect(FileManager.default.fileExists(atPath: downloadDirectory.path) == false, "torrent playback can delete cached BT downloads")
 
         let engineSource = try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true).appending(path: "Sources/TVShellCore/Anime/TorrentPlaybackEngine.swift"))
         try expect(engineSource.contains("terminationHandler"), "torrent playback engine records aria2 termination instead of waiting silently")
         try expect(engineSource.contains("lastErrorOutput"), "torrent playback engine exposes aria2 stderr when BT cannot start")
+        try expect(engineSource.contains("protocol TorrentPlaybackEngine"), "torrent playback engine can be swapped for a future libtorrent backend")
     }
 
     static func checkAnimeEpisodeGridLayout() throws {
@@ -1519,6 +1581,7 @@ struct TVShellChecks {
         let settings = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Settings/SettingsView.swift"))
         try expect(settings.contains("ScrollViewReader"), "settings view keeps remote focus visible")
         try expect(settings.contains("scrollTo(focus"), "settings view scrolls to the focused setting")
+        try expect(settings.contains("彈幕大小"), "settings view exposes danmaku size controls")
 
         let appManagement = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Settings/AppManagementView.swift"))
         try expect(appManagement.contains("ScrollViewReader"), "app management keeps remote focus visible")
@@ -1528,6 +1591,9 @@ struct TVShellChecks {
         try expect(app.contains("minWidth: 960"), "root window can shrink below 1280 for smaller displays")
         try expect(app.contains("minHeight: 540"), "root window can shrink below 720 for smaller displays")
         try expect(app.contains(".windowStyle(.hiddenTitleBar)") == false, "root window keeps a visible macOS title bar for maximize")
+        let shellWindow = try String(contentsOf: root.appending(path: "Sources/TVShellCore/App/ShellWindowManager.swift"))
+        try expect(shellWindow.contains("enterFullScreen"), "shell window manager can explicitly enter full screen")
+        try expect(shellWindow.contains("zoomButton.target"), "shell window zoom button is redirected to full screen")
 
         let windowManager = try String(contentsOf: root.appending(path: "Sources/TVShellCore/App/ShellWindowManager.swift"))
         try expect(windowManager.contains(".resizable"), "window explicitly keeps resizable behavior")
@@ -1559,6 +1625,8 @@ struct TVShellChecks {
         try expect(animeRuntime.contains("showPlayerHUD(allowRestart: true)"), "anime player enables restart only when playback first opens")
         try expect(animeRuntime.contains("currentYouTubeResumeTime"), "anime youtube playback receives saved resume time")
         try expect(animeRuntime.contains("deleteFocusedTorrentDownload"), "anime episode screen can delete BT downloads")
+        try expect(animeRuntime.contains("torrentDownloadManager"), "anime runtime exposes a download manager overlay")
+        try expect(animeRuntime.contains("focusedTorrentDownloadIndex"), "download manager is remote navigable")
         try expect(animeRuntime.contains("loadPlayer(stream, episode: episode)"), "anime torrent playback receives the selected episode")
         try expect(animeRuntime.contains("updateTitleColumns"), "anime runtime updates poster grid columns from current window size")
         try expect(animeRuntime.contains("updateEpisodeColumns"), "anime runtime updates episode navigation columns from current window size")
@@ -1574,6 +1642,7 @@ struct TVShellChecks {
         try expect(animeRuntime.contains("searchKeywordBar") == false, "anime title browser does not show the old keyword chip row")
         try expect(animeRuntime.contains(".animation(TVMotion.focus, value: comments)") == false, "danmaku overlay does not animate every comment refresh")
         try expect(animeRuntime.contains("DanmakuOverlay(") && animeRuntime.contains("comments: controller.visibleDanmaku"), "anime player renders danmaku overlay")
+        try expect(animeRuntime.contains("settings: appState.danmakuDisplaySettings"), "danmaku overlay receives user display settings")
         try expect(animeRuntime.contains("currentTime: controller.danmakuPlaybackTime"), "danmaku overlay receives playback time for movement")
         try expect(animeRuntime.contains("sampleDate: controller.danmakuPlaybackDate"), "danmaku overlay receives a sample date for smooth interpolation")
         try expect(animeRuntime.contains("TimelineView(.animation"), "danmaku overlay uses the animation timeline instead of step-only updates")

@@ -10,6 +10,15 @@ public struct ShellWindowConfigurator: NSViewRepresentable {
         guard let window = NSApp.keyWindow ?? NSApp.mainWindow else {
             return
         }
+        enterFullScreen(window)
+    }
+
+    public static func enterFullScreen(_ window: NSWindow) {
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        guard window.styleMask.contains(.fullScreen) == false else {
+            return
+        }
         window.toggleFullScreen(nil)
     }
 
@@ -36,13 +45,17 @@ public struct ShellWindowConfigurator: NSViewRepresentable {
         window.titleVisibility = .visible
         window.titlebarAppearsTransparent = false
         window.styleMask.insert([.titled, .closable, .miniaturizable, .resizable])
-        window.styleMask.remove(.fullSizeContentView)
+        window.styleMask.insert(.fullSizeContentView)
         window.collectionBehavior.formUnion([.fullScreenPrimary, .managed])
         window.minSize = NSSize(width: 960, height: 540)
         window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         window.isMovableByWindowBackground = true
-        window.standardWindowButton(.zoomButton)?.isHidden = false
-        window.standardWindowButton(.zoomButton)?.isEnabled = true
+        if let zoomButton = window.standardWindowButton(.zoomButton) {
+            zoomButton.isHidden = false
+            zoomButton.isEnabled = true
+            zoomButton.target = FullScreenButtonTarget.shared
+            zoomButton.action = #selector(FullScreenButtonTarget.toggleFullScreen(_:))
+        }
         requestInitialFullScreen(window)
     }
 
@@ -53,8 +66,19 @@ public struct ShellWindowConfigurator: NSViewRepresentable {
             return
         }
         Self.didRequestInitialFullScreen = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            window.toggleFullScreen(nil)
+        for delay in [0.15, 0.65, 1.2] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                Self.enterFullScreen(window)
+            }
         }
+    }
+}
+
+@MainActor
+private final class FullScreenButtonTarget: NSObject {
+    static let shared = FullScreenButtonTarget()
+
+    @objc func toggleFullScreen(_ sender: Any?) {
+        ShellWindowConfigurator.toggleFocusedWindowFullScreen()
     }
 }

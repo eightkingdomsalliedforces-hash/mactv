@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import AVKit
 import SwiftUI
 
@@ -50,6 +50,12 @@ public struct AnimeRuntimeView: View {
                     )
                     .transition(.opacity.combined(with: .scale(scale: 1.02)))
                     .zIndex(20)
+                }
+
+                if controller.isDownloadManagerVisible {
+                    torrentDownloadManager(metrics: metrics)
+                        .transition(.opacity.combined(with: .scale(scale: 1.02)))
+                        .zIndex(18)
                 }
             }
             .animation(TVMotion.runtime, value: controller.state.phase)
@@ -235,7 +241,7 @@ public struct AnimeRuntimeView: View {
                         }
                     }
 
-                    Text("方向鍵選集，OK 播放，Back 回詳情，Menu 刪除目前 BT 下載。")
+                    Text("方向鍵選集，OK 播放，Back 回詳情，Menu 開啟下載管理。")
                         .font(.system(size: 25 * metrics.scale, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.62))
                 }
@@ -255,6 +261,56 @@ public struct AnimeRuntimeView: View {
                     scrollProxy.scrollTo("anime-episode-\(controller.state.focusedEpisodeIndex)", anchor: .center)
                 }
             }
+        }
+    }
+
+    private func torrentDownloadManager(metrics: TVMetrics) -> some View {
+        ZStack {
+            Color.black.opacity(0.45)
+                .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 24 * metrics.scale) {
+                VStack(alignment: .leading, spacing: 10 * metrics.scale) {
+                    Text("BT 下載管理")
+                        .font(.system(size: 58 * metrics.scale, weight: .bold))
+                    Text("上下選擇，OK 或 Menu 刪除，Back 關閉。")
+                        .font(.system(size: 25 * metrics.scale, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+
+                if controller.torrentDownloads.isEmpty {
+                    Text("目前沒有已下載或下載中的 BT 快取。")
+                        .font(.system(size: 30 * metrics.scale, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.72))
+                        .frame(maxWidth: .infinity, minHeight: 220 * metrics.scale, alignment: .center)
+                        .liquidGlassCard(isFocused: false, cornerRadius: 28 * metrics.scale)
+                } else {
+                    ScrollViewReader { scrollProxy in
+                        ScrollView(.vertical) {
+                            LazyVStack(alignment: .leading, spacing: 14 * metrics.scale) {
+                                ForEach(Array(controller.torrentDownloads.enumerated()), id: \.element.id) { index, item in
+                                    TorrentDownloadRow(
+                                        item: item,
+                                        isFocused: index == controller.focusedTorrentDownloadIndex,
+                                        metrics: metrics
+                                    )
+                                    .id("torrent-download-\(index)")
+                                }
+                            }
+                        }
+                        .scrollIndicators(.hidden)
+                        .onChange(of: controller.focusedTorrentDownloadIndex) { _, index in
+                            withAnimation(TVMotion.focus) {
+                                scrollProxy.scrollTo("torrent-download-\(index)", anchor: .center)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(42 * metrics.scale)
+            .frame(maxWidth: min(980 * metrics.scale, 980), maxHeight: min(760 * metrics.scale, 760), alignment: .topLeading)
+            .liquidGlassCard(isFocused: true, cornerRadius: 32 * metrics.scale)
+            .padding(.horizontal, metrics.horizontalPadding)
         }
     }
 
@@ -294,6 +350,7 @@ public struct AnimeRuntimeView: View {
                     currentTime: controller.danmakuPlaybackTime,
                     sampleDate: controller.danmakuPlaybackDate,
                     isClockRunning: controller.isDanmakuClockRunning,
+                    settings: appState.danmakuDisplaySettings,
                     metrics: metrics
                 )
                     .transition(.opacity)
@@ -351,6 +408,9 @@ final class AnimeRuntimeController: ObservableObject {
     @Published private(set) var isPlayerHUDVisible = false
     @Published private(set) var canRestartFromBeginningWithSelect = false
     @Published private(set) var isKeyboardVisible = false
+    @Published private(set) var isDownloadManagerVisible = false
+    @Published private(set) var torrentDownloads: [TorrentCachedDownload] = []
+    @Published private(set) var focusedTorrentDownloadIndex = 0
     @Published private(set) var keyboardState = VirtualKeyboardState(text: "", layout: .zhuyin)
 
     private var sourceProvider: (any AnimeSourceProvider)?
@@ -480,6 +540,11 @@ final class AnimeRuntimeController: ObservableObject {
             return
         }
 
+        if isDownloadManagerVisible {
+            handleDownloadManager(command)
+            return
+        }
+
         if state.phase == .titles || state.phase == .details, command == .menu {
             keyboardState = VirtualKeyboardState(text: currentQuery, layout: .zhuyin)
             isKeyboardVisible = true
@@ -532,7 +597,7 @@ final class AnimeRuntimeController: ObservableObject {
         }
 
         if previousPhase == .episodes, state.phase == .episodes, command == .menu {
-            deleteFocusedTorrentDownload()
+            openDownloadManager()
             return
         }
 
@@ -565,6 +630,33 @@ final class AnimeRuntimeController: ObservableObject {
             isKeyboardVisible = false
             statusText = "已關閉搜尋"
         }
+    }
+
+    private func openDownloadManager() {
+        refreshTorrentDownloads()
+        isDownloadManagerVisible = true
+        statusText = torrentDownloads.isEmpty ? "目前沒有 BT 快取。" : "BT 下載管理"
+    }
+
+    private func handleDownloadManager(_ command: RemoteCommand) {
+        switch command {
+        case .up:
+            focusedTorrentDownloadIndex = max(0, focusedTorrentDownloadIndex - 1)
+        case .down:
+            focusedTorrentDownloadIndex = min(max(torrentDownloads.count - 1, 0), focusedTorrentDownloadIndex + 1)
+        case .select, .menu:
+            deleteFocusedTorrentDownload()
+        case .back, .home:
+            isDownloadManagerVisible = false
+            refreshTorrentDownloads()
+        default:
+            break
+        }
+    }
+
+    private func refreshTorrentDownloads() {
+        torrentDownloads = torrentPlaybackEngine.cachedDownloads()
+        focusedTorrentDownloadIndex = min(focusedTorrentDownloadIndex, max(torrentDownloads.count - 1, 0))
     }
 
     private func loadFocusedTitleEpisodes() async {
@@ -698,6 +790,12 @@ final class AnimeRuntimeController: ObservableObject {
 
     private func playTorrent(_ stream: AnimeStreamCandidate, episode: AnimeEpisode) async {
         do {
+            try torrentPlaybackEngine.rememberDownload(
+                for: stream,
+                title: currentTitle?.title ?? episode.identity.subjectID,
+                subtitle: episode.title
+            )
+            refreshTorrentDownloads()
             let fileURL = try await torrentPlaybackEngine.startStreaming(stream, episodeNumber: episode.number) { [weak self] progress in
                 Task { @MainActor [weak self] in
                     self?.updateTorrentProgress(progress)
@@ -731,6 +829,22 @@ final class AnimeRuntimeController: ObservableObject {
     }
 
     private func deleteFocusedTorrentDownload() {
+        if isDownloadManagerVisible {
+            guard torrentDownloads.indices.contains(focusedTorrentDownloadIndex) else {
+                statusText = "目前沒有可刪除的 BT 下載。"
+                return
+            }
+            let item = torrentDownloads[focusedTorrentDownloadIndex]
+            do {
+                try torrentPlaybackEngine.deleteDownload(id: item.id)
+                refreshTorrentDownloads()
+                statusText = "已刪除：\(item.title)"
+            } catch {
+                statusText = "刪除 BT 下載失敗：\(error.localizedDescription)"
+            }
+            return
+        }
+
         guard episodes.indices.contains(state.focusedEpisodeIndex),
               let streamURL = episodes[state.focusedEpisodeIndex].identity.playbackURL
         else {
@@ -744,6 +858,7 @@ final class AnimeRuntimeController: ObservableObject {
         )
         do {
             try torrentPlaybackEngine.deleteDownload(for: stream)
+            refreshTorrentDownloads()
             statusText = "已刪除目前 BT 下載快取。"
         } catch {
             statusText = "刪除 BT 下載失敗：\(error.localizedDescription)"
@@ -1020,11 +1135,44 @@ private struct EpisodeCard: View {
     }
 }
 
+private struct TorrentDownloadRow: View {
+    let item: TorrentCachedDownload
+    let isFocused: Bool
+    let metrics: TVMetrics
+
+    var body: some View {
+        HStack(spacing: 20 * metrics.scale) {
+            VStack(alignment: .leading, spacing: 8 * metrics.scale) {
+                Text(item.title)
+                    .font(.system(size: 30 * metrics.scale, weight: .bold))
+                    .lineLimit(1)
+                Text(item.subtitle)
+                    .font(.system(size: 23 * metrics.scale, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.68))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 18 * metrics.scale)
+
+            Text(item.megabytesText)
+                .font(.system(size: 25 * metrics.scale, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.82))
+        }
+        .padding(.horizontal, 24 * metrics.scale)
+        .padding(.vertical, 20 * metrics.scale)
+        .frame(maxWidth: .infinity, minHeight: 94 * metrics.scale, alignment: .leading)
+        .liquidGlassCard(isFocused: isFocused, cornerRadius: 22 * metrics.scale)
+        .scaleEffect(isFocused ? 1.015 : 1)
+        .animation(TVMotion.focus, value: isFocused)
+    }
+}
+
 private struct DanmakuOverlay: View {
     let comments: [DanmakuComment]
     let currentTime: Double
     let sampleDate: Date
     let isClockRunning: Bool
+    let settings: DanmakuDisplaySettings
     let metrics: TVMetrics
 
     var body: some View {
@@ -1036,7 +1184,7 @@ private struct DanmakuOverlay: View {
                     let progress = min(max(age / 4.2, 0), 1)
                     let travel = proxy.size.width + 620 * metrics.scale
                     Text(verbatim: comment.text)
-                        .modifier(DanmakuTextStyle(metrics: metrics))
+                        .modifier(DanmakuTextStyle(settings: settings, metrics: metrics))
                         .foregroundStyle(.white)
                         .shadow(color: .black.opacity(0.92), radius: 8, x: 0, y: 3)
                         .padding(.horizontal, 20 * metrics.scale)
@@ -1044,7 +1192,7 @@ private struct DanmakuOverlay: View {
                         .background(.black.opacity(0.22), in: Capsule())
                         .offset(
                             x: proxy.size.width - CGFloat(progress) * CGFloat(travel),
-                            y: CGFloat(index % 5) * CGFloat(54 * metrics.scale)
+                            y: CGFloat(index % 5) * CGFloat(54 * metrics.scale * settings.sizeScale)
                         )
                         .transaction { transaction in
                             transaction.animation = nil
@@ -1066,10 +1214,11 @@ private extension DanmakuComment {
 }
 
 private struct DanmakuTextStyle: ViewModifier {
+    let settings: DanmakuDisplaySettings
     let metrics: TVMetrics
 
     func body(content: Content) -> some View {
-        content.font(.system(size: 31 * metrics.scale, weight: .bold))
+        content.font(.system(size: 31 * metrics.scale * settings.sizeScale, weight: .bold))
     }
 }
 

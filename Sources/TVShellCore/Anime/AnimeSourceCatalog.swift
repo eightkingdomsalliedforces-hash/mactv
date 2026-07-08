@@ -187,6 +187,7 @@ public enum AnimeSourceCatalog {
         source("bangumi-youtube", "Bangumi + YouTube", "BY", ["官方 API"]),
         source("mikan", "Mikan Project", "MK", ["RSS / BT"], health: .available, defaultEnabled: false),
         source("dmhy", "動漫花園", "花", ["RSS / BT"], health: .available, defaultEnabled: false),
+        source("ani-subs-bt", "ani-subs BT 訂閱", "AS", ["RSS / BT 訂閱"], health: .available, defaultEnabled: false),
         source("jellyfin", "Jellyfin", "JF", ["自有媒體庫"], health: .available, defaultEnabled: false),
         source("emby", "Emby", "E", ["自有媒體庫"], health: .available, defaultEnabled: false),
         pendingSource("girigiri", "girigiri 愛動漫", "G", ["在線"]),

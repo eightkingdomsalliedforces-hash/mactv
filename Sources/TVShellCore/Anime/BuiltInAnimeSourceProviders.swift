@@ -115,7 +115,12 @@ public struct BTFeedAnimeSourceProvider: AnimeMediaSourceAdapter {
                 url: url,
                 quality: "BT / RSS",
                 priority: 55,
-                headers: ["resolver": "torrent", "source": displayName]
+                headers: [
+                    "resolver": "torrent",
+                    "source": displayName,
+                    "title": episode.identity.subjectID,
+                    "episode": episode.title
+                ]
             )
         ]
     }

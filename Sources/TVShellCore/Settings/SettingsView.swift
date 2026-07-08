@@ -42,6 +42,14 @@ public struct SettingsView: View {
                         .id(SettingsFocus.webZoom)
 
                         SettingsOptionRow(
+                            title: "彈幕大小",
+                            value: appState.danmakuDisplaySettings.sizeLabel,
+                            isFocused: appState.settingsFocus == .danmakuSize,
+                            metrics: metrics
+                        )
+                        .id(SettingsFocus.danmakuSize)
+
+                        SettingsOptionRow(
                             title: "影片位置",
                             value: appState.videoSourceLabel,
                             isFocused: appState.settingsFocus == .videoSource,

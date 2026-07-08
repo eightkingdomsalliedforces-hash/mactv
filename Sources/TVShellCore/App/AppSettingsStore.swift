@@ -9,6 +9,7 @@ public struct AppSettingsSnapshot: Codable, Equatable, Sendable {
     public var videoSourceLabel: String
     public var animeSourceCatalog: AnimeSourceCatalogState
     public var watchingHistory: [WatchHistoryEntry]
+    public var danmakuDisplaySettings: DanmakuDisplaySettings
 
     public init(
         apps: [TVAppProfile],
@@ -18,7 +19,8 @@ public struct AppSettingsSnapshot: Codable, Equatable, Sendable {
         webZoom: Double,
         videoSourceLabel: String,
         animeSourceCatalog: AnimeSourceCatalogState,
-        watchingHistory: [WatchHistoryEntry]
+        watchingHistory: [WatchHistoryEntry],
+        danmakuDisplaySettings: DanmakuDisplaySettings = DanmakuDisplaySettings()
     ) {
         self.apps = apps
         self.displayScale = displayScale
@@ -28,6 +30,32 @@ public struct AppSettingsSnapshot: Codable, Equatable, Sendable {
         self.videoSourceLabel = videoSourceLabel
         self.animeSourceCatalog = animeSourceCatalog
         self.watchingHistory = watchingHistory
+        self.danmakuDisplaySettings = danmakuDisplaySettings
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case apps
+        case displayScale
+        case wallpaperSource
+        case webRemoteMode
+        case webZoom
+        case videoSourceLabel
+        case animeSourceCatalog
+        case watchingHistory
+        case danmakuDisplaySettings
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        apps = try container.decode([TVAppProfile].self, forKey: .apps)
+        displayScale = try container.decode(DisplayScale.self, forKey: .displayScale)
+        wallpaperSource = try container.decode(WallpaperSource.self, forKey: .wallpaperSource)
+        webRemoteMode = try container.decode(WebRemoteMode.self, forKey: .webRemoteMode)
+        webZoom = try container.decode(Double.self, forKey: .webZoom)
+        videoSourceLabel = try container.decode(String.self, forKey: .videoSourceLabel)
+        animeSourceCatalog = try container.decode(AnimeSourceCatalogState.self, forKey: .animeSourceCatalog)
+        watchingHistory = try container.decodeIfPresent([WatchHistoryEntry].self, forKey: .watchingHistory) ?? []
+        danmakuDisplaySettings = try container.decodeIfPresent(DanmakuDisplaySettings.self, forKey: .danmakuDisplaySettings) ?? DanmakuDisplaySettings()
     }
 }
 

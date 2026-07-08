@@ -23,6 +23,7 @@ public final class AppState: ObservableObject {
     @Published public var animeSourceCatalog: AnimeSourceCatalogState
     @Published public var focusedAnimeSourceID: String?
     @Published public var watchingHistory: [WatchHistoryEntry] = []
+    @Published public var danmakuDisplaySettings = DanmakuDisplaySettings()
 
     private let nativeRuntime = NativeAppRuntime()
     private let settingsStore: AppSettingsStore?
@@ -46,6 +47,7 @@ public final class AppState: ObservableObject {
         webZoom = loadedSnapshot?.webZoom ?? 1.25
         videoSourceLabel = loadedSnapshot?.videoSourceLabel ?? "內建示範影片"
         watchingHistory = loadedSnapshot?.watchingHistory ?? []
+        danmakuDisplaySettings = loadedSnapshot?.danmakuDisplaySettings ?? DanmakuDisplaySettings()
         focusedAppID = self.apps.first?.id
         focusedAnimeSourceID = animeSourceCatalog.focusedID
         exitObserver = NotificationCenter.default.addObserver(
@@ -115,7 +117,8 @@ public final class AppState: ObservableObject {
             webZoom: webZoom,
             videoSourceLabel: videoSourceLabel,
             animeSourceCatalog: animeSourceCatalog,
-            watchingHistory: watchingHistory
+            watchingHistory: watchingHistory,
+            danmakuDisplaySettings: danmakuDisplaySettings
         )
         try? settingsStore.save(snapshot)
     }
@@ -218,6 +221,8 @@ public final class AppState: ObservableObject {
         case .webZoom:
             let delta = previous ? -0.1 : 0.1
             webZoom = min(max((webZoom + delta) * 10, 8), 24) / 10
+        case .danmakuSize:
+            danmakuDisplaySettings = danmakuDisplaySettings.adjusted(previous: previous)
         case .videoSource:
             chooseVideoFile()
             return

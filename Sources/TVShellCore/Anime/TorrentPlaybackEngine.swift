@@ -42,7 +42,42 @@ public struct TorrentDownloadProgress: Equatable, Sendable {
     }
 }
 
-public struct Aria2TorrentPlaybackEngine: Sendable {
+public struct TorrentCachedDownload: Identifiable, Equatable, Sendable {
+    public var id: String
+    public var title: String
+    public var subtitle: String
+    public var downloadedBytes: UInt64
+
+    public init(id: String, title: String, subtitle: String, downloadedBytes: UInt64) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.downloadedBytes = downloadedBytes
+    }
+
+    public var megabytesText: String {
+        let megabytes = Double(downloadedBytes) / 1_048_576
+        if megabytes < 10 {
+            return String(format: "%.1f MB", megabytes)
+        }
+        return String(format: "%.0f MB", megabytes)
+    }
+}
+
+public protocol TorrentPlaybackEngine: Sendable {
+    func downloadDirectory(for stream: AnimeStreamCandidate) -> URL
+    func startStreaming(
+        _ stream: AnimeStreamCandidate,
+        episodeNumber: Int?,
+        onProgress: (@Sendable (TorrentDownloadProgress) -> Void)?
+    ) async throws -> URL
+    func rememberDownload(for stream: AnimeStreamCandidate, title: String, subtitle: String) throws
+    func cachedDownloads() -> [TorrentCachedDownload]
+    func deleteDownload(for stream: AnimeStreamCandidate) throws
+    func deleteDownload(id: String) throws
+}
+
+public struct Aria2TorrentPlaybackEngine: TorrentPlaybackEngine {
     public var cacheRoot: URL
     public var executablePath: String?
     public var readinessMinimumBytes: UInt64
@@ -129,6 +164,45 @@ public struct Aria2TorrentPlaybackEngine: Sendable {
         return try await waitForPlayableFile(in: directory, episodeNumber: episodeNumber, processID: processID, onProgress: onProgress)
     }
 
+    public func rememberDownload(for stream: AnimeStreamCandidate, title: String, subtitle: String) throws {
+        let directory = downloadDirectory(for: stream)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let manifest = TorrentDownloadManifest(title: title, subtitle: subtitle)
+        let data = try JSONEncoder().encode(manifest)
+        try data.write(to: manifestURL(in: directory), options: Data.WritingOptions.atomic)
+    }
+
+    public func cachedDownloads() -> [TorrentCachedDownload] {
+        guard let directories = try? FileManager.default.contentsOfDirectory(
+            at: cacheRoot,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        return directories.compactMap { directory -> TorrentCachedDownload? in
+            let values = try? directory.resourceValues(forKeys: [.isDirectoryKey])
+            guard values?.isDirectory == true else {
+                return nil
+            }
+            let manifest = downloadManifest(in: directory)
+            let fallbackTitle = "BT 快取 \(directory.lastPathComponent.prefix(6))"
+            return TorrentCachedDownload(
+                id: directory.lastPathComponent,
+                title: manifest?.title ?? fallbackTitle,
+                subtitle: manifest?.subtitle ?? directory.path,
+                downloadedBytes: downloadedBytes(in: directory)
+            )
+        }
+        .sorted { left, right in
+            if left.title == right.title {
+                return left.subtitle < right.subtitle
+            }
+            return left.title < right.title
+        }
+    }
+
     public func downloadProgress(in directory: URL, episodeNumber: Int? = nil) -> TorrentDownloadProgress {
         let playableFiles = playableFiles(in: directory)
         let displayedFile = episodeNumber
@@ -166,6 +240,16 @@ public struct Aria2TorrentPlaybackEngine: Sendable {
 
     public func deleteDownload(for stream: AnimeStreamCandidate) throws {
         let directory = downloadDirectory(for: stream)
+        TorrentProcessRegistry.shared.terminate(id: stableIdentifier(for: stream.url.absoluteString))
+        guard FileManager.default.fileExists(atPath: directory.path) else {
+            return
+        }
+        try FileManager.default.removeItem(at: directory)
+    }
+
+    public func deleteDownload(id: String) throws {
+        TorrentProcessRegistry.shared.terminate(id: id)
+        let directory = cacheRoot.appendingPathComponent(id, isDirectory: true)
         guard FileManager.default.fileExists(atPath: directory.path) else {
             return
         }
@@ -174,6 +258,17 @@ public struct Aria2TorrentPlaybackEngine: Sendable {
 
     private var playableExtensions: Set<String> {
         ["mp4", "m4v", "mov", "mkv", "webm", "avi", "ts", "m2ts"]
+    }
+
+    private func manifestURL(in directory: URL) -> URL {
+        directory.appendingPathComponent(".tvshell-download.json")
+    }
+
+    private func downloadManifest(in directory: URL) -> TorrentDownloadManifest? {
+        guard let data = try? Data(contentsOf: manifestURL(in: directory)) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(TorrentDownloadManifest.self, from: data)
     }
 
     private func resolvedExecutablePath() -> String? {
@@ -292,6 +387,11 @@ public struct Aria2TorrentPlaybackEngine: Sendable {
     }
 }
 
+private struct TorrentDownloadManifest: Codable {
+    var title: String
+    var subtitle: String
+}
+
 private final class TorrentProcessRegistry: @unchecked Sendable {
     static let shared = TorrentProcessRegistry()
 
@@ -318,6 +418,19 @@ private final class TorrentProcessRegistry: @unchecked Sendable {
             errorOutputs[id] = nil
         }
         lock.unlock()
+    }
+
+    func terminate(id: String) {
+        lock.lock()
+        let process = processes[id]
+        processes[id] = nil
+        terminatedProcesses.remove(id)
+        errorOutputs[id] = nil
+        lock.unlock()
+
+        if process?.isRunning == true {
+            process?.terminate()
+        }
     }
 
     func recordTermination(id: String, exitCode: Int32, output: String) {

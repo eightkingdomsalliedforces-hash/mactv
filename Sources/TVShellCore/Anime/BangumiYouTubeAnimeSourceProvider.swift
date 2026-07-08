@@ -276,7 +276,8 @@ public enum AnimeSourceProviderFactory {
                 displayName: "動漫花園",
                 searchURLTemplate: "https://share.dmhy.org/topics/rss/rss.xml?keyword={keyword}",
                 transport: transport
-            )
+            ),
+            AniSubsBTSubscriptionProvider(transport: transport)
         ] + mediaServerAdapters + selectorAdapters
         let registry = AnimeSourceRegistry(adapters: adapters)
         let catalogProvider = CatalogAnimeSourceProvider(

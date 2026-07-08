@@ -155,3 +155,27 @@ public struct DanmakuComment: Codable, Equatable, Sendable {
         self.mode = mode
     }
 }
+
+public struct DanmakuDisplaySettings: Codable, Equatable, Sendable {
+    public var sizeScale: Double
+
+    public init(sizeScale: Double = 1.0) {
+        self.sizeScale = min(max(sizeScale, 0.7), 1.8)
+    }
+
+    public var sizeLabel: String {
+        "\(Int((sizeScale * 100).rounded()))%"
+    }
+
+    public func adjusted(previous: Bool) -> DanmakuDisplaySettings {
+        let step = previous ? -0.1 : 0.1
+        return DanmakuDisplaySettings(sizeScale: (sizeScale + step).rounded(toPlaces: 1))
+    }
+}
+
+private extension Double {
+    func rounded(toPlaces places: Int) -> Double {
+        let divisor = pow(10.0, Double(places))
+        return (self * divisor).rounded() / divisor
+    }
+}
