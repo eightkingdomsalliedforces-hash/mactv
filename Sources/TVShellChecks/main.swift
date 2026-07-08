@@ -188,6 +188,10 @@ struct TVShellChecks {
         cocoaKeyboard.typeZhuyinForTesting("ㄎㄜˇ")
         _ = cocoaKeyboard.apply(.select)
         try expect(cocoaKeyboard.text == "可可", "zhuyin keyboard can compose repeated Chinese syllables")
+
+        try expect(ZhuyinComposer.candidates(for: "ㄎㄧㄚˇ").first == "卡", "zhuyin keyboard tolerates common non-standard ka input")
+        try expect(ZhuyinComposer.candidates(for: "ㄓㄨˋㄧㄣ").first == "注音", "zhuyin keyboard composes multi-syllable words")
+        try expect(ZhuyinComposer.candidates(for: "ㄎㄜˇㄎㄜˇ").first == "可可", "zhuyin keyboard segments repeated syllables")
     }
 
     static func checkRemoteMappingStore() throws {
@@ -802,11 +806,22 @@ struct TVShellChecks {
             {
               "id": { "videoId": "frieren01" },
               "snippet": {
-                "title": "葬送的芙莉蓮 第 1 話",
+                "title": "葬送的芙莉蓮 第 1 話 日語中字",
                 "channelTitle": "Muse木棉花-TW",
                 "description": "合法上架片段",
                 "thumbnails": {
                   "high": { "url": "https://example.com/frieren.jpg" }
+                }
+              }
+            },
+            {
+              "id": { "videoId": "frierenBackup01" },
+              "snippet": {
+                "title": "葬送的芙莉蓮 第 1 話 中文字幕",
+                "channelTitle": "備援頻道",
+                "description": "正確作品與集數",
+                "thumbnails": {
+                  "high": { "url": "https://example.com/frieren-backup.jpg" }
                 }
               }
             }
@@ -815,7 +830,7 @@ struct TVShellChecks {
         """.data(using: .utf8)!
         let bangumiRequest = try BangumiAPI.searchSubjectsRequest(keyword: "芙莉蓮")
         let youtubeRequest = try YouTubeDataAPI.searchRequest(
-            query: "葬送的芙莉蓮 Sousou no Frieren 第1話 EP1 木棉花 Muse Ani-One 羚邦 動畫",
+            query: "葬送的芙莉蓮 Sousou no Frieren 第1話 EP1 日語 中文字幕 繁中 木棉花 Muse Ani-One 羚邦 動畫",
             credentials: YouTubeCredentials(apiKey: "yt-key"),
             maxResults: 10,
             profile: .animeEpisode
@@ -841,8 +856,9 @@ struct TVShellChecks {
             throw CheckFailure("missing bangumi youtube episode")
         }
         let streams = try await provider.streams(for: episode)
-        try expect(streams.first?.url.absoluteString == "youtube://frieren01", "bangumi youtube provider resolves youtube candidate")
+        try expect(streams.first?.url.absoluteString == "youtube://frieren01", "bangumi youtube provider ranks authorized youtube candidate first")
         try expect(streams.first?.quality == "YouTube", "bangumi youtube provider labels youtube source")
+        try expect(streams.contains { $0.url.absoluteString == "youtube://frierenBackup01" }, "bangumi youtube provider keeps matching non-authorized videos as fallback")
         try expect(streams.contains { $0.url.absoluteString == "youtube://jjk01" } == false, "bangumi youtube provider filters videos from a different anime")
 
         let wrongOnlyYouTubeResponse = """
@@ -1126,6 +1142,10 @@ struct TVShellChecks {
         try expect(engine.playableFiles(in: downloadDirectory).first?.lastPathComponent == sample.lastPathComponent, "torrent playback discovers playable media files")
         try expect(engine.downloadProgress(in: downloadDirectory).downloadedBytes == 2_048, "torrent playback reports downloaded bytes")
         try expect(engine.downloadProgress(in: downloadDirectory).statusText.contains("已下載"), "torrent playback exposes readable progress text")
+
+        let engineSource = try String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true).appending(path: "Sources/TVShellCore/Anime/TorrentPlaybackEngine.swift"))
+        try expect(engineSource.contains("terminationHandler"), "torrent playback engine records aria2 termination instead of waiting silently")
+        try expect(engineSource.contains("lastErrorOutput"), "torrent playback engine exposes aria2 stderr when BT cannot start")
     }
 
     static func checkAnimeEpisodeGridLayout() throws {

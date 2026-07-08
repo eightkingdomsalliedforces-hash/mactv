@@ -122,9 +122,10 @@ public struct Aria2TorrentPlaybackEngine: Sendable {
         }
 
         let directory = downloadDirectory(for: stream)
+        let processID = stableIdentifier(for: stream.url.absoluteString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try launchAria2(executable: executable, stream: stream, directory: directory)
-        return try await waitForPlayableFile(in: directory, onProgress: onProgress)
+        return try await waitForPlayableFile(in: directory, processID: processID, onProgress: onProgress)
     }
 
     public func downloadProgress(in directory: URL) -> TorrentDownloadProgress {
@@ -163,10 +164,24 @@ public struct Aria2TorrentPlaybackEngine: Sendable {
         }
 
         let process = Process()
+        let errorPipe = Pipe()
+        let outputPipe = Pipe()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments(for: stream, downloadDirectory: directory)
-        process.standardOutput = Pipe()
-        process.standardError = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+        process.terminationHandler = { process in
+            let stderr = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            let stdout = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            TorrentProcessRegistry.shared.recordTermination(
+                id: processID,
+                exitCode: process.terminationStatus,
+                output: [stderr, stdout]
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { $0.isEmpty == false }
+                    .joined(separator: "\n")
+            )
+        }
 
         do {
             try process.run()
@@ -178,12 +193,19 @@ public struct Aria2TorrentPlaybackEngine: Sendable {
 
     private func waitForPlayableFile(
         in directory: URL,
+        processID: String,
         onProgress: (@Sendable (TorrentDownloadProgress) -> Void)?
     ) async throws -> URL {
         for _ in 0..<pollLimit {
-            onProgress?(downloadProgress(in: directory))
+            let progress = downloadProgress(in: directory)
+            onProgress?(progress)
             if let file = readyPlayableFile(in: directory) {
                 return file
+            }
+            if TorrentProcessRegistry.shared.hasTerminated(id: processID),
+               progress.downloadedBytes == 0 {
+                let output = TorrentProcessRegistry.shared.lastErrorOutput(id: processID)
+                throw TorrentPlaybackError.launchFailed(output.isEmpty ? "aria2c 已結束但沒有下載任何資料。" : output)
             }
             try await Task.sleep(nanoseconds: pollIntervalNanoseconds)
         }
@@ -232,6 +254,8 @@ private final class TorrentProcessRegistry: @unchecked Sendable {
 
     private let lock = NSLock()
     private var processes: [String: Process] = [:]
+    private var terminatedProcesses: Set<String> = []
+    private var errorOutputs: [String: String] = [:]
 
     func isRunning(id: String) -> Bool {
         lock.lock()
@@ -246,6 +270,31 @@ private final class TorrentProcessRegistry: @unchecked Sendable {
     func remember(_ process: Process, id: String) {
         lock.lock()
         processes[id] = process
+        if process.isRunning {
+            terminatedProcesses.remove(id)
+            errorOutputs[id] = nil
+        }
         lock.unlock()
+    }
+
+    func recordTermination(id: String, exitCode: Int32, output: String) {
+        lock.lock()
+        processes[id] = nil
+        terminatedProcesses.insert(id)
+        let fallback = "aria2c 已結束，exit code \(exitCode)。"
+        errorOutputs[id] = output.isEmpty ? fallback : "\(fallback)\n\(output)"
+        lock.unlock()
+    }
+
+    func hasTerminated(id: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return terminatedProcesses.contains(id)
+    }
+
+    func lastErrorOutput(id: String) -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        return errorOutputs[id] ?? ""
     }
 }

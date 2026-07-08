@@ -110,6 +110,9 @@ public struct BangumiYouTubeAnimeSourceProvider: AnimeMediaSourceAdapter {
         if isAuthorizedAnimeChannel(video.channelTitle) {
             value += 80
         }
+        if prefersJapaneseAudioWithChineseSubtitles(title) {
+            value += 28
+        }
         if isExcludedClip(title) {
             value -= 70
         }
@@ -117,14 +120,13 @@ public struct BangumiYouTubeAnimeSourceProvider: AnimeMediaSourceAdapter {
     }
 
     private func youtubeSearchQuery(for episode: AnimeEpisode) -> String {
-        "\(subjectSearchText(for: episode)) 第\(episode.number)話 EP\(episode.number) 木棉花 Muse Ani-One 羚邦 動畫"
+        "\(subjectSearchText(for: episode)) 第\(episode.number)話 EP\(episode.number) 日語 中文字幕 繁中 木棉花 Muse Ani-One 羚邦 動畫"
     }
 
     private func isPlayableEpisodeMatch(video: YouTubeVideo, episode: AnimeEpisode) -> Bool {
         let title = video.title
         return hasSubjectMatch(title: title, episode: episode)
             && matchesEpisodeNumber(title, episode: episode.number)
-            && isAuthorizedAnimeChannel(video.channelTitle)
             && isExcludedClip(title) == false
     }
 
@@ -204,6 +206,19 @@ public struct BangumiYouTubeAnimeSourceProvider: AnimeMediaSourceAdapter {
             title.localizedCaseInsensitiveContains("精華") ||
             title.localizedCaseInsensitiveContains("剪輯") ||
             title.localizedCaseInsensitiveContains("片段")
+    }
+
+    private func prefersJapaneseAudioWithChineseSubtitles(_ title: String) -> Bool {
+        [
+            "日語",
+            "日文",
+            "日配",
+            "中字",
+            "中文字幕",
+            "繁中",
+            "繁體中文",
+            "中文"
+        ].contains { title.localizedCaseInsensitiveContains($0) }
     }
 
     private func uniqueNonEmpty(_ values: [String]) -> [String] {

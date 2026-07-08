@@ -218,7 +218,22 @@ public enum ZhuyinComposer {
         "ㄌㄧˇ": ["里", "理"],
         "ㄞˋ": ["愛"],
         "ㄌㄧˊ": ["梨"],
-        "ㄎㄜˇㄎㄜˇ": ["可可"],
+        "ㄉㄜ": ["的"],
+        "ㄉㄜ˙": ["的"],
+        "ㄕˊ": ["時"],
+        "ㄑㄧㄥ": ["輕"],
+        "ㄕㄥ": ["聲"],
+        "ㄜˊ": ["俄"],
+        "ㄩˇ": ["語"],
+        "ㄓㄜ": ["遮"],
+        "ㄒㄧㄡ": ["羞"],
+        "ㄌㄧㄣˊ": ["鄰"],
+        "ㄗㄨㄛˋ": ["座"],
+        "ㄊㄨㄥˊ": ["同"],
+        "ㄒㄩㄝˊ": ["學"],
+        "ㄓㄨˋ": ["注", "住"],
+        "ㄧㄣ": ["音"],
+        "ㄓㄨˋㄧㄣ": ["注音"],
         "ㄈㄨˊ": ["芙", "福", "服"],
         "ㄌㄧˋ": ["莉", "麗", "力"],
         "ㄌㄧㄢˊ": ["蓮", "連"],
@@ -247,18 +262,71 @@ public enum ZhuyinComposer {
         "ㄓㄡˋㄕㄨˋㄏㄨㄟˊㄓㄢˋ": ["咒術迴戰"]
     ]
 
+    private static let aliases: [String: String] = [
+        "ㄎㄧㄚˇ": "ㄎㄚˇ"
+    ]
+
     public static func candidates(for composition: String) -> [String] {
         guard composition.isEmpty == false else { return [] }
         if let exact = dictionary[composition] {
             return exact
         }
+        let normalized = aliases[composition] ?? composition
+        if let exact = dictionary[normalized] {
+            return exact
+        }
+
+        let segmented = segmentedCandidates(for: normalized)
+        if segmented.isEmpty == false {
+            return segmented
+        }
 
         let matches = dictionary
-            .filter { key, _ in key.hasPrefix(composition) || composition.hasPrefix(key) }
+            .filter { key, _ in
+                key.hasPrefix(composition)
+                    || composition.hasPrefix(key)
+                    || key.hasPrefix(normalized)
+                    || normalized.hasPrefix(key)
+            }
             .flatMap(\.value)
         if matches.isEmpty == false {
             return Array(matches.prefix(8))
         }
         return [composition]
+    }
+
+    private static func segmentedCandidates(for composition: String) -> [String] {
+        var remaining = composition
+        var syllables: [[String]] = []
+
+        while remaining.isEmpty == false {
+            let match = dictionary.keys
+                .filter { remaining.hasPrefix($0) }
+                .sorted { left, right in
+                    if left.count == right.count {
+                        return left < right
+                    }
+                    return left.count > right.count
+                }
+                .first
+
+            guard let match, let values = dictionary[match] else {
+                return []
+            }
+
+            syllables.append(Array(values.prefix(2)))
+            remaining.removeFirst(match.count)
+        }
+
+        guard syllables.count > 1 else {
+            return []
+        }
+
+        let primary = syllables.compactMap(\.first).joined()
+        let secondary = syllables.map { values in values.dropFirst().first ?? values.first ?? "" }.joined()
+        if secondary.isEmpty || secondary == primary {
+            return [primary]
+        }
+        return [primary, secondary]
     }
 }
