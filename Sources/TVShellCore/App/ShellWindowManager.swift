@@ -1,19 +1,50 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 public struct ShellWindowConfigurator: NSViewRepresentable {
     private static var didRequestInitialFullScreen = false
+    private static weak var configuredWindow: NSWindow?
 
     public init() {}
 
     public static func toggleFocusedWindowFullScreen() {
-        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else {
+        guard let window = preferredWindow() else {
             return
         }
+        configureForTVMode(window)
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        window.toggleFullScreen(nil)
+    }
+
+    public static func enterKnownWindowFullScreen() {
+        guard let window = preferredWindow() else {
+            return
+        }
+        configureForTVMode(window)
         enterFullScreen(window)
     }
 
-    public static func enterFullScreen(_ window: NSWindow) {
+    private static func preferredWindow() -> NSWindow? {
+        configuredWindow ?? NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first { $0.isVisible }
+    }
+
+    private static func configureForTVMode(_ window: NSWindow) {
+        configuredWindow = window
+        window.title = "MacTV"
+        window.titleVisibility = .visible
+        window.titlebarAppearsTransparent = false
+        window.styleMask.insert([.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView])
+        window.collectionBehavior.formUnion([.fullScreenPrimary, .managed])
+        window.minSize = NSSize(width: 960, height: 540)
+        window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        window.isMovableByWindowBackground = true
+        window.standardWindowButton(.zoomButton)?.isHidden = false
+        window.standardWindowButton(.zoomButton)?.isEnabled = true
+    }
+
+    private static func enterFullScreen(_ window: NSWindow) {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         guard window.styleMask.contains(.fullScreen) == false else {
@@ -41,21 +72,7 @@ public struct ShellWindowConfigurator: NSViewRepresentable {
             return
         }
 
-        window.title = "MacTV"
-        window.titleVisibility = .visible
-        window.titlebarAppearsTransparent = false
-        window.styleMask.insert([.titled, .closable, .miniaturizable, .resizable])
-        window.styleMask.insert(.fullSizeContentView)
-        window.collectionBehavior.formUnion([.fullScreenPrimary, .managed])
-        window.minSize = NSSize(width: 960, height: 540)
-        window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        window.isMovableByWindowBackground = true
-        if let zoomButton = window.standardWindowButton(.zoomButton) {
-            zoomButton.isHidden = false
-            zoomButton.isEnabled = true
-            zoomButton.target = FullScreenButtonTarget.shared
-            zoomButton.action = #selector(FullScreenButtonTarget.toggleFullScreen(_:))
-        }
+        Self.configureForTVMode(window)
         requestInitialFullScreen(window)
     }
 
@@ -66,19 +83,28 @@ public struct ShellWindowConfigurator: NSViewRepresentable {
             return
         }
         Self.didRequestInitialFullScreen = true
-        for delay in [0.15, 0.65, 1.2] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                Self.enterFullScreen(window)
-            }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            Self.enterFullScreen(window)
         }
     }
 }
 
 @MainActor
-private final class FullScreenButtonTarget: NSObject {
-    static let shared = FullScreenButtonTarget()
+public final class ShellAppDelegate: NSObject, NSApplicationDelegate {
+    public override init() {
+        super.init()
+    }
 
-    @objc func toggleFullScreen(_ sender: Any?) {
-        ShellWindowConfigurator.toggleFocusedWindowFullScreen()
+    public func applicationDidFinishLaunching(_ notification: Notification) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            ShellWindowConfigurator.enterKnownWindowFullScreen()
+        }
+    }
+
+    public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        DispatchQueue.main.async {
+            ShellWindowConfigurator.enterKnownWindowFullScreen()
+        }
+        return true
     }
 }

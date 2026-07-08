@@ -1591,15 +1591,18 @@ struct TVShellChecks {
         try expect(app.contains("minWidth: 960"), "root window can shrink below 1280 for smaller displays")
         try expect(app.contains("minHeight: 540"), "root window can shrink below 720 for smaller displays")
         try expect(app.contains(".windowStyle(.hiddenTitleBar)") == false, "root window keeps a visible macOS title bar for maximize")
+        try expect(app.contains("@NSApplicationDelegateAdaptor(ShellAppDelegate.self)"), "root app installs the shell app delegate for reliable full screen entry")
         let shellWindow = try String(contentsOf: root.appending(path: "Sources/TVShellCore/App/ShellWindowManager.swift"))
-        try expect(shellWindow.contains("enterFullScreen"), "shell window manager can explicitly enter full screen")
-        try expect(shellWindow.contains("zoomButton.target"), "shell window zoom button is redirected to full screen")
+        try expect(shellWindow.contains("enterKnownWindowFullScreen"), "shell window manager can explicitly enter the configured window into full screen")
+        try expect(shellWindow.contains("configuredWindow"), "shell window manager remembers the SwiftUI window after configuration")
 
         let windowManager = try String(contentsOf: root.appending(path: "Sources/TVShellCore/App/ShellWindowManager.swift"))
         try expect(windowManager.contains(".resizable"), "window explicitly keeps resizable behavior")
         try expect(windowManager.contains("standardWindowButton(.zoomButton)"), "window explicitly enables the green zoom/maximize button")
         try expect(windowManager.contains("toggleFullScreen"), "window manager maximizes by entering macOS full screen")
         try expect(windowManager.contains("requestInitialFullScreen"), "window enters macOS full screen automatically for TV mode")
+        try expect(windowManager.contains("for delay in [") == false, "window manager avoids repeated full-screen toggles that can cancel the transition")
+        try expect(windowManager.contains("applicationDidFinishLaunching"), "app delegate retries full screen after launch when a real window exists")
     }
 
     static func checkRuntimeNavigationAndPerformanceBudget() throws {
