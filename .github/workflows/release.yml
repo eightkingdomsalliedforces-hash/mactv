@@ -15,14 +15,24 @@ permissions:
 jobs:
   build:
     name: Build TVShell
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show Swift Version
-        run: swift --version
+      - name: Select Xcode 16 Toolchain
+        run: |
+          if [ -d /Applications/Xcode_16.4.app ]; then
+            sudo xcode-select -s /Applications/Xcode_16.4.app
+          else
+            XCODE_16="$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort | tail -n 1 || true)"
+            if [ -n "$XCODE_16" ]; then
+              sudo xcode-select -s "$XCODE_16"
+            fi
+          fi
+          xcodebuild -version
+          swift --version
 
       - name: Run Checks
         run: swift run TVShellChecks

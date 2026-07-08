@@ -59,14 +59,20 @@ public struct CatalogAnimeSourceProvider: AnimeSourceProvider {
     }
 
     public func search(_ query: AnimeSearchQuery) async throws -> [AnimeSearchResult] {
+        var allResults: [AnimeSearchResult] = []
         for entry in playableAdapters {
-            let results = try await entry.adapter.search(query)
-            if results.isEmpty == false {
-                return results
+            do {
+                allResults.append(contentsOf: try await entry.adapter.search(query))
+            } catch {
+                continue
             }
         }
 
-        throw AnimeSourceCatalogError.noPlayableAdapter
+        let merged = mergeSearchResults(allResults)
+        guard merged.isEmpty == false else {
+            throw AnimeSourceCatalogError.noPlayableAdapter
+        }
+        return Array(merged.prefix(60))
     }
 
     public func episodes(for result: AnimeSearchResult) async throws -> [AnimeEpisode] {
@@ -86,6 +92,48 @@ public struct CatalogAnimeSourceProvider: AnimeSourceProvider {
         }
         return try await adapter.streams(for: episode)
     }
+}
+
+private func mergeSearchResults(_ results: [AnimeSearchResult]) -> [AnimeSearchResult] {
+    var mergedByTitle: [String: AnimeSearchResult] = [:]
+    var order: [String] = []
+
+    for result in results {
+        let key = normalizedAnimeTitle(result.title)
+        guard key.isEmpty == false else {
+            continue
+        }
+        if let existing = mergedByTitle[key] {
+            mergedByTitle[key] = betterSearchResult(existing, result)
+        } else {
+            mergedByTitle[key] = result
+            order.append(key)
+        }
+    }
+
+    return order.compactMap { mergedByTitle[$0] }
+}
+
+private func betterSearchResult(_ left: AnimeSearchResult, _ right: AnimeSearchResult) -> AnimeSearchResult {
+    if (right.coverURL != nil) != (left.coverURL != nil) {
+        return right.coverURL != nil ? right : left
+    }
+    let leftEpisodes = left.episodeCount ?? left.episodes.count
+    let rightEpisodes = right.episodeCount ?? right.episodes.count
+    if leftEpisodes != rightEpisodes {
+        return rightEpisodes > leftEpisodes ? right : left
+    }
+    if (right.score ?? 0) != (left.score ?? 0) {
+        return (right.score ?? 0) > (left.score ?? 0) ? right : left
+    }
+    return left
+}
+
+private func normalizedAnimeTitle(_ title: String) -> String {
+    title
+        .folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: .current)
+        .replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
 private extension AnimeSourceHealth {

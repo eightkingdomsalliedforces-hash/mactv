@@ -96,6 +96,7 @@ struct TVShellChecks {
         try await checkAnimeHomeProviderAggregatesDistinctTitles()
         try checkAnimekoStyleSourceCatalog()
         try await checkAnimeSourceRegistryUsesCatalog()
+        try await checkCatalogAnimeSourceProviderAggregatesResults()
         try await checkSelectorAnimeSourceProvider()
         try checkAnimeSourcesExposePlayableStatusAndSearchChoices()
         try checkBigScreenViewsStayScrollableAndWindowIsResizable()
@@ -576,7 +577,7 @@ struct TVShellChecks {
 
     static func checkExternalAnimeIntegrations() throws {
         let bangumiRequest = try BangumiAPI.searchSubjectsRequest(keyword: "芙莉蓮")
-        try expect(bangumiRequest.url.absoluteString == "https://api.bgm.tv/v0/search/subjects", "bangumi search endpoint uses v0 subjects search")
+        try expect(bangumiRequest.url.absoluteString == "https://api.bgm.tv/v0/search/subjects?limit=30", "bangumi search endpoint requests more subject results")
         try expect(bangumiRequest.method == "POST", "bangumi search uses POST")
         let bangumiBody = String(data: bangumiRequest.body ?? Data(), encoding: .utf8) ?? ""
         try expect(bangumiBody.contains("\"keyword\":\"芙莉蓮\""), "bangumi search body contains keyword")
@@ -1348,6 +1349,54 @@ struct TVShellChecks {
         try expect(factoryProvider.id == "catalog-home", "factory creates homepage aggregator over catalog-backed anime provider")
     }
 
+    static func checkCatalogAnimeSourceProviderAggregatesResults() async throws {
+        let first = KeywordAnimeSourceProvider(
+            id: "first-source",
+            displayName: "First Source",
+            resultsByKeyword: [
+                "動漫": [
+                    AnimeSearchResult(id: "frieren-a", title: "葬送的芙莉蓮", coverURL: nil, episodeCount: 1, episodes: []),
+                    AnimeSearchResult(id: "toradora", title: "虎子", episodeCount: 25, episodes: [])
+                ]
+            ]
+        )
+        let second = KeywordAnimeSourceProvider(
+            id: "second-source",
+            displayName: "Second Source",
+            resultsByKeyword: [
+                "動漫": [
+                    AnimeSearchResult(
+                        id: "frieren-b",
+                        title: "葬送的芙莉蓮",
+                        coverURL: URL(string: "https://example.com/frieren.jpg"),
+                        episodeCount: 28,
+                        episodes: []
+                    ),
+                    AnimeSearchResult(id: "gakkou", title: "女子高中生的虛度日常", episodeCount: 12, episodes: [])
+                ]
+            ]
+        )
+        let failing = KeywordAnimeSourceProvider(
+            id: "failing-source",
+            displayName: "Failing Source",
+            resultsByKeyword: [:],
+            failingKeywords: ["動漫"]
+        )
+        let catalog = AnimeSourceCatalogState(definitions: [
+            AnimeSourceDefinition(id: "first-source", title: "First Source", iconLabel: "F", lines: []),
+            AnimeSourceDefinition(id: "failing-source", title: "Failing Source", iconLabel: "X", lines: []),
+            AnimeSourceDefinition(id: "second-source", title: "Second Source", iconLabel: "S", lines: [])
+        ])
+        let provider = CatalogAnimeSourceProvider(
+            catalog: catalog,
+            registry: AnimeSourceRegistry(adapters: [first, second, failing])
+        )
+
+        let results = try await provider.search(AnimeSearchQuery(keyword: "動漫"))
+        try expect(results.map(\.title) == ["葬送的芙莉蓮", "虎子", "女子高中生的虛度日常"], "catalog provider aggregates multiple enabled source results")
+        try expect(results.first?.coverURL != nil, "catalog provider keeps richer duplicate search result metadata")
+    }
+
     static func checkSelectorAnimeSourceProvider() async throws {
         let config = SelectorAnimeSourceConfig(
             id: "selector-demo",
@@ -1549,7 +1598,8 @@ struct TVShellChecks {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
         let workflowURL = root.appending(path: ".github/workflows/release.yml")
         let workflow = try String(contentsOf: workflowURL)
-        try expect(workflow.contains("macos-14"), "release workflow builds on macOS")
+        try expect(workflow.contains("macos-15"), "release workflow builds on a Swift 6 capable macOS runner")
+        try expect(workflow.contains("xcode-select"), "release workflow selects a compatible Xcode toolchain")
         try expect(workflow.contains("swift run TVShellChecks"), "release workflow runs TVShellChecks")
         try expect(workflow.contains("swift build -c release --product TVShell"), "release workflow builds release product")
         try expect(workflow.contains("gh release create"), "release workflow publishes GitHub releases for tags")

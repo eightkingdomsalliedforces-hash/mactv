@@ -72,7 +72,11 @@ public enum BangumiAPI {
     public static let baseURL = URL(string: "https://api.bgm.tv")!
 
     public static func searchSubjectsRequest(keyword: String) throws -> AnimeHTTPRequest {
-        let url = baseURL.appending(path: "/v0/search/subjects")
+        let url = baseURL
+            .appending(path: "/v0/search/subjects")
+            .appending(queryItems: [
+                URLQueryItem(name: "limit", value: "30")
+            ])
         let payload = BangumiSubjectSearchPayload(
             keyword: keyword,
             filter: BangumiSubjectSearchFilter(type: [2])
