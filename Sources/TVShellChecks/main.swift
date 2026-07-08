@@ -508,9 +508,15 @@ struct TVShellChecks {
         try expect(SettingsFocus.scale.next == .wallpaper, "settings moves from scale to wallpaper")
         try expect(SettingsFocus.wallpaper.next == .webZoom, "settings moves from wallpaper to web zoom")
         try expect(SettingsFocus.webZoom.next == .danmakuSize, "settings moves from web zoom to danmaku size")
-        try expect(SettingsFocus.danmakuSize.next == .videoSource, "settings moves from danmaku size to video source")
+        try expect(SettingsFocus.danmakuSize.next == .danmakuSpeed, "settings moves from danmaku size to danmaku speed")
+        try expect(SettingsFocus.danmakuSpeed.next == .danmakuOpacity, "settings moves from danmaku speed to danmaku opacity")
+        try expect(SettingsFocus.danmakuOpacity.next == .danmakuDensity, "settings moves from danmaku opacity to danmaku density")
+        try expect(SettingsFocus.danmakuDensity.next == .videoSource, "settings moves from danmaku density to video source")
         try expect(SettingsFocus.videoSource.next == .scale, "settings wraps to scale")
         try expect(DanmakuDisplaySettings(sizeScale: 1.0).adjusted(previous: false).sizeScale == 1.1, "danmaku size setting grows in readable steps")
+        try expect(DanmakuDisplaySettings(speedScale: 1.0).adjustedSpeed(previous: false).speedScale == 1.1, "danmaku speed setting grows in readable steps")
+        try expect(DanmakuDisplaySettings(opacity: 0.8).adjustedOpacity(previous: true).opacity == 0.7, "danmaku opacity setting changes in readable steps")
+        try expect(DanmakuDisplaySettings(density: 5).adjustedDensity(previous: false).density == 6, "danmaku density setting changes visible line count")
     }
 
     static func checkAnimeSourceAndDanmakuProviders() async throws {
@@ -1582,6 +1588,9 @@ struct TVShellChecks {
         try expect(settings.contains("ScrollViewReader"), "settings view keeps remote focus visible")
         try expect(settings.contains("scrollTo(focus"), "settings view scrolls to the focused setting")
         try expect(settings.contains("彈幕大小"), "settings view exposes danmaku size controls")
+        try expect(settings.contains("彈幕速度"), "settings view exposes danmaku speed controls")
+        try expect(settings.contains("彈幕透明度"), "settings view exposes danmaku opacity controls")
+        try expect(settings.contains("彈幕密度"), "settings view exposes danmaku density controls")
 
         let appManagement = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Settings/AppManagementView.swift"))
         try expect(appManagement.contains("ScrollViewReader"), "app management keeps remote focus visible")
@@ -1600,9 +1609,16 @@ struct TVShellChecks {
         try expect(windowManager.contains(".resizable"), "window explicitly keeps resizable behavior")
         try expect(windowManager.contains("standardWindowButton(.zoomButton)"), "window explicitly enables the green zoom/maximize button")
         try expect(windowManager.contains("toggleFullScreen"), "window manager maximizes by entering macOS full screen")
+        try expect(windowManager.contains("enterBorderlessTVFullScreen"), "window manager falls back to borderless TV full screen when macOS full screen is ignored")
+        try expect(windowManager.contains("NSApp.presentationOptions"), "window manager hides Dock and menu bar in TV full screen fallback")
+        try expect(windowManager.contains("screen.frame"), "window manager sizes fallback full screen to the physical display")
         try expect(windowManager.contains("requestInitialFullScreen"), "window enters macOS full screen automatically for TV mode")
         try expect(windowManager.contains("for delay in [") == false, "window manager avoids repeated full-screen toggles that can cancel the transition")
         try expect(windowManager.contains("applicationDidFinishLaunching"), "app delegate retries full screen after launch when a real window exists")
+
+        let workflow = try String(contentsOf: root.appending(path: ".github/workflows/release.yml"))
+        try expect(workflow.contains("MacTV.app"), "release workflow packages a real macOS app bundle")
+        try expect(workflow.contains("CFBundlePackageType") && workflow.contains("APPL"), "release app bundle declares itself as a macOS app")
     }
 
     static func checkRuntimeNavigationAndPerformanceBudget() throws {
@@ -1642,6 +1658,11 @@ struct TVShellChecks {
         try expect(animeRuntime.contains("LazyVStack"), "anime episode grid uses manual rows instead of LazyVGrid diffing")
         try expect(animeRuntime.contains("lineLimit(2)") && animeRuntime.contains("animeHeader"), "anime headers constrain long BT titles")
         try expect(animeRuntime.contains("downloadProgress"), "anime player exposes torrent download progress")
+        try expect(animeRuntime.contains("nativePlayableURL"), "anime player avoids handing unsupported files to AVPlayer")
+        try expect(animeRuntime.contains("openExternalPlayer"), "anime player can fall back to an external player for unsupported anime containers")
+        try expect(animeRuntime.contains("settings.density"), "danmaku overlay uses the configured density")
+        try expect(animeRuntime.contains("settings.speedScale"), "danmaku overlay uses the configured speed")
+        try expect(animeRuntime.contains("settings.opacity"), "danmaku overlay uses the configured opacity")
         try expect(animeRuntime.contains("searchKeywordBar") == false, "anime title browser does not show the old keyword chip row")
         try expect(animeRuntime.contains(".animation(TVMotion.focus, value: comments)") == false, "danmaku overlay does not animate every comment refresh")
         try expect(animeRuntime.contains("DanmakuOverlay(") && animeRuntime.contains("comments: controller.visibleDanmaku"), "anime player renders danmaku overlay")
@@ -1652,7 +1673,7 @@ struct TVShellChecks {
         try expect(animeRuntime.contains("interpolatedTime"), "danmaku overlay interpolates between player time samples")
         try expect(animeRuntime.contains("id: \\.element.stableIdentity"), "danmaku overlay keeps stable identities for moving comments")
         try expect(animeRuntime.contains("onPlaybackTime"), "youtube anime playback feeds time into danmaku")
-        try expect(animeRuntime.contains("progress = min(max(age / 4.2"), "danmaku overlay scrolls comments across the screen")
+        try expect(animeRuntime.contains("lifetime = 4.2 / settings.speedScale"), "danmaku overlay scroll speed follows the user setting")
         try expect(animeRuntime.contains(".zIndex(3)"), "danmaku overlay is above player surfaces")
         try expect(animeRuntime.contains("subtitleStatusText"), "anime player exposes subtitle status")
         try expect(animeRuntime.contains("loadMediaSelectionGroup(for: .legible)"), "anime player inspects subtitle tracks")

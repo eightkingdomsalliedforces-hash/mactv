@@ -223,6 +223,12 @@ public final class AppState: ObservableObject {
             webZoom = min(max((webZoom + delta) * 10, 8), 24) / 10
         case .danmakuSize:
             danmakuDisplaySettings = danmakuDisplaySettings.adjusted(previous: previous)
+        case .danmakuSpeed:
+            danmakuDisplaySettings = danmakuDisplaySettings.adjustedSpeed(previous: previous)
+        case .danmakuOpacity:
+            danmakuDisplaySettings = danmakuDisplaySettings.adjustedOpacity(previous: previous)
+        case .danmakuDensity:
+            danmakuDisplaySettings = danmakuDisplaySettings.adjustedDensity(previous: previous)
         case .videoSource:
             chooseVideoFile()
             return

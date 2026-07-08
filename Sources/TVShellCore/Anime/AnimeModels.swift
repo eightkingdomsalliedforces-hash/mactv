@@ -158,18 +158,104 @@ public struct DanmakuComment: Codable, Equatable, Sendable {
 
 public struct DanmakuDisplaySettings: Codable, Equatable, Sendable {
     public var sizeScale: Double
+    public var speedScale: Double
+    public var opacity: Double
+    public var density: Int
 
-    public init(sizeScale: Double = 1.0) {
+    private enum CodingKeys: String, CodingKey {
+        case sizeScale
+        case speedScale
+        case opacity
+        case density
+    }
+
+    public init(
+        sizeScale: Double = 1.0,
+        speedScale: Double = 1.0,
+        opacity: Double = 0.92,
+        density: Int = 5
+    ) {
         self.sizeScale = min(max(sizeScale, 0.7), 1.8)
+        self.speedScale = min(max(speedScale, 0.6), 1.8)
+        self.opacity = min(max(opacity, 0.35), 1.0)
+        self.density = min(max(density, 1), 10)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            sizeScale: try container.decodeIfPresent(Double.self, forKey: .sizeScale) ?? 1.0,
+            speedScale: try container.decodeIfPresent(Double.self, forKey: .speedScale) ?? 1.0,
+            opacity: try container.decodeIfPresent(Double.self, forKey: .opacity) ?? 0.92,
+            density: try container.decodeIfPresent(Int.self, forKey: .density) ?? 5
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(sizeScale, forKey: .sizeScale)
+        try container.encode(speedScale, forKey: .speedScale)
+        try container.encode(opacity, forKey: .opacity)
+        try container.encode(density, forKey: .density)
     }
 
     public var sizeLabel: String {
         "\(Int((sizeScale * 100).rounded()))%"
     }
 
+    public var speedLabel: String {
+        "\(Int((speedScale * 100).rounded()))%"
+    }
+
+    public var opacityLabel: String {
+        "\(Int((opacity * 100).rounded()))%"
+    }
+
+    public var densityLabel: String {
+        "\(density) 行"
+    }
+
     public func adjusted(previous: Bool) -> DanmakuDisplaySettings {
+        adjustedSize(previous: previous)
+    }
+
+    public func adjustedSize(previous: Bool) -> DanmakuDisplaySettings {
         let step = previous ? -0.1 : 0.1
-        return DanmakuDisplaySettings(sizeScale: (sizeScale + step).rounded(toPlaces: 1))
+        return DanmakuDisplaySettings(
+            sizeScale: (sizeScale + step).rounded(toPlaces: 1),
+            speedScale: speedScale,
+            opacity: opacity,
+            density: density
+        )
+    }
+
+    public func adjustedSpeed(previous: Bool) -> DanmakuDisplaySettings {
+        let step = previous ? -0.1 : 0.1
+        return DanmakuDisplaySettings(
+            sizeScale: sizeScale,
+            speedScale: (speedScale + step).rounded(toPlaces: 1),
+            opacity: opacity,
+            density: density
+        )
+    }
+
+    public func adjustedOpacity(previous: Bool) -> DanmakuDisplaySettings {
+        let step = previous ? -0.1 : 0.1
+        return DanmakuDisplaySettings(
+            sizeScale: sizeScale,
+            speedScale: speedScale,
+            opacity: (opacity + step).rounded(toPlaces: 1),
+            density: density
+        )
+    }
+
+    public func adjustedDensity(previous: Bool) -> DanmakuDisplaySettings {
+        DanmakuDisplaySettings(
+            sizeScale: sizeScale,
+            speedScale: speedScale,
+            opacity: opacity,
+            density: density + (previous ? -1 : 1)
+        )
     }
 }
 

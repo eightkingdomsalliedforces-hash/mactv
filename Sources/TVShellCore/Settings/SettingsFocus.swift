@@ -3,6 +3,9 @@ public enum SettingsFocus: String, Codable, Equatable, Sendable {
     case wallpaper
     case webZoom
     case danmakuSize
+    case danmakuSpeed
+    case danmakuOpacity
+    case danmakuDensity
     case videoSource
 
     public var next: SettingsFocus {
@@ -10,7 +13,10 @@ public enum SettingsFocus: String, Codable, Equatable, Sendable {
         case .scale: .wallpaper
         case .wallpaper: .webZoom
         case .webZoom: .danmakuSize
-        case .danmakuSize: .videoSource
+        case .danmakuSize: .danmakuSpeed
+        case .danmakuSpeed: .danmakuOpacity
+        case .danmakuOpacity: .danmakuDensity
+        case .danmakuDensity: .videoSource
         case .videoSource: .scale
         }
     }
@@ -21,7 +27,10 @@ public enum SettingsFocus: String, Codable, Equatable, Sendable {
         case .wallpaper: .scale
         case .webZoom: .wallpaper
         case .danmakuSize: .webZoom
-        case .videoSource: .danmakuSize
+        case .danmakuSpeed: .danmakuSize
+        case .danmakuOpacity: .danmakuSpeed
+        case .danmakuDensity: .danmakuOpacity
+        case .videoSource: .danmakuDensity
         }
     }
 }

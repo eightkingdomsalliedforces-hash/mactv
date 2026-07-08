@@ -40,11 +40,43 @@ jobs:
       - name: Build Release Product
         run: swift build -c release --product TVShell
 
-      - name: Package Binary
+      - name: Package App Bundle
         run: |
-          mkdir -p dist
-          cp .build/release/TVShell dist/TVShell
-          (cd dist && zip -9 TVShell-macOS-${{ github.sha }}.zip TVShell)
+          APP="dist/MacTV.app"
+          mkdir -p "$APP/Contents/MacOS"
+          cp .build/release/TVShell "$APP/Contents/MacOS/TVShell"
+          chmod +x "$APP/Contents/MacOS/TVShell"
+          cat > "$APP/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDevelopmentRegion</key>
+            <string>zh_TW</string>
+            <key>CFBundleExecutable</key>
+            <string>TVShell</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.mactv.tvshell</string>
+            <key>CFBundleInfoDictionaryVersion</key>
+            <string>6.0</string>
+            <key>CFBundleName</key>
+            <string>MacTV</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>0.1.0</string>
+            <key>CFBundleVersion</key>
+            <string>${{ github.run_number }}</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>14.0</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+            <key>NSPrincipalClass</key>
+            <string>NSApplication</string>
+          </dict>
+          </plist>
+          PLIST
+          (cd dist && zip -9 -r TVShell-macOS-${{ github.sha }}.zip MacTV.app)
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

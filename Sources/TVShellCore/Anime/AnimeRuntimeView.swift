@@ -1,3 +1,4 @@
+import AppKit
 @preconcurrency import AVFoundation
 import AVKit
 import SwiftUI
@@ -871,11 +872,16 @@ final class AnimeRuntimeController: ObservableObject {
     }
 
     private func playAVURL(_ url: URL) {
+        guard let playableURL = nativePlayableURL(url) else {
+            openExternalPlayer(url, reason: "此格式需要外部播放器")
+            return
+        }
+
         subtitleStatusText = "字幕：正在尋找中文軌"
         let resumeTime = currentPlayingEpisode
             .map(watchMediaID(for:))
             .map(resumeTime(for:)) ?? 0
-        let item = AVPlayerItem(url: url)
+        let item = AVPlayerItem(url: playableURL)
         itemObserver?.invalidate()
         itemObserver = item.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
             Task { @MainActor in
@@ -887,7 +893,11 @@ final class AnimeRuntimeController: ObservableObject {
                     }
                     self?.player.play()
                 } else if case .failed = item.status {
-                    self?.statusText = item.error?.localizedDescription ?? "動畫播放失敗。"
+                    if let asset = item.asset as? AVURLAsset {
+                        self?.openExternalPlayer(asset.url, reason: item.error?.localizedDescription ?? "原生播放器無法播放此來源")
+                    } else {
+                        self?.statusText = item.error?.localizedDescription ?? "動畫播放失敗。"
+                    }
                 }
             }
         }
@@ -896,6 +906,34 @@ final class AnimeRuntimeController: ObservableObject {
         mediaState = MediaControlState(isPlaying: true)
         isDanmakuClockRunning = true
         installTimeObserverIfNeeded()
+    }
+
+    private func nativePlayableURL(_ url: URL) -> URL? {
+        guard url.isFileURL || url.scheme == "http" || url.scheme == "https" else {
+            return nil
+        }
+
+        let compatibleExtensions = Set(["mp4", "m4v", "mov", "m3u8", "mp3", "aac"])
+        let pathExtension = url.pathExtension.lowercased()
+        if pathExtension.isEmpty {
+            return url
+        }
+        return compatibleExtensions.contains(pathExtension) ? url : nil
+    }
+
+    private func openExternalPlayer(_ url: URL, reason: String) {
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+        isDanmakuClockRunning = false
+        mediaState = MediaControlState(isPlaying: false)
+        subtitleStatusText = "字幕：外部播放器"
+
+        let didOpen = NSWorkspace.shared.open(url)
+        if didOpen {
+            statusText = "\(reason)：已交給 macOS 外部播放器。Back 可回選集，Home 可回主畫面。"
+        } else {
+            statusText = "\(reason)：macOS 找不到能開啟 \(url.lastPathComponent) 的播放器。建議安裝 IINA 或 VLC。"
+        }
     }
 
     private func selectChineseSubtitleIfAvailable(for item: AVPlayerItem) async {
@@ -999,8 +1037,8 @@ final class AnimeRuntimeController: ObservableObject {
         danmakuPlaybackTime = time
         danmakuPlaybackDate = Date()
         visibleDanmaku = comments
-            .filter { time >= $0.time && time - $0.time < 4.2 }
-            .suffix(5)
+            .filter { time >= $0.time && time - $0.time < 8.0 }
+            .suffix(12)
         recordPlaybackProgress(time: time)
     }
 
@@ -1179,20 +1217,22 @@ private struct DanmakuOverlay: View {
         GeometryReader { proxy in
             TimelineView(.animation) { timeline in
                 let interpolatedTime = currentTime + (isClockRunning ? timeline.date.timeIntervalSince(sampleDate) : 0)
-                ForEach(Array(comments.enumerated()), id: \.element.stableIdentity) { index, comment in
+                let visibleComments = Array(comments.suffix(settings.density))
+                ForEach(Array(visibleComments.enumerated()), id: \.element.stableIdentity) { index, comment in
                     let age = max(0, interpolatedTime - comment.time)
-                    let progress = min(max(age / 4.2, 0), 1)
+                    let lifetime = 4.2 / settings.speedScale
+                    let progress = min(max(age / lifetime, 0), 1)
                     let travel = proxy.size.width + 620 * metrics.scale
                     Text(verbatim: comment.text)
                         .modifier(DanmakuTextStyle(settings: settings, metrics: metrics))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.white.opacity(settings.opacity))
                         .shadow(color: .black.opacity(0.92), radius: 8, x: 0, y: 3)
                         .padding(.horizontal, 20 * metrics.scale)
                         .padding(.vertical, 8 * metrics.scale)
-                        .background(.black.opacity(0.22), in: Capsule())
+                        .background(.black.opacity(0.22 * settings.opacity), in: Capsule())
                         .offset(
                             x: proxy.size.width - CGFloat(progress) * CGFloat(travel),
-                            y: CGFloat(index % 5) * CGFloat(54 * metrics.scale * settings.sizeScale)
+                            y: CGFloat(index % settings.density) * CGFloat(54 * metrics.scale * settings.sizeScale)
                         )
                         .transaction { transaction in
                             transaction.animation = nil

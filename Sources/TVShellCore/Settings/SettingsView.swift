@@ -50,6 +50,30 @@ public struct SettingsView: View {
                         .id(SettingsFocus.danmakuSize)
 
                         SettingsOptionRow(
+                            title: "彈幕速度",
+                            value: appState.danmakuDisplaySettings.speedLabel,
+                            isFocused: appState.settingsFocus == .danmakuSpeed,
+                            metrics: metrics
+                        )
+                        .id(SettingsFocus.danmakuSpeed)
+
+                        SettingsOptionRow(
+                            title: "彈幕透明度",
+                            value: appState.danmakuDisplaySettings.opacityLabel,
+                            isFocused: appState.settingsFocus == .danmakuOpacity,
+                            metrics: metrics
+                        )
+                        .id(SettingsFocus.danmakuOpacity)
+
+                        SettingsOptionRow(
+                            title: "彈幕密度",
+                            value: appState.danmakuDisplaySettings.densityLabel,
+                            isFocused: appState.settingsFocus == .danmakuDensity,
+                            metrics: metrics
+                        )
+                        .id(SettingsFocus.danmakuDensity)
+
+                        SettingsOptionRow(
                             title: "影片位置",
                             value: appState.videoSourceLabel,
                             isFocused: appState.settingsFocus == .videoSource,
