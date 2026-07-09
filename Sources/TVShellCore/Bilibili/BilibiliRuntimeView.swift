@@ -418,7 +418,9 @@ final class BilibiliRuntimeController: ObservableObject {
             currentQuery = keyword
             seasons = try await provider.search(keyword: keyword)
             state = BilibiliRuntimeState(seasonCount: visibleSeasons.count)
-            statusText = visibleSeasons.isEmpty ? "Bilibili 找不到：\(keyword)" : "Bilibili 搜尋：\(keyword) · \(contentMode.title) · \(visibleSeasons.count) 部"
+            let requestKeyword = BilibiliSearchNormalizer.simplified(keyword)
+            let conversion = requestKeyword == keyword ? "" : " · 已用簡體搜尋：\(requestKeyword)"
+            statusText = visibleSeasons.isEmpty ? "Bilibili 找不到：\(keyword)\(conversion)" : "Bilibili 搜尋：\(keyword)\(conversion) · \(contentMode.title) · \(visibleSeasons.count) 部"
         } catch {
             seasons = []
             state = BilibiliRuntimeState(seasonCount: 0)

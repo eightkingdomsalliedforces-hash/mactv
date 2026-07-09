@@ -1,5 +1,13 @@
 import Foundation
 
+public enum BilibiliSearchNormalizer {
+    /// Bilibili's search index is predominantly Simplified Chinese. Convert only
+    /// for the request and keep the original Traditional Chinese text in the UI.
+    public static func simplified(_ value: String) -> String {
+        value.applyingTransform(StringTransform("Hant-Hans"), reverse: false) ?? value
+    }
+}
+
 public struct BilibiliCredentials: Codable, Equatable, Sendable {
     public var cookie: String
 

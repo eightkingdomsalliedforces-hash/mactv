@@ -71,9 +71,9 @@ public final class AppState: ObservableObject {
         videoSourceLabel = loadedSnapshot?.videoSourceLabel ?? "內建示範影片"
         watchingHistory = loadedSnapshot?.watchingHistory ?? []
         danmakuDisplaySettings = loadedSnapshot?.danmakuDisplaySettings ?? DanmakuDisplaySettings()
-        youtubeCredentials = loadedCredentials?.youtube ?? .environment()
-        dandanplayCredentials = loadedCredentials?.dandanplay ?? .environment()
-        bilibiliCredentials = loadedCredentials?.bilibili ?? .environment()
+        youtubeCredentials = Self.resolved(loadedCredentials?.youtube, fallback: .environment())
+        dandanplayCredentials = Self.resolved(loadedCredentials?.dandanplay, fallback: .environment())
+        bilibiliCredentials = Self.resolved(loadedCredentials?.bilibili, fallback: .environment())
         focusedAppID = self.apps.first?.id
         focusedAnimeSourceID = animeSourceCatalog.focusedID
         exitObserver = NotificationCenter.default.addObserver(
@@ -189,14 +189,26 @@ public final class AppState: ObservableObject {
         do {
             try credentialsStore.ensureTemplate()
             if let snapshot = try credentialsStore.load() {
-                youtubeCredentials = snapshot.youtube
-                dandanplayCredentials = snapshot.dandanplay
-                bilibiliCredentials = snapshot.bilibili
+                youtubeCredentials = Self.resolved(snapshot.youtube, fallback: .environment())
+                dandanplayCredentials = Self.resolved(snapshot.dandanplay, fallback: .environment())
+                bilibiliCredentials = Self.resolved(snapshot.bilibili, fallback: .environment())
             }
             statusMessage = "已重載憑證：\(credentialsStore.fileURL.path)"
         } catch {
             statusMessage = "憑證讀取失敗：\(error.localizedDescription)"
         }
+    }
+
+    private static func resolved(_ fileCredentials: YouTubeCredentials?, fallback: YouTubeCredentials) -> YouTubeCredentials {
+        fileCredentials?.isConfigured == true ? fileCredentials! : fallback
+    }
+
+    private static func resolved(_ fileCredentials: DandanplayCredentials?, fallback: DandanplayCredentials) -> DandanplayCredentials {
+        fileCredentials?.isConfigured == true ? fileCredentials! : fallback
+    }
+
+    private static func resolved(_ fileCredentials: BilibiliCredentials?, fallback: BilibiliCredentials) -> BilibiliCredentials {
+        fileCredentials?.isConfigured == true ? fileCredentials! : fallback
     }
 
     public func handle(_ command: RemoteCommand) {

@@ -51,8 +51,9 @@ public struct BilibiliBangumiProvider: BilibiliBangumiProviding {
     }
 
     public func search(keyword: String) async throws -> [BilibiliSeason] {
-        async let bangumiData = transport.data(for: BilibiliAPI.searchBangumiRequest(keyword: keyword, credentials: credentials))
-        async let videoData = transport.data(for: BilibiliAPI.searchVideoRequest(keyword: keyword, credentials: credentials))
+        let normalizedKeyword = BilibiliSearchNormalizer.simplified(keyword)
+        async let bangumiData = transport.data(for: BilibiliAPI.searchBangumiRequest(keyword: normalizedKeyword, credentials: credentials))
+        async let videoData = transport.data(for: BilibiliAPI.searchVideoRequest(keyword: normalizedKeyword, credentials: credentials))
         var results: [BilibiliSeason] = []
         if let bangumi = try? await BilibiliAPI.decodeSearch(bangumiData) {
             results.append(contentsOf: bangumi)

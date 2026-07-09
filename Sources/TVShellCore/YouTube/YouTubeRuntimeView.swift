@@ -55,8 +55,13 @@ public struct YouTubeRuntimeView: View {
             }
         }
         .task {
+            controller.updateCredentials(appState.youtubeCredentials)
             controller.updateWatchHistory(appState.watchingHistory)
             await controller.load()
+        }
+        .onChange(of: appState.youtubeCredentials) { _, credentials in
+            controller.updateCredentials(credentials)
+            Task { await controller.load() }
         }
         .onChange(of: appState.watchingHistory) { _, history in
             controller.updateWatchHistory(history)
@@ -179,7 +184,8 @@ final class YouTubeRuntimeController: ObservableObject {
     private var lastRecordedTime: Double = -1
     private var hidePlayerHUDTask: Task<Void, Never>?
 
-    private let provider: any YouTubeVideoProvider
+    private var provider: any YouTubeVideoProvider
+    private var credentials: YouTubeCredentials = .environment()
     private nonisolated(unsafe) var observer: NSObjectProtocol?
 
     init(provider: any YouTubeVideoProvider = YouTubeProviderFactory.defaultProvider()) {
@@ -218,6 +224,14 @@ final class YouTubeRuntimeController: ObservableObject {
 
     func updateWatchHistory(_ history: [WatchHistoryEntry]) {
         watchHistory = history
+    }
+
+    func updateCredentials(_ credentials: YouTubeCredentials) {
+        guard self.credentials != credentials else {
+            return
+        }
+        self.credentials = credentials
+        provider = YouTubeProviderFactory.defaultProvider(credentials: credentials)
     }
 
     func resumeTime(for video: YouTubeVideo) -> Double {

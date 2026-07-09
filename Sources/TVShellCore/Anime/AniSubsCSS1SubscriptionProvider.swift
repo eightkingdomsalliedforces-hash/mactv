@@ -232,7 +232,14 @@ public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
             in: detailHTML,
             baseURL: detailURL
         )
-        let anchors = narrowedAnchors.isEmpty ? fullAnchors : narrowedAnchors
+        let anchors = (narrowedAnchors.isEmpty ? fullAnchors : narrowedAnchors)
+            .filter { anchor in
+                CSS1HTMLSelectorEngine.isEpisodeAnchor(
+                    anchor,
+                    subjectTitle: subjectTitle,
+                    sortPattern: source.episodeSortPattern
+                )
+            }
 
         return anchors.enumerated().map { offset, anchor in
             let number = CSS1HTMLSelectorEngine.episodeNumber(
@@ -583,6 +590,36 @@ private enum CSS1HTMLSelectorEngine {
         }
     }
 
+    static func isEpisodeAnchor(
+        _ anchor: Anchor,
+        subjectTitle: String,
+        sortPattern: String?
+    ) -> Bool {
+        let title = normalize(anchor.title)
+        guard title.isEmpty == false,
+              normalizedComparable(title) != normalizedComparable(subjectTitle)
+        else {
+            return false
+        }
+
+        let hasEpisodeLabel = title.range(
+            of: #"(?:ep\.?\s*\d+|第\s*\d+\s*[話话集]|\b\d+\s*(?:話|话|集)\b)"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
+        let isPureEpisodeNumber = title.range(
+            of: #"^(?:ep\.?\s*)?\d+(?:\s*(?:v\d+|sp|ova))?$"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
+
+        if hasEpisodeLabel || isPureEpisodeNumber {
+            return true
+        }
+
+        let path = anchor.url.path.lowercased()
+        let hasPlaybackPath = path.range(of: #"(?:play|episode|vod|watch|detail)[/_-]"#, options: .regularExpression) != nil
+        return hasPlaybackPath && (episodeNumber(from: title, pattern: sortPattern) != nil && hasEpisodeLabel)
+    }
+
     static func anchors(matching selector: String, in html: String, baseURL: URL) -> [Anchor] {
         let requiredClasses = classNames(in: selector)
         let expectedTag = tagName(in: selector)
@@ -886,6 +923,13 @@ private enum CSS1HTMLSelectorEngine {
         value
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func normalizedComparable(_ value: String) -> String {
+        normalize(value)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: .current)
+            .replacingOccurrences(of: #"[\s\p{P}\p{S}_]+"#, with: "", options: .regularExpression)
+            .lowercased()
     }
 
     private static func cleanURLCandidate(_ value: String) -> String {

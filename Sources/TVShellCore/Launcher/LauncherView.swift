@@ -76,35 +76,28 @@ public struct LauncherView: View {
 
                 ScrollViewReader { scrollProxy in
                     ScrollView(.vertical) {
-                        VStack(alignment: .leading, spacing: 42 * metrics.scale) {
-                            topBar(metrics: metrics)
-                                .padding(.top, metrics.topPadding)
+                        VStack(alignment: .leading, spacing: 34 * metrics.scale) {
+                            TVOSHeroHeader(
+                                title: focusedApp?.name ?? "MacTV",
+                                subtitle: heroSubtitle,
+                                symbolName: AppCardView.symbolName(for: focusedApp?.name ?? "MacTV"),
+                                metrics: metrics
+                            )
+                            .padding(.top, metrics.topPadding)
 
-                            VStack(alignment: .leading, spacing: 14 * metrics.scale) {
-                                Text(focusedApp?.name ?? "TV Shell")
-                                    .font(.system(size: metrics.heroTitleSize, weight: .bold))
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.72)
-                                Text(heroSubtitle)
-                                    .font(.system(size: metrics.heroSubtitleSize, weight: .medium))
-                                    .foregroundStyle(.white.opacity(0.68))
-                                    .lineLimit(2)
-                                    .minimumScaleFactor(0.76)
-                            }
-                            .padding(.top, 16 * metrics.scale)
+                            Spacer(minLength: max(40, proxy.size.height * 0.20))
+
+                            TVOSAppDock(
+                                apps: appState.apps.filter(\.isVisibleOnHome),
+                                focusedAppID: appState.focusedAppID,
+                                metrics: metrics
+                            )
+                            .scaleEffect(appState.displayScale.multiplier(), anchor: .leading)
 
                             if appState.watchingHistory.isEmpty == false {
                                 WatchHistoryRowView(entries: appState.watchingHistory, metrics: metrics)
                                     .id("launcher-history")
                             }
-
-                            VStack(alignment: .leading, spacing: metrics.rowSpacing) {
-                                ForEach(LauncherLayout.sections(for: appState.apps)) { section in
-                                    LauncherRowView(section: section, focusedAppID: appState.focusedAppID, metrics: metrics)
-                                        .id("launcher-section-\(section.id)")
-                                }
-                            }
-                            .scaleEffect(appState.displayScale.multiplier(), anchor: .topLeading)
 
                             if let statusMessage = appState.statusMessage {
                                 Text(statusMessage)
@@ -117,7 +110,7 @@ public struct LauncherView: View {
                                     .liquidGlassCard(isFocused: true, cornerRadius: 20)
                             }
 
-                            Text("方向鍵移動，OK 開啟，返回或 Home 回主畫面。")
+                            Text("方向鍵移動，OK 開啟，長按 Menu 開啟快捷設定。")
                                 .font(.system(size: metrics.hintSize, weight: .medium))
                                 .foregroundStyle(.white.opacity(0.62))
                                 .lineLimit(2)
@@ -129,11 +122,11 @@ public struct LauncherView: View {
                     }
                     .scrollIndicators(.hidden)
                     .onChange(of: appState.focusedAppID) { _, id in
-                        guard let sectionID = focusedSectionID(for: id) else {
+                        guard let id else {
                             return
                         }
                         withAnimation(TVMotion.focus) {
-                            scrollProxy.scrollTo("launcher-section-\(sectionID)", anchor: .center)
+                            scrollProxy.scrollTo("tvos-dock-app-\(id.uuidString)", anchor: .center)
                         }
                     }
                 }
@@ -144,15 +137,6 @@ public struct LauncherView: View {
 
     private var focusedApp: TVAppProfile? {
         appState.apps.first { $0.id == appState.focusedAppID }
-    }
-
-    private func focusedSectionID(for appID: UUID?) -> String? {
-        guard let appID else {
-            return nil
-        }
-        return LauncherLayout.sections(for: appState.apps)
-            .first { section in section.apps.contains { $0.id == appID } }?
-            .id
     }
 
     private var heroSubtitle: String {
@@ -178,23 +162,6 @@ public struct LauncherView: View {
         case .web:
             return "以放大網頁與虛擬滑鼠模式瀏覽"
         }
-    }
-
-    private func topBar(metrics: TVMetrics) -> some View {
-        HStack(spacing: 18) {
-            Text("TV Shell")
-                .font(.system(size: 28 * metrics.scale, weight: .bold))
-            Text(appState.displayScale.label)
-                .font(.system(size: 24 * metrics.scale, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.72))
-            Spacer()
-            Text(commandLabel)
-                .font(.system(size: 23 * metrics.scale, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.78))
-        }
-        .padding(.horizontal, 28 * metrics.scale)
-        .padding(.vertical, 18 * metrics.scale)
-        .liquidGlassCard(isFocused: false, cornerRadius: 26)
     }
 
     private var heroBackground: some View {
@@ -234,11 +201,75 @@ public struct LauncherView: View {
         }
     }
 
-    private var commandLabel: String {
-        if case .web = appState.activeRuntime {
-            return "網頁：\(appState.webRemoteMode.title)"
+}
+
+private struct TVOSHeroHeader: View {
+    let title: String
+    let subtitle: String
+    let symbolName: String
+    let metrics: TVMetrics
+
+    var body: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 14 * metrics.scale) {
+                Text("MacTV")
+                    .font(.system(size: 30 * metrics.scale, weight: .bold, design: .rounded))
+                    .tracking(1.2)
+                    .foregroundStyle(.white.opacity(0.94))
+
+                Text(title)
+                    .font(.system(size: min(metrics.heroTitleSize, 76 * metrics.scale), weight: .black, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+
+                Text(subtitle)
+                    .font(.system(size: 25 * metrics.scale, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.74))
+                    .lineLimit(2)
+                    .frame(maxWidth: 620 * metrics.scale, alignment: .leading)
+            }
+
+            Spacer()
+
+            Image(systemName: symbolName)
+                .font(.system(size: 116 * metrics.scale, weight: .medium))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.white.opacity(0.22))
+                .padding(.trailing, 116 * metrics.scale)
+                .padding(.top, 28 * metrics.scale)
         }
-        return appState.lastCommand.map { "最近：\($0.description)" } ?? "等待遙控器"
+    }
+}
+
+private struct TVOSAppDock: View {
+    let apps: [TVAppProfile]
+    let focusedAppID: UUID?
+    let metrics: TVMetrics
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18 * metrics.scale) {
+            Text("App")
+                .font(.system(size: 25 * metrics.scale, weight: .bold))
+                .foregroundStyle(.white.opacity(0.74))
+
+            ScrollView(.horizontal) {
+                HStack(alignment: .bottom, spacing: 28 * metrics.scale) {
+                    ForEach(apps) { app in
+                        AppCardView(app: app, isFocused: app.id == focusedAppID, metrics: metrics)
+                            .id("tvos-dock-app-\(app.id.uuidString)")
+                    }
+                }
+                .padding(.horizontal, 34 * metrics.scale)
+                .padding(.vertical, 30 * metrics.scale)
+            }
+            .scrollIndicators(.hidden)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 34 * metrics.scale, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 34 * metrics.scale, style: .continuous)
+                    .stroke(.white.opacity(0.16), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.38), radius: 30, x: 0, y: 18)
+        }
     }
 }
 

@@ -972,6 +972,14 @@ struct TVShellChecks {
         try expect(state.dandanplayCredentials.appSecret == "dd-secret", "app state loads dandanplay secret from credentials file")
         try expect(state.bilibiliCredentials.cookie.contains("SESSDATA=abc"), "app state loads bilibili cookie from credentials file")
 
+        let partialURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("TVShellChecks-PartialCredentials-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: partialURL) }
+        try "{\"youtube\":{\"apiKey\":\"only-youtube-key\"}}".data(using: .utf8)!.write(to: partialURL)
+        let partial = try AppCredentialsStore(fileURL: partialURL).load()
+        try expect(partial?.youtube.apiKey == "only-youtube-key", "partial credentials file loads configured API keys")
+        try expect(partial?.dandanplay.isConfigured == false, "partial credentials defaults missing sections")
+
         let generatedURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("TVShellChecks-AutoCredentials-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: generatedURL) }
@@ -987,6 +995,7 @@ struct TVShellChecks {
 
     @MainActor
     static func checkBilibiliBangumiRuntimeAndAPI() async throws {
+        try expect(BilibiliSearchNormalizer.simplified("葬送的芙莉蓮") == "葬送的芙莉莲", "bilibili search converts Traditional Chinese to Simplified Chinese")
         let bilibiliApp = SeedApps.defaultApps.first(where: { app in
             if case .bilibili = app.target { return true }
             return false
@@ -1739,6 +1748,7 @@ struct TVShellChecks {
         """.data(using: .utf8)!
         let detailHTML = """
         <div class="module-play-list-content">
+          <div><span class="episode-title">葬送的芙莉蓮</span><a class="play-link" href="/watch/frieren-title">作品頁</a></div>
           <div><span class="episode-title">第 1 話</span><a class="play-link" href="/watch/frieren-1">播放</a></div>
           <div><span class="episode-title">第 2 話</span><a class="play-link" href="/watch/frieren-2">播放</a></div>
         </div>
@@ -1791,6 +1801,7 @@ struct TVShellChecks {
         try expect(results.first?.summaryText.localizedCaseInsensitiveContains("芙莉蓮踏上理解人類") == true, "css1 provider enriches detail page with Bangumi summary")
         try expect(results.first?.score == 8.9, "css1 provider enriches detail page with Bangumi score")
         try expect(results.first?.episodes.count == 2, "css1 provider parses episode list")
+        try expect(results.first?.episodes.contains { $0.title == "葬送的芙莉蓮" } == false, "css1 provider excludes the anime title from episode choices")
         try expect(results.first?.episodes.contains { $0.title.contains("522") } == false, "css1 provider ignores recommendation episodes outside the configured episode list")
         guard let episode = results.first?.episodes.first else {
             throw CheckFailure("missing css1 episode")
@@ -2222,13 +2233,15 @@ struct TVShellChecks {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
 
         let launcher = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Launcher/LauncherView.swift"))
-        try expect(launcher.contains("ScrollView(.horizontal"), "launcher rows use horizontal scrolling instead of overflowing")
+        try expect(launcher.contains("TVOSAppDock"), "launcher uses a tvOS-style bottom app dock")
+        try expect(launcher.contains("TVOSHeroHeader"), "launcher uses a focused tvOS-style hero stage")
+        try expect(launcher.contains("ScrollView(.horizontal"), "launcher dock uses horizontal scrolling instead of overflowing")
         try expect(launcher.contains("TVStatusClockOverlay"), "root shell shows time on every interface")
         try expect(launcher.contains("TimelineView(.periodic"), "time overlay refreshes automatically")
         try expect(launcher.contains("deleteWatchHistory"), "launcher can delete recent watch entries")
         try expect(launcher.contains("clearWatchingHistory"), "launcher can clear recent watch history")
         try expect(launcher.contains("ScrollViewReader"), "launcher keeps focused app rows visible after watch history appears")
-        try expect(launcher.contains("launcher-section-\\(section.id)"), "launcher sections expose stable scroll ids")
+        try expect(launcher.contains("tvos-dock-app-\\(app.id.uuidString)"), "launcher dock exposes stable scroll ids")
         try expect(launcher.contains(".scrollIndicators(.hidden)"), "launcher hides TV-unfriendly scroll indicators")
         try expect(launcher.contains("quickActionBar") == false, "launcher removes oversized quick action chips from the home screen")
         try expect(launcher.contains("34 * metrics.scale"), "launcher rows keep enough vertical padding for focus rings")

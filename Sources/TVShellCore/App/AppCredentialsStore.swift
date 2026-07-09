@@ -14,6 +14,25 @@ public struct AppCredentialsSnapshot: Codable, Equatable, Sendable {
         self.dandanplay = dandanplay
         self.bilibili = bilibili
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case youtube
+        case dandanplay
+        case bilibili
+    }
+
+    // A credentials file is intentionally allowed to contain only the services a
+    // person uses. A blank template should never prevent the other API sections
+    // from loading.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        youtube = try container.decodeIfPresent(YouTubeCredentials.self, forKey: .youtube)
+            ?? YouTubeCredentials(apiKey: "")
+        dandanplay = try container.decodeIfPresent(DandanplayCredentials.self, forKey: .dandanplay)
+            ?? DandanplayCredentials(appID: "", appSecret: "")
+        bilibili = try container.decodeIfPresent(BilibiliCredentials.self, forKey: .bilibili)
+            ?? BilibiliCredentials(cookie: "")
+    }
 }
 
 public struct AppCredentialsStore: Sendable {

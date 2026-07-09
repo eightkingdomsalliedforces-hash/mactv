@@ -83,8 +83,26 @@ public struct AnimeRuntimeView: View {
         .onChange(of: appState.watchingHistory) { _, history in
             controller.updateWatchHistory(history)
         }
+        .onChange(of: appState.youtubeCredentials) { _, _ in
+            reloadConfiguredSources()
+        }
+        .onChange(of: appState.dandanplayCredentials) { _, _ in
+            reloadConfiguredSources()
+        }
         .onDisappear {
             controller.stop()
+        }
+    }
+
+    private func reloadConfiguredSources() {
+        Task {
+            await controller.load(
+                sourceProvider: AnimeSourceProviderFactory.provider(
+                    catalog: appState.animeSourceCatalog,
+                    youtubeCredentials: appState.youtubeCredentials
+                ),
+                danmakuProvider: DandanplayDanmakuProvider(credentials: appState.dandanplayCredentials)
+            )
         }
     }
 
