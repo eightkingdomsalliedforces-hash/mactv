@@ -7,13 +7,16 @@ public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
 
     private let subscriptionURL: URL
     private let transport: any AnimeHTTPTransport
+    private let requestTimeoutNanoseconds: UInt64
 
     public init(
         subscriptionURL: URL = URL(string: "https://sub.creamycake.org/v1/css1.json")!,
-        transport: any AnimeHTTPTransport = URLSessionAnimeHTTPTransport()
+        transport: any AnimeHTTPTransport = URLSessionAnimeHTTPTransport(),
+        requestTimeoutNanoseconds: UInt64 = 8_000_000_000
     ) {
         self.subscriptionURL = subscriptionURL
         self.transport = transport
+        self.requestTimeoutNanoseconds = requestTimeoutNanoseconds
     }
 
     public func search(_ query: AnimeSearchQuery) async throws -> [AnimeSearchResult] {
@@ -119,28 +122,52 @@ public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
     }
 
     private func webSelectorSources() async throws -> [AniSubsCSS1Source] {
-        let data = try await transport.data(for: AnimeHTTPRequest(
+        let data = try await withCSS1Timeout(secondsLabel: "subscription") {
+            try await transport.data(for: AnimeHTTPRequest(
             method: "GET",
             url: subscriptionURL,
             headers: [
                 "Accept": "application/json",
                 "User-Agent": "TVShell/0.1 ani-subs-css1"
             ]
-        ))
+            ))
+        }
         return try AniSubsCSS1Subscription.decode(data)
     }
 
     private func html(for url: URL, source: AniSubsCSS1Source) async throws -> String {
-        let data = try await transport.data(for: AnimeHTTPRequest(
-            method: "GET",
-            url: url,
-            headers: source.requestHeaders
-        ))
+        let data = try await withCSS1Timeout(secondsLabel: url.host ?? url.absoluteString) {
+            try await transport.data(for: AnimeHTTPRequest(
+                method: "GET",
+                url: url,
+                headers: source.requestHeaders
+            ))
+        }
         let html = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
         if let captcha = CSS1HTMLSelectorEngine.detectCaptcha(url: url, html: html) {
             throw SelectorAnimeSourceError.captchaRequired(captcha)
         }
         return html
+    }
+
+    private func withCSS1Timeout<T: Sendable>(
+        secondsLabel: String,
+        operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask {
+                try await operation()
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: requestTimeoutNanoseconds)
+                throw AnimeHTTPError.missingRoute("ani-subs CSS1 request timeout: \(secondsLabel)")
+            }
+            guard let result = try await group.next() else {
+                throw AnimeHTTPError.missingRoute("ani-subs CSS1 request timeout: \(secondsLabel)")
+            }
+            group.cancelAll()
+            return result
+        }
     }
 
     private func parseEpisodes(

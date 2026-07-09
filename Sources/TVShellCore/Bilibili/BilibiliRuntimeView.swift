@@ -101,20 +101,21 @@ public struct BilibiliRuntimeView: View {
                 VStack(alignment: .leading, spacing: 32 * metrics.scale) {
                     header(metrics: metrics, title: app.name, subtitle: controller.statusText)
 
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 210 * metrics.scale), spacing: 28 * metrics.scale)],
-                        alignment: .leading,
-                        spacing: 34 * metrics.scale
-                    ) {
-                        ForEach(Array(controller.seasons.enumerated()), id: \.element.id) { index, season in
-                            BilibiliSeasonCard(
-                                season: season,
-                                isFocused: index == controller.state.focusedSeasonIndex,
-                                metrics: metrics
-                            )
-                            .id("bilibili-season-\(index)")
-                        }
-                    }
+                    BilibiliSectionGrid(
+                        title: "番劇",
+                        items: controller.bangumiItems,
+                        baseIndex: controller.bangumiStartIndex,
+                        focusedIndex: controller.state.focusedSeasonIndex,
+                        metrics: metrics
+                    )
+
+                    BilibiliSectionGrid(
+                        title: "一般影片",
+                        items: controller.videoItems,
+                        baseIndex: controller.videoStartIndex,
+                        focusedIndex: controller.state.focusedSeasonIndex,
+                        metrics: metrics
+                    )
 
                     Text("方向鍵選內容，OK 進入詳情，Menu 搜尋番劇或一般影片，Back 或 Home 返回。登入 Cookie 可在設定的 credentials.json 保存。")
                         .font(.system(size: 22 * metrics.scale, weight: .semibold))
@@ -301,6 +302,22 @@ final class BilibiliRuntimeController: ObservableObject {
 
     var episodes: [BilibiliEpisode] {
         detail?.episodes ?? []
+    }
+
+    var bangumiItems: [BilibiliSeason] {
+        seasons.filter { $0.itemKind == .bangumi }
+    }
+
+    var videoItems: [BilibiliSeason] {
+        seasons.filter { $0.itemKind == .video }
+    }
+
+    var bangumiStartIndex: Int {
+        0
+    }
+
+    var videoStartIndex: Int {
+        bangumiItems.count
     }
 
     var detailMetaText: String {
@@ -590,6 +607,40 @@ final class BilibiliRuntimeController: ObservableObject {
                     self.mediaState = MediaControlState(isPlaying: false)
                     self.statusText = "Bilibili 播放很快結束，可能是登入、會員、地區限制，或此影片沒有可用直連。請在設定重載 Cookie 後再試。"
                     self.state.closePlayer()
+                }
+            }
+        }
+    }
+}
+
+private struct BilibiliSectionGrid: View {
+    let title: String
+    let items: [BilibiliSeason]
+    let baseIndex: Int
+    let focusedIndex: Int
+    let metrics: TVMetrics
+
+    var body: some View {
+        if items.isEmpty == false {
+            VStack(alignment: .leading, spacing: 18 * metrics.scale) {
+                Text(title)
+                    .font(.system(size: 38 * metrics.scale, weight: .heavy))
+                    .foregroundStyle(.white.opacity(0.88))
+
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 210 * metrics.scale), spacing: 28 * metrics.scale)],
+                    alignment: .leading,
+                    spacing: 34 * metrics.scale
+                ) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { offset, season in
+                        let absoluteIndex = baseIndex + offset
+                        BilibiliSeasonCard(
+                            season: season,
+                            isFocused: absoluteIndex == focusedIndex,
+                            metrics: metrics
+                        )
+                        .id("bilibili-season-\(absoluteIndex)")
+                    }
                 }
             }
         }

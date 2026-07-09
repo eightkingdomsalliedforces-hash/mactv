@@ -435,6 +435,7 @@ final class AnimeRuntimeController: ObservableObject {
     private var lastRecordedTime: Double = -1
     private nonisolated(unsafe) var observer: NSObjectProtocol?
     private nonisolated(unsafe) var timeObserver: Any?
+    private nonisolated(unsafe) var itemEndObserver: NSObjectProtocol?
     private nonisolated(unsafe) var itemObserver: NSKeyValueObservation?
     private var hidePlayerHUDTask: Task<Void, Never>?
     private var mediaState = MediaControlState()
@@ -466,6 +467,9 @@ final class AnimeRuntimeController: ObservableObject {
         }
         if let timeObserver {
             player.removeTimeObserver(timeObserver)
+        }
+        if let itemEndObserver {
+            NotificationCenter.default.removeObserver(itemEndObserver)
         }
         itemObserver?.invalidate()
         hidePlayerHUDTask?.cancel()
@@ -908,6 +912,7 @@ final class AnimeRuntimeController: ObservableObject {
                     self?.player.play()
                 } else if case .failed = item.status {
                     self?.statusText = item.error?.localizedDescription ?? "動畫播放失敗。"
+                    self?.returnToEpisodesAfterPlaybackFailure("動畫播放失敗，可能是 BT 檔案尚未緩衝完成或檔案本身不可播放。")
                 }
             }
         }
@@ -916,6 +921,45 @@ final class AnimeRuntimeController: ObservableObject {
         mediaState = MediaControlState(isPlaying: true)
         isDanmakuClockRunning = true
         installTimeObserverIfNeeded()
+        installShortPlaybackObserver(for: item)
+    }
+
+    private func installShortPlaybackObserver(for item: AVPlayerItem) {
+        if let itemEndObserver {
+            NotificationCenter.default.removeObserver(itemEndObserver)
+        }
+        itemEndObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self, weak item] _ in
+            Task { @MainActor in
+                guard let self, item === self.player.currentItem else {
+                    return
+                }
+                let played = self.player.currentTime().seconds
+                if played < 5 {
+                    self.returnToEpisodesAfterPlaybackFailure("播放很快結束：BT 檔案可能還沒緩衝完成，或此檔案不可播放。請稍等下載更多資料後再試。")
+                }
+            }
+        }
+    }
+
+    private func returnToEpisodesAfterPlaybackFailure(_ message: String) {
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+        mediaState = MediaControlState(isPlaying: false)
+        isDanmakuClockRunning = false
+        statusText = message
+        subtitleStatusText = "字幕：播放未就緒"
+        state = AnimeRuntimeState(
+            titleCount: titles.count,
+            episodeCount: episodes.count,
+            focusedTitleIndex: state.focusedTitleIndex,
+            focusedEpisodeIndex: state.focusedEpisodeIndex,
+            phase: .episodes,
+            isDanmakuVisible: state.isDanmakuVisible
+        )
     }
 
     private func playInternalVLCURL(_ url: URL) {

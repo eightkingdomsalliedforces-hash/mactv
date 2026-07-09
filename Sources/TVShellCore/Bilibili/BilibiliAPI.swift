@@ -37,8 +37,16 @@ public struct BilibiliBangumiProvider: BilibiliBangumiProviding {
     }
 
     public func home() async throws -> [BilibiliSeason] {
-        let data = try await transport.data(for: BilibiliAPI.homeRequest(credentials: credentials))
-        return try BilibiliAPI.decodeHome(data)
+        async let bangumiData = transport.data(for: BilibiliAPI.homeRequest(credentials: credentials))
+        async let popularData = transport.data(for: BilibiliAPI.popularVideoRequest(credentials: credentials))
+        var results: [BilibiliSeason] = []
+        if let bangumi = try? await BilibiliAPI.decodeHome(bangumiData) {
+            results.append(contentsOf: bangumi)
+        }
+        if let videos = try? await BilibiliAPI.decodePopularVideos(popularData) {
+            results.append(contentsOf: videos)
+        }
+        return BilibiliAPI.uniqueItems(results)
     }
 
     public func search(keyword: String) async throws -> [BilibiliSeason] {
@@ -123,6 +131,19 @@ public enum BilibiliAPI {
         return request(url, credentials: credentials)
     }
 
+    public static func popularVideoRequest(
+        page: Int = 1,
+        pageSize: Int = 20,
+        credentials: BilibiliCredentials = .environment()
+    ) -> AnimeHTTPRequest {
+        let url = URL(string: "https://api.bilibili.com/x/web-interface/popular")!
+            .appending(queryItems: [
+                URLQueryItem(name: "pn", value: "\(max(page, 1))"),
+                URLQueryItem(name: "ps", value: "\(max(min(pageSize, 50), 1))")
+            ])
+        return request(url, credentials: credentials)
+    }
+
     public static func seasonDetailRequest(
         seasonID: Int,
         credentials: BilibiliCredentials = .environment()
@@ -197,6 +218,12 @@ public enum BilibiliAPI {
         let response = try JSONDecoder().decode(BilibiliVideoSearchResponse.self, from: data)
         try check(code: response.code, message: response.message)
         return uniqueItems(response.data?.result.compactMap(\.item) ?? [])
+    }
+
+    public static func decodePopularVideos(_ data: Data) throws -> [BilibiliSeason] {
+        let response = try JSONDecoder().decode(BilibiliPopularVideoResponse.self, from: data)
+        try check(code: response.code, message: response.message)
+        return uniqueItems(response.data?.list.compactMap(\.item) ?? [])
     }
 
     public static func decodeSeasonDetail(_ data: Data) throws -> BilibiliSeasonDetail {
@@ -422,6 +449,56 @@ private struct BilibiliVideoSearchItem: Decodable {
             coverURL: pic.flatMap(BilibiliURL.normalizeImageURL),
             badge: "影片",
             totalText: duration
+        )
+    }
+}
+
+private struct BilibiliPopularVideoResponse: Decodable {
+    var code: Int
+    var message: String?
+    var data: BilibiliPopularVideoData?
+}
+
+private struct BilibiliPopularVideoData: Decodable {
+    var list: [BilibiliPopularVideoItem]
+}
+
+private struct BilibiliPopularVideoItem: Decodable {
+    var aid: Int?
+    var bvid: String?
+    var title: String?
+    var pic: String?
+    var owner: BilibiliVideoOwner?
+    var duration: Int?
+    var stat: BilibiliStat?
+
+    var item: BilibiliSeason? {
+        guard let title = title?.cleanBilibiliHTML,
+              title.isEmpty == false,
+              let stableID = aid ?? bvid?.stableBilibiliID
+        else {
+            return nil
+        }
+        let subtitleParts: [String?] = [
+            owner?.name,
+            duration.map(BilibiliURL.durationLabel(seconds:)),
+            (stat?.views ?? stat?.view).map { "\($0) 次觀看" },
+            (stat?.danmakus ?? stat?.danmaku).map { "\($0) 彈幕" }
+        ]
+        let subtitle = subtitleParts
+        .compactMap { $0?.cleanBilibiliHTML }
+        .filter { $0.isEmpty == false }
+        .joined(separator: " · ")
+        return BilibiliSeason(
+            id: stableID,
+            itemKind: .video,
+            aid: aid,
+            bvid: bvid,
+            title: title,
+            subtitle: subtitle.isEmpty ? "一般影片" : subtitle,
+            coverURL: pic.flatMap(BilibiliURL.normalizeImageURL),
+            badge: "影片",
+            totalText: duration.map(BilibiliURL.durationLabel(seconds:))
         )
     }
 }

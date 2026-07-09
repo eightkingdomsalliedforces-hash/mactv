@@ -19,10 +19,12 @@ public enum TorrentPlaybackError: LocalizedError, Equatable {
 
 public struct TorrentDownloadProgress: Equatable, Sendable {
     public var downloadedBytes: UInt64
+    public var selectedFileBytes: UInt64?
     public var largestPlayableFileName: String?
 
-    public init(downloadedBytes: UInt64, largestPlayableFileName: String? = nil) {
+    public init(downloadedBytes: UInt64, selectedFileBytes: UInt64? = nil, largestPlayableFileName: String? = nil) {
         self.downloadedBytes = downloadedBytes
+        self.selectedFileBytes = selectedFileBytes
         self.largestPlayableFileName = largestPlayableFileName
     }
 
@@ -36,9 +38,18 @@ public struct TorrentDownloadProgress: Equatable, Sendable {
 
     public var statusText: String {
         if let largestPlayableFileName {
-            return "已下載 \(megabytesText) · \(largestPlayableFileName)"
+            let selectedText = selectedFileBytes.map { TorrentDownloadProgress.megabytesText(for: $0) } ?? "0.0 MB"
+            return "總下載 \(megabytesText) · 目前檔案緩衝 \(selectedText) · \(largestPlayableFileName)"
         }
-        return "正在連接 peers / 取得 metadata · 已下載 \(megabytesText)"
+        return "正在連接 peers / 取得 metadata / 緩衝 · 已下載 \(megabytesText)"
+    }
+
+    private static func megabytesText(for bytes: UInt64) -> String {
+        let megabytes = Double(bytes) / 1_048_576
+        if megabytes < 10 {
+            return String(format: "%.1f MB", megabytes)
+        }
+        return String(format: "%.0f MB", megabytes)
     }
 }
 
@@ -87,7 +98,7 @@ public struct Aria2TorrentPlaybackEngine: TorrentPlaybackEngine {
     public init(
         cacheRoot: URL? = nil,
         executablePath: String? = nil,
-        readinessMinimumBytes: UInt64 = 1_048_576,
+        readinessMinimumBytes: UInt64 = 48 * 1_048_576,
         pollLimit: Int = 120,
         pollIntervalNanoseconds: UInt64 = 1_000_000_000
     ) {
@@ -210,6 +221,7 @@ public struct Aria2TorrentPlaybackEngine: TorrentPlaybackEngine {
             ?? playableFiles.first
         return TorrentDownloadProgress(
             downloadedBytes: downloadedBytes(in: directory),
+            selectedFileBytes: displayedFile.map { fileBufferedBytes($0) },
             largestPlayableFileName: displayedFile?.lastPathComponent
         )
     }
@@ -372,9 +384,26 @@ public struct Aria2TorrentPlaybackEngine: TorrentPlaybackEngine {
             candidates = playableFiles(in: directory)
         }
         return candidates.first { url in
-            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-            return UInt64(max(0, size)) >= readinessMinimumBytes
+            isReadyForPlayback(url)
         }
+    }
+
+    public func isReadyForPlayback(_ url: URL) -> Bool {
+        guard hasAria2Sidecar(for: url) == false else {
+            return false
+        }
+        return fileBufferedBytes(url) >= readinessMinimumBytes
+    }
+
+    public func fileBufferedBytes(_ url: URL) -> UInt64 {
+        let values = try? url.resourceValues(forKeys: [.totalFileAllocatedSizeKey, .fileAllocatedSizeKey, .fileSizeKey])
+        let allocated = values?.totalFileAllocatedSize ?? values?.fileAllocatedSize
+        let logicalSize = values?.fileSize ?? 0
+        return UInt64(max(0, allocated ?? logicalSize))
+    }
+
+    public func hasAria2Sidecar(for url: URL) -> Bool {
+        FileManager.default.fileExists(atPath: url.path + ".aria2")
     }
 
     private func stableIdentifier(for value: String) -> String {

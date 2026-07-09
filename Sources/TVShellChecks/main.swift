@@ -59,6 +59,28 @@ private final class HandlerAnimeHTTPTransport: AnimeHTTPTransport, @unchecked Se
     }
 }
 
+private final class DelayedAnimeHTTPTransport: AnimeHTTPTransport, @unchecked Sendable {
+    private let routes: [String: Data]
+    private let delayedURLs: Set<String>
+    private let delayNanoseconds: UInt64
+
+    init(routes: [String: Data], delayedURLs: Set<String>, delayNanoseconds: UInt64) {
+        self.routes = routes
+        self.delayedURLs = delayedURLs
+        self.delayNanoseconds = delayNanoseconds
+    }
+
+    func data(for request: AnimeHTTPRequest) async throws -> Data {
+        if delayedURLs.contains(request.url.absoluteString) {
+            try await Task.sleep(nanoseconds: delayNanoseconds)
+        }
+        guard let data = routes[request.url.absoluteString] else {
+            throw AnimeHTTPError.missingRoute(request.url.absoluteString)
+        }
+        return data
+    }
+}
+
 @main
 struct TVShellChecks {
     static func main() async throws {
@@ -941,6 +963,18 @@ struct TVShellChecks {
         try expect(state.youtubeCredentials.apiKey == "yt-file-key", "app state loads youtube api key from credentials file")
         try expect(state.dandanplayCredentials.appSecret == "dd-secret", "app state loads dandanplay secret from credentials file")
         try expect(state.bilibiliCredentials.cookie.contains("SESSDATA=abc"), "app state loads bilibili cookie from credentials file")
+
+        let generatedURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("TVShellChecks-AutoCredentials-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: generatedURL) }
+        let generatedStore = AppCredentialsStore(fileURL: generatedURL)
+        _ = AppState(credentialsStore: generatedStore)
+        try expect(FileManager.default.fileExists(atPath: generatedURL.path), "app state automatically creates a credentials template")
+        try expect(
+            AppCredentialsStore.userHome().fileURL
+                == FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("credentials.json"),
+            "default credentials file is generated directly under the home directory"
+        )
     }
 
     @MainActor
@@ -985,6 +1019,29 @@ struct TVShellChecks {
         try expect(home.first?.id == 241806, "bilibili home parser reads season id")
         try expect(home.first?.title == "神奇数字马戏团", "bilibili home parser reads title")
         try expect(home.first?.badge == "限免", "bilibili home parser reads badge")
+
+        let popularJSON = """
+        {
+          "code": 0,
+          "message": "0",
+          "data": {
+            "list": [
+              {
+                "aid": 223344,
+                "bvid": "BV1popular",
+                "title": "Bilibili 一般影片",
+                "pic": "https://example.com/popular.jpg",
+                "owner": { "name": "UP 主" },
+                "duration": 188,
+                "stat": { "view": 4567, "danmaku": 89 }
+              }
+            ]
+          }
+        }
+        """.data(using: .utf8)!
+        let popular = try BilibiliAPI.decodePopularVideos(popularJSON)
+        try expect(popular.first?.itemKind == .video, "bilibili popular parser returns general videos")
+        try expect(popular.first?.bvid == "BV1popular", "bilibili popular parser reads bvid")
 
         let searchJSON = """
         {
@@ -1122,6 +1179,16 @@ struct TVShellChecks {
         try expect(videoPlayRequest.url.absoluteString.contains("cid=987654"), "bilibili general video playurl includes cid")
         try expect(videoPlayRequest.headers["Cookie"] == "SESSDATA=abc; bili_jct=csrf;", "bilibili playurl request carries login cookie")
 
+        let homeProvider = BilibiliBangumiProvider(
+            transport: StaticAnimeHTTPTransport(routes: [
+                BilibiliAPI.homeRequest().url.absoluteString: homeJSON,
+                BilibiliAPI.popularVideoRequest().url.absoluteString: popularJSON
+            ])
+        )
+        let homeItems = try await homeProvider.home()
+        try expect(homeItems.contains { $0.itemKind == .bangumi }, "bilibili home includes bangumi section items")
+        try expect(homeItems.contains { $0.itemKind == .video }, "bilibili home includes general video section items")
+
         var runtime = BilibiliRuntimeState(seasonCount: 8, episodeCount: 3)
         runtime.applyBrowsing(.right, columns: 4)
         try expect(runtime.focusedSeasonIndex == 1, "bilibili right moves season focus")
@@ -1141,6 +1208,9 @@ struct TVShellChecks {
         try expect(runtimeSource.contains("ScrollViewReader"), "bilibili runtime keeps remote focus visible")
         try expect(runtimeSource.contains("VirtualKeyboardView"), "bilibili runtime supports remote search")
         try expect(runtimeSource.contains("AVURLAssetHTTPHeaderFieldsKey"), "bilibili player sends required playback headers")
+        try expect(runtimeSource.contains("controller.bangumiItems"), "bilibili runtime renders a dedicated bangumi section")
+        try expect(runtimeSource.contains("controller.videoItems"), "bilibili runtime renders a dedicated general video section")
+        try expect(runtimeSource.contains("一般影片"), "bilibili runtime labels the general video section")
     }
 
     static func checkYouTubeEmbedPageIncludesOriginAndFallback() throws {
@@ -1666,6 +1736,66 @@ struct TVShellChecks {
         try expect(streams.first?.url.absoluteString == "https://cdn.example/frieren-1.mkv", "css1 provider parses nested video url")
         try expect(streams.first?.headers["resolver"] == "web-selector", "css1 stream marks web selector resolver")
         try expect(streams.first?.headers["Referer"] == "https://web.example/", "css1 stream carries video headers from subscription")
+
+        let timeoutSubscription = """
+        {
+          "exportedMediaSourceDataList": {
+            "mediaSources": [
+              {
+                "factoryId": "web-selector",
+                "arguments": {
+                  "name": "slow",
+                  "searchConfig": {
+                    "searchUrl": "https://slow.example/search?wd={keyword}",
+                    "selectorSubjectFormatA": { "selectLists": ".anime>a" },
+                    "selectorChannelFormatFlattened": {
+                      "selectEpisodeLists": ".episodes",
+                      "selectEpisodesFromList": "a",
+                      "matchEpisodeSortFromName": "第\\\\s*(?<ep>.+)\\\\s*[话集]"
+                    },
+                    "matchVideo": { "matchVideoUrl": "https?://.+\\\\.mp4" }
+                  }
+                }
+              },
+              {
+                "factoryId": "web-selector",
+                "arguments": {
+                  "name": "fast",
+                  "searchConfig": {
+                    "searchUrl": "https://fast.example/search?wd={keyword}",
+                    "selectorSubjectFormatA": { "selectLists": ".anime>a" },
+                    "selectorChannelFormatFlattened": {
+                      "selectEpisodeLists": ".episodes",
+                      "selectEpisodesFromList": "a",
+                      "matchEpisodeSortFromName": "第\\\\s*(?<ep>.+)\\\\s*[话集]"
+                    },
+                    "matchVideo": { "matchVideoUrl": "https?://.+\\\\.mp4" }
+                  }
+                }
+              }
+            ]
+          }
+        }
+        """.data(using: .utf8)!
+        let fastSearch = #"<div class="anime"><a href="/show/86">86 不存在的戰區</a></div>"#.data(using: .utf8)!
+        let fastDetail = #"<div class="episodes"><a href="/watch/86-1">第 1 話</a></div>"#.data(using: .utf8)!
+        let timeoutTransport = DelayedAnimeHTTPTransport(
+            routes: [
+                subscriptionURL.absoluteString: timeoutSubscription,
+                "https://slow.example/search?wd=86": Data(),
+                "https://fast.example/search?wd=86": fastSearch,
+                "https://fast.example/show/86": fastDetail
+            ],
+            delayedURLs: ["https://slow.example/search?wd=86"],
+            delayNanoseconds: 80_000_000
+        )
+        let timeoutProvider = AniSubsCSS1SubscriptionProvider(
+            subscriptionURL: subscriptionURL,
+            transport: timeoutTransport,
+            requestTimeoutNanoseconds: 5_000_000
+        )
+        let timeoutResults = try await timeoutProvider.search(AnimeSearchQuery(keyword: "86"))
+        try expect(timeoutResults.first?.title == "86 不存在的戰區", "css1 provider skips timed-out sources instead of hanging anime loading")
     }
 
     static func checkTorrentPlaybackEngine() throws {
@@ -1681,6 +1811,7 @@ struct TVShellChecks {
         defer { try? FileManager.default.removeItem(at: tempRoot) }
 
         let engine = Aria2TorrentPlaybackEngine(cacheRoot: tempRoot, executablePath: "/usr/bin/aria2c")
+        try expect(engine.readinessMinimumBytes >= 40 * 1_048_576, "torrent playback waits for enough buffered data before handing a file to the player")
         let downloadDirectory = engine.downloadDirectory(for: stream)
         let arguments = engine.arguments(for: stream, downloadDirectory: downloadDirectory)
         try expect(arguments.contains("--bt-prioritize-piece=head=32M,tail=8M"), "torrent playback prioritizes the head and tail pieces")
@@ -1694,9 +1825,13 @@ struct TVShellChecks {
         FileManager.default.createFile(atPath: secondSample.path, contents: Data(repeating: 1, count: 4_096))
         try expect(engine.playableFiles(in: downloadDirectory).contains { $0.lastPathComponent == sample.lastPathComponent }, "torrent playback discovers playable media files")
         try expect(engine.downloadProgress(in: downloadDirectory).downloadedBytes == 6_144, "torrent playback reports downloaded bytes")
-        try expect(engine.downloadProgress(in: downloadDirectory).statusText.contains("已下載"), "torrent playback exposes readable progress text")
+        try expect(engine.downloadProgress(in: downloadDirectory).statusText.contains("緩衝"), "torrent playback reports buffering instead of treating tiny files as ready")
+        try expect(engine.downloadProgress(in: downloadDirectory, episodeNumber: 1).statusText.contains("目前檔案緩衝"), "torrent playback separates total download size from selected episode buffering")
         try expect(engine.preferredPlayableFile(in: downloadDirectory, episodeNumber: 1)?.lastPathComponent == sample.lastPathComponent, "torrent playback picks the focused episode file from season packs")
         try expect(engine.downloadProgress(in: downloadDirectory, episodeNumber: 1).largestPlayableFileName == sample.lastPathComponent, "torrent progress labels the focused episode instead of the largest file")
+        FileManager.default.createFile(atPath: sample.path + ".aria2", contents: Data())
+        try expect(engine.isReadyForPlayback(sample) == false, "torrent playback does not hand unfinished aria2 sidecar files to the player")
+        try FileManager.default.removeItem(atPath: sample.path + ".aria2")
         try engine.rememberDownload(for: stream, title: "葬送的芙莉蓮", subtitle: "第 1 話")
         try expect(engine.cachedDownloads().first?.title == "葬送的芙莉蓮", "torrent playback lists cached downloads with manifest titles")
         try engine.deleteDownload(for: stream)

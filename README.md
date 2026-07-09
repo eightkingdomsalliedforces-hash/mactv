@@ -93,10 +93,10 @@ VLCKit 由 VideoLAN 發布，採用 `LGPL-2.1-or-later`。Release app 會在 `Co
 
 ## API、登入與 credentials.json
 
-第一次進入「設定」頁，把焦點移到「憑證檔案」並按 OK，App 會建立或重載：
+App 啟動時會自動在使用者 home 目錄建立範例檔。也可以進入「設定」頁，把焦點移到「憑證檔案」並按 OK 重載：
 
 ```text
-~/Library/Application Support/MacTV/credentials.json
+~/credentials.json
 ```
 
 可以直接編輯這個檔案：

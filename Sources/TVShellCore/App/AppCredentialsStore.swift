@@ -28,6 +28,10 @@ public struct AppCredentialsStore: Sendable {
         return AppCredentialsStore(fileURL: base.appending(path: "MacTV/credentials.json"))
     }
 
+    public static func userHome() -> AppCredentialsStore {
+        AppCredentialsStore(fileURL: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("credentials.json"))
+    }
+
     public func load() throws -> AppCredentialsSnapshot? {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             return nil

@@ -54,6 +54,7 @@ public final class AppState: ObservableObject {
         }
         let loadedCredentials: AppCredentialsSnapshot?
         if let credentialsStore {
+            try? credentialsStore.ensureTemplate()
             loadedCredentials = try? credentialsStore.load()
         } else {
             loadedCredentials = nil
