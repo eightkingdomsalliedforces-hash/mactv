@@ -8,19 +8,24 @@ public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
     private let subscriptionURL: URL
     private let transport: any AnimeHTTPTransport
     private let requestTimeoutNanoseconds: UInt64
+    private let healthStore: AniSubsCSS1SourceHealthStore
 
     public init(
         subscriptionURL: URL = URL(string: "https://sub.creamycake.org/v1/css1.json")!,
         transport: any AnimeHTTPTransport = URLSessionAnimeHTTPTransport(),
-        requestTimeoutNanoseconds: UInt64 = 8_000_000_000
+        requestTimeoutNanoseconds: UInt64 = 8_000_000_000,
+        healthStore: AniSubsCSS1SourceHealthStore = .applicationSupport()
     ) {
         self.subscriptionURL = subscriptionURL
         self.transport = transport
         self.requestTimeoutNanoseconds = requestTimeoutNanoseconds
+        self.healthStore = healthStore
     }
 
     public func search(_ query: AnimeSearchQuery) async throws -> [AnimeSearchResult] {
+        let healthState = (try? healthStore.load()) ?? AniSubsCSS1SourceHealthState()
         let sources = try await webSelectorSources()
+            .filter { healthState.disabledSourceNames.contains($0.name) == false }
         var allResults: [AnimeSearchResult] = []
 
         for source in sources {
@@ -52,7 +57,9 @@ public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
                         episodes: episodes
                     ))
                 }
+                try? healthStore.recordSuccess(sourceName: source.name)
             } catch {
+                try? healthStore.recordFailure(sourceName: source.name, reason: String(describing: error))
                 continue
             }
         }
@@ -114,7 +121,9 @@ public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
     }
 
     private func source(named name: String) async throws -> AniSubsCSS1Source {
+        let healthState = (try? healthStore.load()) ?? AniSubsCSS1SourceHealthState()
         let sources = try await webSelectorSources()
+            .filter { healthState.disabledSourceNames.contains($0.name) == false }
         guard let source = sources.first(where: { $0.name == name }) ?? sources.first else {
             throw AnimeHTTPError.missingRoute("ani-subs css1 source")
         }
@@ -254,6 +263,75 @@ public struct AniSubsCSS1Source: Equatable, Sendable {
             throw SelectorAnimeSourceError.invalidSearchURL
         }
         return url
+    }
+}
+
+public struct AniSubsCSS1SourceHealthState: Codable, Equatable, Sendable {
+    public var disabledSources: [String: AniSubsCSS1DisabledSource]
+
+    public init(disabledSources: [String: AniSubsCSS1DisabledSource] = [:]) {
+        self.disabledSources = disabledSources
+    }
+
+    public var disabledSourceNames: Set<String> {
+        Set(disabledSources.keys)
+    }
+}
+
+public struct AniSubsCSS1DisabledSource: Codable, Equatable, Sendable {
+    public var reason: String
+    public var disabledAt: Date
+
+    public init(reason: String, disabledAt: Date = Date()) {
+        self.reason = reason
+        self.disabledAt = disabledAt
+    }
+}
+
+public struct AniSubsCSS1SourceHealthStore: Sendable {
+    public var fileURL: URL
+
+    public init(fileURL: URL) {
+        self.fileURL = fileURL
+    }
+
+    public static func applicationSupport() -> AniSubsCSS1SourceHealthStore {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return AniSubsCSS1SourceHealthStore(fileURL: base.appending(path: "MacTV/css1-disabled-sources.json"))
+    }
+
+    public func load() throws -> AniSubsCSS1SourceHealthState {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            return AniSubsCSS1SourceHealthState()
+        }
+        let data = try Data(contentsOf: fileURL)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(AniSubsCSS1SourceHealthState.self, from: data)
+    }
+
+    public func save(_ state: AniSubsCSS1SourceHealthState) throws {
+        try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(state)
+        try data.write(to: fileURL, options: [.atomic])
+    }
+
+    public func recordFailure(sourceName: String, reason: String) throws {
+        var state = try load()
+        state.disabledSources[sourceName] = AniSubsCSS1DisabledSource(reason: reason)
+        try save(state)
+    }
+
+    public func recordSuccess(sourceName: String) throws {
+        var state = try load()
+        guard state.disabledSources[sourceName] != nil else {
+            return
+        }
+        state.disabledSources[sourceName] = nil
+        try save(state)
     }
 }
 

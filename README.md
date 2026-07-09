@@ -233,7 +233,7 @@ omofun111 如果你有授權 API 或 token，請看 [`docs/omofun111-api-adapter
 - `Mikan Project`：RSS/BT 搜尋來源，預設不自動啟用。可在動漫來源頁啟用；會解析磁力/種子候選並交給 BT 邊下邊播流程。
 - `動漫花園`：RSS/BT 搜尋來源，預設不自動啟用；同樣提供 torrent 候選。
 - `ani-subs BT 訂閱`：讀取 animeko 相容 `bt1.json` 影音源訂閱，預設不自動啟用。舊設定檔若缺少此來源，啟動時會自動補回。
-- `ani-subs CSS1`：讀取 animeko 相容 `css1.json` web-selector 來源，預設不自動啟用。已支援搜尋頁、選集頁、播放頁中的 mp4/m3u8/flv/mkv URL 解析；需要 Cloudflare、驗證碼、登入或 DRM 的站點會自動略過。
+- `ani-subs CSS1`：讀取 animeko 相容 `css1.json` web-selector 來源，預設不自動啟用。已支援搜尋頁、選集頁、播放頁中的 mp4/m3u8/flv/mkv URL 解析；需要 Cloudflare、驗證碼、登入或 DRM 的站點會自動略過。單一 CSS1 來源若 timeout 或解析失敗，會自動寫入 `~/Library/Application Support/MacTV/css1-disabled-sources.json` 停用，下次不再載入；要重新嘗試可刪除此檔案。
 - `Jellyfin`：自有媒體庫來源。設定環境變數後會自動註冊並可啟用：
 
 ```bash

@@ -1796,6 +1796,37 @@ struct TVShellChecks {
         )
         let timeoutResults = try await timeoutProvider.search(AnimeSearchQuery(keyword: "86"))
         try expect(timeoutResults.first?.title == "86 不存在的戰區", "css1 provider skips timed-out sources instead of hanging anime loading")
+
+        let healthURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("TVShellChecks-CSS1Health-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: healthURL) }
+        let disablingProvider = AniSubsCSS1SubscriptionProvider(
+            subscriptionURL: subscriptionURL,
+            transport: timeoutTransport,
+            requestTimeoutNanoseconds: 5_000_000,
+            healthStore: AniSubsCSS1SourceHealthStore(fileURL: healthURL)
+        )
+        _ = try await disablingProvider.search(AnimeSearchQuery(keyword: "86"))
+        let healthState = try AniSubsCSS1SourceHealthStore(fileURL: healthURL).load()
+        try expect(healthState.disabledSourceNames.contains("slow"), "css1 provider persists timed-out sources as disabled")
+
+        let nextRunTransport = DelayedAnimeHTTPTransport(
+            routes: [
+                subscriptionURL.absoluteString: timeoutSubscription,
+                "https://fast.example/search?wd=86": fastSearch,
+                "https://fast.example/show/86": fastDetail
+            ],
+            delayedURLs: [],
+            delayNanoseconds: 0
+        )
+        let nextRunProvider = AniSubsCSS1SubscriptionProvider(
+            subscriptionURL: subscriptionURL,
+            transport: nextRunTransport,
+            requestTimeoutNanoseconds: 5_000_000,
+            healthStore: AniSubsCSS1SourceHealthStore(fileURL: healthURL)
+        )
+        let nextRunResults = try await nextRunProvider.search(AnimeSearchQuery(keyword: "86"))
+        try expect(nextRunResults.first?.subtitle == "fast", "css1 provider skips disabled sources on the next run")
     }
 
     static func checkTorrentPlaybackEngine() throws {
