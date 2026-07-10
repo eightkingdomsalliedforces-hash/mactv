@@ -41,6 +41,8 @@ public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
         var failureReasons: [String] = []
 
         for source in sources {
+            var producedResult = false
+            var detailFailureReason: String?
             let subjects: [CSS1HTMLSelectorEngine.Anchor]
             let searchHTML: String
             do {
@@ -84,15 +86,21 @@ public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
                         episodeCount: episodes.count,
                         episodes: episodes
                     ))
+                    producedResult = true
                 } catch {
                     let reason = css1FailureReason(error)
+                    detailFailureReason = reason
                     if failureReasons.contains(where: { $0.hasPrefix("\(source.name)：") }) == false {
                         failureReasons.append("\(source.name)：\(reason)")
                     }
                     continue
                 }
             }
-            try? healthStore.recordSuccess(sourceName: source.name)
+            if producedResult {
+                try? healthStore.recordSuccess(sourceName: source.name)
+            } else if let detailFailureReason {
+                try? healthStore.recordFailure(sourceName: source.name, reason: detailFailureReason)
+            }
         }
 
         // Enrich before deduplicating so same-title live-action pages cannot

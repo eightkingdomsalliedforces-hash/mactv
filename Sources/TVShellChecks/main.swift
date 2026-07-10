@@ -2108,6 +2108,21 @@ struct TVShellChecks {
         } catch let error as AniSubsCSS1ProviderError {
             try expect(error.errorDescription?.contains("fast") == true, "css1 failure explains which source failed")
         }
+
+        let detailFailureHealthURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("TVShellChecks-CSS1DetailFailure-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: detailFailureHealthURL) }
+        let detailFailureProvider = AniSubsCSS1SubscriptionProvider(
+            subscriptionURL: subscriptionURL,
+            transport: StaticAnimeHTTPTransport(routes: [
+                subscriptionURL.absoluteString: timeoutSubscription,
+                "https://fast.example/search?wd=86": fastSearch
+            ]),
+            healthStore: AniSubsCSS1SourceHealthStore(fileURL: detailFailureHealthURL)
+        )
+        _ = try? await detailFailureProvider.search(AnimeSearchQuery(keyword: "86"))
+        let detailFailureState = try AniSubsCSS1SourceHealthStore(fileURL: detailFailureHealthURL).load()
+        try expect(detailFailureState.disabledSourceNames.contains("fast"), "css1 skips a source after its detail page fails")
     }
 
     static func checkAniSubsCSS1PrefersMatchingAnimeOverSameTitleDrama() async throws {
