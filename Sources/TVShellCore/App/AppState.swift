@@ -8,6 +8,39 @@ public enum LauncherFocus: Equatable, Sendable {
     case history
 }
 
+public enum ControlCenterFocus: CaseIterable, Equatable, Sendable {
+    case home
+    case focusMode
+    case audio
+    case display
+    case wallpaper
+    case webZoom
+    case remote
+    case settings
+
+    fileprivate func moved(by command: RemoteCommand) -> ControlCenterFocus {
+        let items = Self.allCases
+        guard let index = items.firstIndex(of: self) else {
+            return self
+        }
+        let columns = 2
+        let nextIndex: Int
+        switch command {
+        case .left:
+            nextIndex = max(0, index - 1)
+        case .right:
+            nextIndex = min(items.count - 1, index + 1)
+        case .up:
+            nextIndex = max(0, index - columns)
+        case .down:
+            nextIndex = min(items.count - 1, index + columns)
+        default:
+            return self
+        }
+        return items[nextIndex]
+    }
+}
+
 @MainActor
 public final class AppState: ObservableObject {
     @Published public var activeRuntime: ActiveRuntime = .launcher
@@ -30,6 +63,11 @@ public final class AppState: ObservableObject {
     @Published public var focusedAnimeSourceID: String?
     @Published public var watchingHistory: [WatchHistoryEntry] = []
     @Published public var preferredAnimeStreams: [String: String] = [:]
+    @Published public var isControlCenterPresented = false
+    @Published public var controlCenterFocus: ControlCenterFocus = .home
+    @Published public var isFocusModeEnabled = false
+    @Published public var isAudioMuted = false
+    @Published public var quickVolume = 0.70
     @Published public private(set) var launcherFocus: LauncherFocus = .apps
     @Published public var focusedWatchHistoryID: UUID?
     @Published public private(set) var pendingWatchHistoryEntry: WatchHistoryEntry?
@@ -255,9 +293,25 @@ public final class AppState: ObservableObject {
         lastCommand = command
 
         if command == .longPress(.menu) {
-            activeRuntime = .settings
-            statusMessage = "快捷設定"
+            isControlCenterPresented.toggle()
+            statusMessage = isControlCenterPresented ? "控制中心" : nil
             return
+        }
+
+        if isControlCenterPresented {
+            handleControlCenter(command)
+            return
+        }
+
+        switch command {
+        case .volumeUp:
+            adjustQuickVolume(0.05)
+        case .volumeDown:
+            adjustQuickVolume(-0.05)
+        case .mute:
+            toggleQuickMute()
+        default:
+            break
         }
 
         switch activeRuntime {
@@ -272,6 +326,74 @@ public final class AppState: ObservableObject {
         case .web, .media, .anime, .youtube, .bilibili, .native, .remoteLearning:
             handleRuntimeCommand(command)
         }
+    }
+
+    private func handleControlCenter(_ command: RemoteCommand) {
+        switch command {
+        case .left, .right:
+            if controlCenterFocus == .audio {
+                adjustQuickVolume(command == .right ? 0.05 : -0.05)
+            } else {
+                controlCenterFocus = controlCenterFocus.moved(by: command)
+            }
+        case .up, .down:
+            controlCenterFocus = controlCenterFocus.moved(by: command)
+        case .volumeUp:
+            adjustQuickVolume(0.05)
+        case .volumeDown:
+            adjustQuickVolume(-0.05)
+        case .mute:
+            toggleQuickMute()
+        case .select:
+            activateControlCenterItem()
+        case .back, .menu, .home:
+            isControlCenterPresented = false
+        default:
+            break
+        }
+    }
+
+    private func activateControlCenterItem() {
+        switch controlCenterFocus {
+        case .home:
+            activeRuntime = .launcher
+            isControlCenterPresented = false
+        case .focusMode:
+            isFocusModeEnabled.toggle()
+        case .audio:
+            toggleQuickMute()
+        case .display:
+            displayScale = displayScale.next
+            saveSettings()
+        case .wallpaper:
+            let preset = wallpaperSource.preset ?? .aurora
+            wallpaperSource = .builtIn(preset.next)
+            saveSettings()
+        case .webZoom:
+            webZoom = webZoom >= 2 ? 1 : min(webZoom + 0.25, 2)
+            saveSettings()
+        case .remote:
+            if networkRemoteStatus.isRunning == false {
+                startNetworkRemoteServer()
+            }
+            statusMessage = networkRemoteStatus.message
+        case .settings:
+            isControlCenterPresented = false
+            setRuntime(.settings)
+        }
+    }
+
+    private func adjustQuickVolume(_ amount: Double) {
+        quickVolume = min(max(quickVolume + amount, 0), 1)
+        if quickVolume > 0 {
+            isAudioMuted = false
+        }
+        SystemVolumeController.apply(volume: quickVolume, isMuted: isAudioMuted)
+    }
+
+    private func toggleQuickMute() {
+        isAudioMuted.toggle()
+        SystemVolumeController.apply(volume: quickVolume, isMuted: isAudioMuted)
     }
 
     private func handleLauncher(_ command: RemoteCommand) {

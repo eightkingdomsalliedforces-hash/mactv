@@ -53,12 +53,12 @@ public struct BilibiliRuntimeView: View {
         .foregroundStyle(.white)
         .onAppear {
             controller.updateCredentials(appState.bilibiliCredentials)
-            controller.updateSeasonColumns(Self.seasonColumns(metrics: metrics, size: proxy.size))
+            controller.updateSeasonColumns(Self.seasonColumns(metrics: metrics, size: proxy.size, mode: controller.contentMode))
             controller.updateEpisodeColumns(Self.episodeColumns(metrics: metrics, size: proxy.size))
         }
             .onChange(of: proxy.size) { _, size in
                 let nextMetrics = TVMetrics(size: size)
-                controller.updateSeasonColumns(Self.seasonColumns(metrics: nextMetrics, size: size))
+                controller.updateSeasonColumns(Self.seasonColumns(metrics: nextMetrics, size: size, mode: controller.contentMode))
                 controller.updateEpisodeColumns(Self.episodeColumns(metrics: nextMetrics, size: size))
             }
         }
@@ -78,10 +78,10 @@ public struct BilibiliRuntimeView: View {
         }
     }
 
-    private static func seasonColumns(metrics: TVMetrics, size: CGSize) -> Int {
+    private static func seasonColumns(metrics: TVMetrics, size: CGSize, mode: BilibiliContentMode) -> Int {
         adaptiveColumns(
             availableWidth: size.width - metrics.horizontalPadding * 2,
-            minimumWidth: 210 * metrics.scale,
+            minimumWidth: (mode == .video ? 340 : 210) * metrics.scale,
             spacing: 28 * metrics.scale
         )
     }
@@ -103,6 +103,7 @@ public struct BilibiliRuntimeView: View {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 32 * metrics.scale) {
                     header(metrics: metrics, title: app.name, subtitle: controller.statusText)
+                        .id("bilibili-browser-top")
 
                     BilibiliModeSwitcher(mode: controller.contentMode, metrics: metrics)
 
@@ -135,6 +136,19 @@ public struct BilibiliRuntimeView: View {
             .onChange(of: controller.state.focusedSeasonIndex) { _, index in
                 withAnimation(TVMotion.focus) {
                     scrollProxy.scrollTo("bilibili-season-\(index)", anchor: .center)
+                }
+                let focusedMode: BilibiliContentMode = controller.focusedSeason?.itemKind == .video ? .video : .bangumi
+                controller.updateSeasonColumns(Self.seasonColumns(metrics: metrics, size: size, mode: focusedMode))
+            }
+            .onChange(of: controller.contentMode) { _, mode in
+                controller.updateSeasonColumns(Self.seasonColumns(metrics: metrics, size: size, mode: mode))
+                withAnimation(TVMotion.focus) {
+                    scrollProxy.scrollTo("bilibili-browser-top", anchor: .top)
+                }
+            }
+            .onChange(of: controller.seasons.count) { _, _ in
+                withAnimation(TVMotion.focus) {
+                    scrollProxy.scrollTo("bilibili-browser-top", anchor: .top)
                 }
             }
         }
@@ -342,7 +356,7 @@ final class BilibiliRuntimeController: ObservableObject {
     var visibleSeasons: [BilibiliSeason] {
         switch contentMode {
         case .all:
-            return seasons
+            return seasons.filter { $0.itemKind == .bangumi } + seasons.filter { $0.itemKind == .video }
         case .bangumi:
             return seasons.filter { $0.itemKind == .bangumi }
         case .video:

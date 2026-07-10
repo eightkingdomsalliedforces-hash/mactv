@@ -439,7 +439,12 @@ struct TVShellChecks {
         try expect(state.activeRuntime == .bilibili(bilibili), "select opens focused bilibili app")
 
         state.handle(.longPress(.menu))
-        try expect(state.activeRuntime == .settings, "long-press menu opens quick settings")
+        try expect(state.isControlCenterPresented, "long-press menu opens the tvOS-style control center")
+        try expect(state.activeRuntime == .bilibili(bilibili), "control center overlays the current app instead of leaving it")
+        state.handle(.right)
+        try expect(state.controlCenterFocus == .focusMode, "control center supports remote focus movement")
+        state.handle(.select)
+        try expect(state.isFocusModeEnabled, "control center toggles quick settings")
     }
 
     static func checkTVMetricsScaleWithWindowSize() throws {
@@ -1370,9 +1375,9 @@ struct TVShellChecks {
         """.data(using: .utf8)!
         let bangumiRequest = try BangumiAPI.searchSubjectsRequest(keyword: "芙莉蓮")
         let youtubeRequest = try YouTubeDataAPI.searchRequest(
-            query: "葬送的芙莉蓮 Sousou no Frieren 第1話 EP1 日語 中文字幕 繁中 木棉花 Muse Ani-One 羚邦 動畫",
+            query: "葬送的芙莉蓮",
             credentials: YouTubeCredentials(apiKey: "yt-key"),
-            maxResults: 10,
+            maxResults: 25,
             profile: .animeEpisode
         )
         try expect(youtubeRequest.url.absoluteString.contains("videoDuration=long"), "anime youtube search excludes shorts with long duration filter")
@@ -1399,7 +1404,7 @@ struct TVShellChecks {
         try expect(streams.first?.url.absoluteString == "youtube://frieren01", "bangumi youtube provider ranks authorized youtube candidate first")
         try expect(streams.first?.quality == "YouTube", "bangumi youtube provider labels youtube source")
         try expect(streams.contains { $0.url.absoluteString == "youtube://frierenBackup01" }, "bangumi youtube provider keeps matching non-authorized videos as fallback")
-        try expect(streams.contains { $0.url.absoluteString == "youtube://jjk01" } == false, "bangumi youtube provider filters videos from a different anime")
+        try expect(streams.contains { $0.url.absoluteString == "youtube://jjk01" }, "bangumi youtube provider leaves broad candidate results for remote selection")
 
         let wrongOnlyYouTubeResponse = """
         {
@@ -2271,6 +2276,18 @@ struct TVShellChecks {
         try expect(launcher.contains(".scrollIndicators(.hidden)"), "launcher hides TV-unfriendly scroll indicators")
         try expect(launcher.contains("quickActionBar") == false, "launcher removes oversized quick action chips from the home screen")
         try expect(launcher.contains("34 * metrics.scale"), "launcher rows keep enough vertical padding for focus rings")
+
+        let controlCenter = try String(contentsOf: root.appending(path: "Sources/TVShellCore/ControlCenter/ControlCenterView.swift"))
+        try expect(controlCenter.contains("控制中心"), "control center uses a dedicated tvOS-style panel")
+        try expect(controlCenter.contains(".ultraThinMaterial"), "control center uses frosted glass material")
+        try expect(controlCenter.contains("ControlCenterTile"), "control center exposes large remote-focusable tiles")
+
+        let appStateSource = try String(contentsOf: root.appending(path: "Sources/TVShellCore/App/AppState.swift"))
+        try expect(appStateSource.contains("SystemVolumeController.apply"), "volume remote commands apply macOS system volume")
+
+        let bilibiliRuntime = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Bilibili/BilibiliRuntimeView.swift"))
+        try expect(bilibiliRuntime.contains("onChange(of: controller.contentMode)"), "bilibili resets scroll when switching content sections")
+        try expect(bilibiliRuntime.contains("bilibili-browser-top"), "bilibili has a stable remote scroll target")
 
         for path in [
             "Sources/TVShellCore/Settings/SettingsView.swift",

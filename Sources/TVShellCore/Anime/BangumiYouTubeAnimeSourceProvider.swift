@@ -55,20 +55,16 @@ public struct BangumiYouTubeAnimeSourceProvider: AnimeMediaSourceAdapter {
         let request = try YouTubeDataAPI.searchRequest(
             query: youtubeSearchQuery(for: episode),
             credentials: youtubeCredentials,
-            maxResults: 10,
+            maxResults: 25,
             profile: .animeEpisode
         )
         let data = try await transport.data(for: request)
         let videos = try YouTubeDataAPI.decodeSearchResponse(data)
             .filter { isExcludedClip($0.title) == false }
-        // Prefer exact title matches, but leave same-episode fallbacks for the
-        // remote candidate picker instead of incorrectly reporting no source.
-        let exactMatches = videos.filter { isPlayableEpisodeMatch(video: $0, episode: episode) }
-        let candidateVideos = exactMatches.isEmpty
-            ? videos.filter { matchesEpisodeNumber($0.title, episode: episode.number) }
-            : exactMatches
 
-        return candidateVideos
+        // Search intentionally stays broad: the remote candidate picker lets
+        // the viewer choose the correct upload and remembers that choice.
+        return videos
             .map { video in
                 AnimeStreamCandidate(
                     url: URL(string: "youtube://\(video.id)")!,
@@ -129,7 +125,7 @@ public struct BangumiYouTubeAnimeSourceProvider: AnimeMediaSourceAdapter {
     }
 
     private func youtubeSearchQuery(for episode: AnimeEpisode) -> String {
-        "\(subjectSearchText(for: episode)) 第\(episode.number)話 EP\(episode.number) 日語 中文字幕 繁中 木棉花 Muse Ani-One 羚邦 動畫"
+        episode.identity.subjectID
     }
 
     private func isPlayableEpisodeMatch(video: YouTubeVideo, episode: AnimeEpisode) -> Bool {

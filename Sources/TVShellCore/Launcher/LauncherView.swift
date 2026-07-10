@@ -60,11 +60,18 @@ public struct LauncherView: View {
                     .zIndex(10)
             }
 
+            if appState.isControlCenterPresented {
+                ControlCenterView()
+                    .transition(.opacity.combined(with: .move(edge: .trailing)))
+                    .zIndex(40)
+            }
+
             TVStatusClockOverlay()
-                .zIndex(30)
+                .zIndex(appState.isControlCenterPresented ? 20 : 30)
         }
         .animation(TVMotion.runtime, value: appState.activeRuntime)
         .animation(TVMotion.runtime, value: appState.openingAppName)
+        .animation(TVMotion.runtime, value: appState.isControlCenterPresented)
     }
 
     private var launcher: some View {
