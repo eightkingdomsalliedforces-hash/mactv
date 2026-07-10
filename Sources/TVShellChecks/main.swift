@@ -1946,7 +1946,7 @@ struct TVShellChecks {
                 "name": "test-source",
                 "searchConfig": {
                   "searchUrl": "https://web.example/search?wd={keyword}",
-                  "selectorSubjectFormatA": { "selectLists": ".module-card-item>.module-card-item-info>.module-card-item-title>a" },
+                  "selectorSubjectFormatA": { "selectLists": ".post-list .block-info .entry-title>a" },
                   "selectorChannelFormatFlattened": {
                     "selectEpisodeLists": ".module-play-list-content",
                     "selectEpisodesFromList": "span.episode-title",
@@ -1961,8 +1961,8 @@ struct TVShellChecks {
         }
         """.data(using: .utf8)!
         let searchHTML = """
-        <div class="module-card-item"><div class="module-card-item-class">日劇</div><div class="module-card-item-info"><div class="module-card-item-title"><a href="/show/oshi-drama">我推的孩子</a></div></div></div>
-        <div class="module-card-item"><div class="module-card-item-class">日本動漫</div><div class="module-card-item-info"><div class="module-card-item-title"><a href="/show/oshi-anime">我推的孩子</a></div></div></div>
+        <article class="post-list"><div class="block-info"><span class="type">電視劇</span><p>真人劇集</p><header class="entry-title"><a href="/show/oshi-drama">我推的孩子</a></header></div></article>
+        <article class="post-list"><div class="block-info"><span class="type">日本動漫</span><header class="entry-title"><a href="/show/oshi-anime">我推的孩子</a></header></div></article>
         """.data(using: .utf8)!
         let animeDetail = """
         <div class="module-play-list-content">

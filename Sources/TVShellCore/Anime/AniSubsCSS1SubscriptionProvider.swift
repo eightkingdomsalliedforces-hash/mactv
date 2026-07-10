@@ -208,12 +208,22 @@ public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
     }
 
     private func isAnimeSearchCard(_ subject: CSS1HTMLSelectorEngine.Anchor, in html: String) -> Bool {
-        let card = CSS1HTMLSelectorEngine.blocks(matching: ".module-card-item", in: html)
-            .first { $0.contains(subject.url.path) }
-        guard let card else {
-            return true
+        for selector in [".module-card-item", ".post-list", ".vodlist", ".search-item"] {
+            if let card = CSS1HTMLSelectorEngine.blocks(matching: selector, in: html)
+                .first(where: { $0.contains(subject.url.path) }) {
+                return isAnimeCategoryText(card)
+            }
         }
-        return isAnimeCategoryText(card)
+        return isAnimeCategoryText(searchContext(for: subject.url, in: html))
+    }
+
+    private func searchContext(for url: URL, in html: String) -> String {
+        guard let match = html.range(of: url.path) else {
+            return ""
+        }
+        let start = html.index(match.lowerBound, offsetBy: -360, limitedBy: html.startIndex) ?? html.startIndex
+        let end = html.index(match.upperBound, offsetBy: 240, limitedBy: html.endIndex) ?? html.endIndex
+        return String(html[start..<end])
     }
 
     private func isAnimeCategoryText(_ value: String) -> Bool {
