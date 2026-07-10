@@ -2,15 +2,17 @@ import CoreGraphics
 
 public struct TVMetrics: Equatable, Sendable {
     public let size: CGSize
+    private let interfaceScale: Double
 
-    public init(size: CGSize) {
+    public init(size: CGSize, interfaceScale: Double = 1) {
         self.size = size
+        self.interfaceScale = min(max(interfaceScale, 0.8), 2)
     }
 
     public var scale: Double {
         let widthScale = size.width / 1920
         let heightScale = size.height / 1080
-        return min(max(min(widthScale, heightScale), 0.72), 1.65)
+        return min(max(min(widthScale, heightScale), 0.72), 1.65) * interfaceScale
     }
 
     public var horizontalPadding: Double { 86 * scale }

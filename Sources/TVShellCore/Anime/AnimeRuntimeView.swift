@@ -379,6 +379,7 @@ public struct AnimeRuntimeView: View {
             } else if let vlcURL = controller.currentVLCURL {
                 InternalVLCPlayerSurface(
                     url: vlcURL,
+                    headers: controller.currentVLCHeaders,
                     onStatus: { status in
                         controller.updateInternalVLCStatus(status)
                     }
@@ -445,6 +446,7 @@ final class AnimeRuntimeController: ObservableObject {
     @Published private(set) var visibleDanmaku: [DanmakuComment] = []
     @Published private(set) var currentYouTubeVideoID: String?
     @Published private(set) var currentVLCURL: URL?
+    @Published private(set) var currentVLCHeaders: [String: String] = [:]
     @Published private(set) var currentYouTubeResumeTime: Double = 0
     @Published private(set) var danmakuStatusText = "彈幕未載入"
     @Published private(set) var subtitleStatusText = "字幕：中文字幕優先"
@@ -575,6 +577,7 @@ final class AnimeRuntimeController: ObservableObject {
         player.replaceCurrentItem(with: nil)
         currentYouTubeVideoID = nil
         currentVLCURL = nil
+        currentVLCHeaders = [:]
         currentYouTubeResumeTime = 0
         isDanmakuClockRunning = false
         hidePlayerHUDTask?.cancel()
@@ -940,6 +943,7 @@ final class AnimeRuntimeController: ObservableObject {
         if stream.url.scheme == "youtube" {
             currentYouTubeVideoID = stream.url.host ?? stream.url.absoluteString.replacingOccurrences(of: "youtube://", with: "")
             currentVLCURL = nil
+            currentVLCHeaders = [:]
             currentYouTubeResumeTime = resumeTime(for: watchMediaID(for: episode))
             subtitleStatusText = "字幕：YouTube 中文字幕優先"
             if currentYouTubeResumeTime > 1 {
@@ -954,6 +958,7 @@ final class AnimeRuntimeController: ObservableObject {
         if stream.url.scheme == "magnet" || stream.headers["resolver"] == "torrent" {
             currentYouTubeVideoID = nil
             currentVLCURL = nil
+            currentVLCHeaders = [:]
             currentYouTubeResumeTime = 0
             isDanmakuClockRunning = false
             player.pause()
@@ -966,8 +971,9 @@ final class AnimeRuntimeController: ObservableObject {
 
         currentYouTubeVideoID = nil
         currentVLCURL = nil
+        currentVLCHeaders = [:]
         currentYouTubeResumeTime = 0
-        playAVURL(stream.url)
+        playAVURL(stream.url, headers: playbackHeaders(from: stream.headers))
     }
 
     private func playTorrent(_ stream: AnimeStreamCandidate, episode: AnimeEpisode) async {
@@ -985,6 +991,7 @@ final class AnimeRuntimeController: ObservableObject {
             }
             currentYouTubeVideoID = nil
             currentVLCURL = nil
+            currentVLCHeaders = [:]
             subtitleStatusText = "字幕：正在尋找中文軌"
             statusText = "BT 已開始邊下邊播：\(fileURL.lastPathComponent)"
             playAVURL(fileURL)
@@ -1053,9 +1060,15 @@ final class AnimeRuntimeController: ObservableObject {
         statusText = "BT 下載中：\(progress.statusText)"
     }
 
-    private func playAVURL(_ url: URL) {
+    private func playbackHeaders(from headers: [String: String]) -> [String: String] {
+        headers.filter { key, value in
+            value.isEmpty == false && ["resolver", "source", "title", "episode", "match", "channel"].contains(key.lowercased()) == false
+        }
+    }
+
+    private func playAVURL(_ url: URL, headers: [String: String] = [:]) {
         guard AnimePlaybackRenderer.renderer(for: url) == .avPlayer else {
-            playInternalVLCURL(url)
+            playInternalVLCURL(url, headers: headers)
             return
         }
 
@@ -1063,7 +1076,10 @@ final class AnimeRuntimeController: ObservableObject {
         let resumeTime = currentPlayingEpisode
             .map(watchMediaID(for:))
             .map(resumeTime(for:)) ?? 0
-        let item = AVPlayerItem(url: url)
+        let asset = headers.isEmpty
+            ? AVURLAsset(url: url)
+            : AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
+        let item = AVPlayerItem(asset: asset)
         itemObserver?.invalidate()
         itemObserver = item.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
             Task { @MainActor in
@@ -1126,11 +1142,12 @@ final class AnimeRuntimeController: ObservableObject {
         )
     }
 
-    private func playInternalVLCURL(_ url: URL) {
+    private func playInternalVLCURL(_ url: URL, headers: [String: String] = [:]) {
         player.pause()
         player.replaceCurrentItem(with: nil)
         currentYouTubeVideoID = nil
         currentVLCURL = url
+        currentVLCHeaders = headers
         isDanmakuClockRunning = true
         mediaState = MediaControlState(isPlaying: true)
         subtitleStatusText = "字幕：內建 VLC"
@@ -1548,6 +1565,7 @@ private struct AnimePlayerSurface: NSViewRepresentable {
 
 private struct InternalVLCPlayerSurface: NSViewRepresentable {
     let url: URL
+    let headers: [String: String]
     let onStatus: @MainActor (String) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -1558,13 +1576,13 @@ private struct InternalVLCPlayerSurface: NSViewRepresentable {
         let view = NSView()
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.black.cgColor
-        context.coordinator.play(url: url, in: view)
+        context.coordinator.play(url: url, headers: headers, in: view)
         return view
     }
 
     func updateNSView(_ view: NSView, context: Context) {
         context.coordinator.updateStatusHandler(onStatus)
-        context.coordinator.play(url: url, in: view)
+        context.coordinator.play(url: url, headers: headers, in: view)
     }
 
     static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
@@ -1576,6 +1594,7 @@ private struct InternalVLCPlayerSurface: NSViewRepresentable {
         private var player: NSObject?
         private var media: NSObject?
         private var currentURL: URL?
+        private var currentHeaders: [String: String] = [:]
         private var statusHandler: @MainActor (String) -> Void
         private var commandObserver: NSObjectProtocol?
         private var isPlaying = false
@@ -1588,7 +1607,7 @@ private struct InternalVLCPlayerSurface: NSViewRepresentable {
                 object: nil,
                 queue: .main
             ) { [weak self] notification in
-                guard let command = notification.object as? RemoteCommand else {
+                guard let command = notification.userInfo?[RuntimeCommandNotification.commandKey] as? RemoteCommand else {
                     return
                 }
                 Task { @MainActor [weak self] in
@@ -1610,11 +1629,12 @@ private struct InternalVLCPlayerSurface: NSViewRepresentable {
             statusHandler = onStatus
         }
 
-        func play(url: URL, in view: NSView) {
-            if currentURL == url, player != nil {
+        func play(url: URL, headers: [String: String], in view: NSView) {
+            if currentURL == url, currentHeaders == headers, player != nil {
                 return
             }
             currentURL = url
+            currentHeaders = headers
 
             guard loadVLCKitIfNeeded() else {
                 report("內建 VLC 引擎尚未打包：請把 VLCKit.framework 放到 app 的 Contents/Frameworks。")
@@ -1632,6 +1652,12 @@ private struct InternalVLCPlayerSurface: NSViewRepresentable {
             player?.perform(NSSelectorFromString("stop"))
             player = initializedPlayer
             media = newMedia
+            if headers.isEmpty == false {
+                let options = vlcOptions(from: headers)
+                if options.isEmpty == false {
+                    newMedia.perform(NSSelectorFromString("addOptions:"), with: options as NSDictionary)
+                }
+            }
             initializedPlayer.setValue(view, forKey: "drawable")
             initializedPlayer.setValue(newMedia, forKey: "media")
             initializedPlayer.perform(NSSelectorFromString("play"))
@@ -1644,6 +1670,7 @@ private struct InternalVLCPlayerSurface: NSViewRepresentable {
             player = nil
             media = nil
             currentURL = nil
+            currentHeaders = [:]
             isPlaying = false
         }
 
@@ -1705,6 +1732,20 @@ private struct InternalVLCPlayerSurface: NSViewRepresentable {
 
         private func vlcClass(named name: String) -> NSObject.Type? {
             (NSClassFromString(name) ?? NSClassFromString("VLCKit.\(name)")) as? NSObject.Type
+        }
+
+        private func vlcOptions(from headers: [String: String]) -> [String: String] {
+            var options: [String: String] = [:]
+            if let userAgent = headers["User-Agent"] ?? headers["user-agent"] {
+                options[":http-user-agent"] = userAgent
+            }
+            if let referer = headers["Referer"] ?? headers["referer"] {
+                options[":http-referrer"] = referer
+            }
+            if let cookie = headers["Cookie"] ?? headers["cookie"], cookie.isEmpty == false {
+                options[":http-forward-cookies"] = "true"
+            }
+            return options
         }
 
         private func report(_ status: String) {

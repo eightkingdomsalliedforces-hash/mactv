@@ -28,6 +28,7 @@ public final class HostingKeyView<Content: View>: NSHostingView<Content> {
     private var localMonitor: Any?
     private var globalMonitor: Any?
     private var longPressDispatchedKeys = Set<UInt16>()
+    private var pendingMenuDispatches: [UInt16: DispatchWorkItem] = [:]
 
     public override var acceptsFirstResponder: Bool { true }
 
@@ -49,6 +50,7 @@ public final class HostingKeyView<Content: View>: NSHostingView<Content> {
     }
 
     public override func keyUp(with event: NSEvent) {
+        dispatchPendingMenuIfNeeded(for: event.keyCode)
         longPressDispatchedKeys.remove(event.keyCode)
         super.keyUp(with: event)
     }
@@ -61,16 +63,48 @@ public final class HostingKeyView<Content: View>: NSHostingView<Content> {
             return false
         }
 
-        if event.isARepeat, command == .menu {
-            guard longPressDispatchedKeys.contains(event.keyCode) == false else {
-                return true
+        if command == .menu {
+            if event.isARepeat {
+                cancelPendingMenu(for: event.keyCode)
+                guard longPressDispatchedKeys.contains(event.keyCode) == false else {
+                    return true
+                }
+                longPressDispatchedKeys.insert(event.keyCode)
+                dispatch(.longPress(.menu))
+            } else {
+                scheduleMenuDispatch(for: event.keyCode)
             }
-            longPressDispatchedKeys.insert(event.keyCode)
-            dispatch(.longPress(.menu))
-        } else {
-            dispatch(command)
+            return true
         }
+        dispatch(command)
         return true
+    }
+
+    private func scheduleMenuDispatch(for keyCode: UInt16) {
+        guard pendingMenuDispatches[keyCode] == nil else {
+            return
+        }
+        let item = DispatchWorkItem { [weak self] in
+            guard let self, self.longPressDispatchedKeys.contains(keyCode) == false else {
+                return
+            }
+            self.pendingMenuDispatches[keyCode] = nil
+            self.dispatch(.menu)
+        }
+        pendingMenuDispatches[keyCode] = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: item)
+    }
+
+    private func cancelPendingMenu(for keyCode: UInt16) {
+        pendingMenuDispatches.removeValue(forKey: keyCode)?.cancel()
+    }
+
+    private func dispatchPendingMenuIfNeeded(for keyCode: UInt16) {
+        let hadPendingMenu = pendingMenuDispatches[keyCode] != nil
+        cancelPendingMenu(for: keyCode)
+        if hadPendingMenu, longPressDispatchedKeys.contains(keyCode) == false {
+            dispatch(.menu)
+        }
     }
 
     private func dispatch(_ command: RemoteCommand) {

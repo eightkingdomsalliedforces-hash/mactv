@@ -77,6 +77,7 @@ public struct LauncherView: View {
     private var launcher: some View {
         GeometryReader { proxy in
             let metrics = TVMetrics(size: proxy.size)
+            let dockMetrics = TVMetrics(size: proxy.size, interfaceScale: appState.displayScale.multiplier())
 
             ZStack(alignment: .topLeading) {
                 heroBackground
@@ -97,9 +98,8 @@ public struct LauncherView: View {
                             TVOSAppDock(
                                 apps: appState.apps.filter(\.isVisibleOnHome),
                                 focusedAppID: appState.focusedAppID,
-                                metrics: metrics
+                                metrics: dockMetrics
                             )
-                            .scaleEffect(appState.displayScale.multiplier(), anchor: .leading)
 
                             if appState.watchingHistory.isEmpty == false {
                                 WatchHistoryRowView(
@@ -291,8 +291,8 @@ private struct TVOSAppDock: View {
                             .id("tvos-dock-app-\(app.id.uuidString)")
                     }
                 }
-                .padding(.horizontal, 34 * metrics.scale)
-                .padding(.vertical, 30 * metrics.scale)
+                .padding(.horizontal, 34 * metrics.scale + metrics.appIconSize * 0.08)
+                .padding(.vertical, 34 * metrics.scale)
             }
             .scrollIndicators(.hidden)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 34 * metrics.scale, style: .continuous))

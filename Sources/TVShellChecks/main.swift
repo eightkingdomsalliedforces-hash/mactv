@@ -451,6 +451,7 @@ struct TVShellChecks {
         try expect(TVMetrics(size: CGSize(width: 1920, height: 1080)).scale == 1.0, "1080p uses base scale")
         try expect(TVMetrics(size: CGSize(width: 960, height: 540)).scale == 0.72, "small windows clamp to readable minimum")
         try expect(TVMetrics(size: CGSize(width: 3840, height: 2160)).scale == 1.65, "large windows clamp to practical maximum")
+        try expect(TVMetrics(size: CGSize(width: 1920, height: 1080), interfaceScale: 1.5).scale == 1.5, "interface scale changes layout metrics rather than applying a visual-only transform")
     }
 
     static func checkAppCatalogVisibilityAndOrdering() throws {
@@ -2265,6 +2266,7 @@ struct TVShellChecks {
         try expect(launcher.contains("TVOSAppDock"), "launcher uses a tvOS-style bottom app dock")
         try expect(launcher.contains("TVOSHeroHeader"), "launcher uses a focused tvOS-style hero stage")
         try expect(launcher.contains("ScrollView(.horizontal"), "launcher dock uses horizontal scrolling instead of overflowing")
+        try expect(launcher.contains("scaleEffect(appState.displayScale.multiplier())") == false, "launcher dock avoids clipping cards with a visual-only scale transform")
         try expect(launcher.contains("TVStatusClockOverlay"), "root shell shows time on every interface")
         try expect(launcher.contains("TimelineView(.periodic"), "time overlay refreshes automatically")
         try expect(launcher.contains("deleteWatchHistory"), "launcher can delete recent watch entries")
@@ -2288,6 +2290,14 @@ struct TVShellChecks {
         let bilibiliRuntime = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Bilibili/BilibiliRuntimeView.swift"))
         try expect(bilibiliRuntime.contains("onChange(of: controller.contentMode)"), "bilibili resets scroll when switching content sections")
         try expect(bilibiliRuntime.contains("bilibili-browser-top"), "bilibili has a stable remote scroll target")
+
+        let animeRuntime = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Anime/AnimeRuntimeView.swift"))
+        try expect(animeRuntime.contains("AVURLAssetHTTPHeaderFieldsKey"), "anime player forwards CSS1 HTTP playback headers")
+        try expect(animeRuntime.contains("currentVLCHeaders"), "anime VLC path retains CSS1 playback headers")
+
+        let inputRouter = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Input/InputRouter.swift"))
+        try expect(inputRouter.contains("scheduleMenuDispatch"), "menu short press is deferred while long press is detected")
+        try expect(inputRouter.contains("cancelPendingMenu"), "long menu press cancels the conflicting short menu action")
 
         for path in [
             "Sources/TVShellCore/Settings/SettingsView.swift",
