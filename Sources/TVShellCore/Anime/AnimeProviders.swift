@@ -1,3 +1,4 @@
+import CoreFoundation
 import Foundation
 
 public protocol AnimeSourceProvider: Sendable {
@@ -80,28 +81,19 @@ public struct AnimeHomeSourceProvider: AnimeSourceProvider {
     public func search(_ query: AnimeSearchQuery) async throws -> [AnimeSearchResult] {
         let keyword = query.keyword.trimmingCharacters(in: .whitespacesAndNewlines)
         guard keyword.isEmpty else {
-            return try await base.search(query)
+            return try await searchWithSimplifiedFallback(keyword)
         }
 
-        let matches = await withTaskGroup(of: (Int, AnimeSearchResult?).self) { group in
-            for (index, homeKeyword) in homeKeywords.enumerated() {
-                group.addTask {
-                    do {
-                        let candidates = try await base.search(AnimeSearchQuery(keyword: homeKeyword))
-                        return (index, bestHomeCandidate(from: candidates, keyword: homeKeyword))
-                    } catch {
-                        return (index, nil)
-                    }
+        var matches: [(Int, AnimeSearchResult)] = []
+        for (index, homeKeyword) in homeKeywords.enumerated() {
+            do {
+                let candidates = try await searchWithSimplifiedFallback(homeKeyword)
+                if let result = bestHomeCandidate(from: candidates, keyword: homeKeyword) {
+                    matches.append((index, result))
                 }
+            } catch {
+                continue
             }
-
-            var loadedMatches: [(Int, AnimeSearchResult)] = []
-            for await (index, result) in group {
-                if let result {
-                    loadedMatches.append((index, result))
-                }
-            }
-            return loadedMatches.sorted { $0.0 < $1.0 }
         }
 
         var seenTitles = Set<String>()
@@ -115,6 +107,27 @@ public struct AnimeHomeSourceProvider: AnimeSourceProvider {
             results.append(best)
         }
         return results
+    }
+
+    private func searchWithSimplifiedFallback(_ keyword: String) async throws -> [AnimeSearchResult] {
+        if let results = try? await base.search(AnimeSearchQuery(keyword: keyword)), results.isEmpty == false {
+            return results
+        }
+
+        let simplified = simplifiedChinese(keyword)
+        guard simplified != keyword,
+              let results = try? await base.search(AnimeSearchQuery(keyword: simplified)),
+              results.isEmpty == false
+        else {
+            throw AnimeSourceCatalogError.noPlayableAdapter
+        }
+        return results
+    }
+
+    private func simplifiedChinese(_ value: String) -> String {
+        let mutable = NSMutableString(string: value)
+        CFStringTransform(mutable, nil, "Traditional-Simplified" as CFString, false)
+        return mutable as String
     }
 
     public func episodes(for result: AnimeSearchResult) async throws -> [AnimeEpisode] {
