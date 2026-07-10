@@ -474,6 +474,8 @@ final class AnimeRuntimeController: ObservableObject {
     private var currentQuery = ""
     private var watchHistory: [WatchHistoryEntry] = []
     private var preferredStreams: [String: String] = [:]
+    private var playbackCandidates: [AnimeStreamCandidate] = []
+    private var playbackCandidateIndex = 0
     private var pendingStreamEpisode: AnimeEpisode?
     private var currentPlayingEpisode: AnimeEpisode?
     private var lastRecordedMediaID: String?
@@ -793,6 +795,8 @@ final class AnimeRuntimeController: ObservableObject {
             }
 
             let mediaID = watchMediaID(for: episode)
+            playbackCandidates = candidates
+            playbackCandidateIndex = candidates.firstIndex { $0.url == (preferredStreams[mediaID].flatMap(URL.init(string:)) ?? candidates.first?.url) } ?? 0
             if let preferredURL = preferredStreams[mediaID],
                let preferredStream = candidates.first(where: { $0.url.absoluteString == preferredURL }) {
                 await startPlayback(preferredStream, episode: episode)
@@ -1095,7 +1099,9 @@ final class AnimeRuntimeController: ObservableObject {
                     self?.player.play()
                 } else if case .failed = item.status {
                     self?.statusText = item.error?.localizedDescription ?? "動畫播放失敗。"
-                    self?.returnToEpisodesAfterPlaybackFailure("動畫播放失敗，可能是 BT 檔案尚未緩衝完成或檔案本身不可播放。")
+                    if self?.tryNextPlaybackLine() != true {
+                        self?.returnToEpisodesAfterPlaybackFailure("動畫播放失敗，可能是 BT 檔案尚未緩衝完成或檔案本身不可播放。")
+                    }
                 }
             }
         }
@@ -1105,6 +1111,16 @@ final class AnimeRuntimeController: ObservableObject {
         isDanmakuClockRunning = true
         installTimeObserverIfNeeded()
         installShortPlaybackObserver(for: item)
+    }
+
+    private func tryNextPlaybackLine() -> Bool {
+        guard playbackCandidates.indices.contains(playbackCandidateIndex + 1), let episode = currentPlayingEpisode else { return false }
+        playbackCandidateIndex += 1
+        let next = playbackCandidates[playbackCandidateIndex]
+        statusText = "目前播放線失敗，正在切換備用線 \(playbackCandidateIndex + 1)..."
+        loadPlayer(next, episode: episode)
+        Task { await loadDanmaku(for: episode, stream: next) }
+        return true
     }
 
     private func installShortPlaybackObserver(for item: AVPlayerItem) {
