@@ -132,7 +132,7 @@ public struct AnimeHomeSourceProvider: AnimeSourceProvider {
               let results = try? await provider.search(AnimeSearchQuery(keyword: simplified)),
               results.isEmpty == false
         else {
-            throw AnimeSourceCatalogError.noPlayableAdapter
+            throw AnimeSourceCatalogError.noSearchResults(keyword)
         }
         return results
     }

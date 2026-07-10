@@ -598,6 +598,11 @@ final class AnimeRuntimeController: ObservableObject {
             if error is CancellationError {
                 return
             }
+            if let sourceError = error as? AnimeSourceCatalogError,
+               case let .noSearchResults(keyword) = sourceError {
+                statusText = keyword.isEmpty ? "找不到動畫。" : "找不到動畫：\(keyword)"
+                return
+            }
             statusText = "動畫源載入失敗：\(error.localizedDescription)"
         }
     }

@@ -2,6 +2,7 @@ import Foundation
 
 public enum AnimeSourceCatalogError: Error, Equatable, LocalizedError, Sendable {
     case noPlayableAdapter
+    case noSearchResults(String)
     case missingAdapter(String)
     case sourceResolutionFailed([String])
 
@@ -9,6 +10,8 @@ public enum AnimeSourceCatalogError: Error, Equatable, LocalizedError, Sendable 
         switch self {
         case .noPlayableAdapter:
             "沒有已啟用且可播放的動漫來源。請在動漫來源頁啟用來源。"
+        case let .noSearchResults(keyword):
+            keyword.isEmpty ? "找不到動畫。" : "找不到動畫：\(keyword)"
         case let .missingAdapter(id):
             "來源尚未接入解析 adapter：\(id)"
         case let .sourceResolutionFailed(reasons):
@@ -70,6 +73,9 @@ public struct CatalogAnimeSourceProvider: AnimeSourceProvider {
     }
 
     public func search(_ query: AnimeSearchQuery) async throws -> [AnimeSearchResult] {
+        guard playableAdapters.isEmpty == false else {
+            throw AnimeSourceCatalogError.noPlayableAdapter
+        }
         let allResults = await withTaskGroup(of: SourceSearchResults.self) { group in
             for (index, entry) in playableAdapters.enumerated() {
                 group.addTask {
@@ -93,7 +99,7 @@ public struct CatalogAnimeSourceProvider: AnimeSourceProvider {
 
         let merged = mergeSearchResults(allResults)
         guard merged.isEmpty == false else {
-            throw AnimeSourceCatalogError.noPlayableAdapter
+            throw AnimeSourceCatalogError.noSearchResults(query.keyword)
         }
         return Array(merged.prefix(60))
     }

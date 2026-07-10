@@ -2388,6 +2388,17 @@ struct TVShellChecks {
             try expect(error == .noPlayableAdapter, "catalog provider reports no playable adapter")
         }
 
+        let emptyCatalog = AnimeSourceCatalogState(definitions: [
+            AnimeSourceDefinition(id: "mock-source", title: "Mock Source", iconLabel: "M", lines: [])
+        ])
+        let emptyProvider = CatalogAnimeSourceProvider(catalog: emptyCatalog, registry: AnimeSourceRegistry(adapters: [mock]))
+        do {
+            _ = try await emptyProvider.search(AnimeSearchQuery(keyword: "不存在的動畫"))
+            throw CheckFailure("catalog provider should report a missing search result")
+        } catch let error as AnimeSourceCatalogError {
+            try expect(error == .noSearchResults("不存在的動畫"), "catalog distinguishes no result from no enabled source")
+        }
+
         let factoryProvider = AnimeSourceProviderFactory.provider(
             catalog: AnimeSourceCatalogState(definitions: AnimeSourceCatalog.defaultSources),
             youtubeCredentials: YouTubeCredentials(apiKey: "yt-key")
