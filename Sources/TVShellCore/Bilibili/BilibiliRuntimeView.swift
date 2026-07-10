@@ -67,6 +67,12 @@ public struct BilibiliRuntimeView: View {
         .onChange(of: appState.watchingHistory) { _, history in
             controller.updateWatchHistory(history)
         }
+        .onChange(of: controller.state.phase) { _, phase in
+            setStatusClockHidden(phase == .playing)
+        }
+        .onDisappear {
+            setStatusClockHidden(false)
+        }
     }
 
     private static func seasonColumns(metrics: TVMetrics, size: CGSize, mode: BilibiliContentMode) -> Int {
@@ -252,6 +258,14 @@ public struct BilibiliRuntimeView: View {
                 .lineLimit(2)
         }
     }
+}
+
+private func setStatusClockHidden(_ hidden: Bool) {
+    NotificationCenter.default.post(
+        name: .tvShellSetStatusClockHidden,
+        object: nil,
+        userInfo: [StatusClockNotification.hiddenKey: hidden]
+    )
 }
 
 @MainActor

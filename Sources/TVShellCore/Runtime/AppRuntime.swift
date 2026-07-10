@@ -83,6 +83,7 @@ public extension Notification.Name {
     static let tvShellRequestLauncher = Notification.Name("TVShellRequestLauncher")
     static let tvShellRecordWatch = Notification.Name("TVShellRecordWatch")
     static let tvShellRememberAnimeStream = Notification.Name("TVShellRememberAnimeStream")
+    static let tvShellSetStatusClockHidden = Notification.Name("TVShellSetStatusClockHidden")
 }
 
 public enum RuntimeCommandNotification {
@@ -97,4 +98,8 @@ public enum WatchHistoryNotification {
 public enum AnimeStreamPreferenceNotification {
     public static let mediaIDKey = "mediaID"
     public static let streamURLKey = "streamURL"
+}
+
+public enum StatusClockNotification {
+    public static let hiddenKey = "hidden"
 }

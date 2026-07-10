@@ -1831,6 +1831,7 @@ struct TVShellChecks {
         try expect(results.first?.summaryText.localizedCaseInsensitiveContains("芙莉蓮踏上理解人類") == true, "css1 provider enriches detail page with Bangumi summary")
         try expect(results.first?.score == 8.9, "css1 provider enriches detail page with Bangumi score")
         try expect(results.first?.episodes.count == 2, "css1 provider parses episode list")
+        try expect(results.first?.episodes.first?.identity.providerID == "ani-subs-css1", "css1 episodes route through the built-in web selector adapter")
         try expect(results.first?.episodes.contains { $0.title == "葬送的芙莉蓮" } == false, "css1 provider excludes the anime title from episode choices")
         try expect(results.first?.episodes.contains { $0.title.contains("522") } == false, "css1 provider ignores recommendation episodes outside the configured episode list")
         guard let episode = results.first?.episodes.first else {
@@ -2269,6 +2270,7 @@ struct TVShellChecks {
         try expect(launcher.contains("ScrollView(.horizontal"), "launcher dock uses horizontal scrolling instead of overflowing")
         try expect(launcher.contains("scaleEffect(appState.displayScale.multiplier())") == false, "launcher dock avoids clipping cards with a visual-only scale transform")
         try expect(launcher.contains("TVStatusClockOverlay"), "root shell shows time on every interface")
+        try expect(launcher.contains("isStatusClockHidden == false"), "root shell hides time during active playback")
         try expect(launcher.contains("TimelineView(.periodic"), "time overlay refreshes automatically")
         try expect(launcher.contains("deleteWatchHistory"), "launcher can delete recent watch entries")
         try expect(launcher.contains("clearWatchingHistory"), "launcher can clear recent watch history")
@@ -2300,6 +2302,7 @@ struct TVShellChecks {
         let animeRuntime = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Anime/AnimeRuntimeView.swift"))
         try expect(animeRuntime.contains("AVURLAssetHTTPHeaderFieldsKey"), "anime player forwards CSS1 HTTP playback headers")
         try expect(animeRuntime.contains("currentVLCHeaders"), "anime VLC path retains CSS1 playback headers")
+        try expect(animeRuntime.contains("setStatusClockHidden(phase == .playing)"), "anime player hides the status clock only while playing")
 
         let inputRouter = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Input/InputRouter.swift"))
         try expect(inputRouter.contains("scheduleMenuDispatch"), "menu short press is deferred while long press is detected")

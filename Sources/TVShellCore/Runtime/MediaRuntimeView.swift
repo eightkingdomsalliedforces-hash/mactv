@@ -16,9 +16,11 @@ public struct MediaRuntimeView: View {
                 .ignoresSafeArea()
                 .onAppear {
                     controller.load(app)
+                    setStatusClockHidden(true)
                 }
                 .onDisappear {
                     controller.stop()
+                    setStatusClockHidden(false)
                 }
 
             VStack(alignment: .leading, spacing: 14) {
@@ -34,6 +36,14 @@ public struct MediaRuntimeView: View {
         }
         .background(.black)
     }
+}
+
+private func setStatusClockHidden(_ hidden: Bool) {
+    NotificationCenter.default.post(
+        name: .tvShellSetStatusClockHidden,
+        object: nil,
+        userInfo: [StatusClockNotification.hiddenKey: hidden]
+    )
 }
 
 @MainActor

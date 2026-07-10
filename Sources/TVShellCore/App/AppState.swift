@@ -68,6 +68,7 @@ public final class AppState: ObservableObject {
     @Published public var isFocusModeEnabled = false
     @Published public var isAudioMuted = false
     @Published public var quickVolume = 0.70
+    @Published public var isStatusClockHidden = false
     @Published public private(set) var launcherFocus: LauncherFocus = .apps
     @Published public var focusedWatchHistoryID: UUID?
     @Published public private(set) var pendingWatchHistoryEntry: WatchHistoryEntry?
@@ -85,6 +86,7 @@ public final class AppState: ObservableObject {
     private nonisolated(unsafe) var exitObserver: NSObjectProtocol?
     private nonisolated(unsafe) var historyObserver: NSObjectProtocol?
     private nonisolated(unsafe) var animeStreamPreferenceObserver: NSObjectProtocol?
+    private nonisolated(unsafe) var statusClockObserver: NSObjectProtocol?
 
     public init(
         apps: [TVAppProfile] = SeedApps.defaultApps,
@@ -163,6 +165,18 @@ public final class AppState: ObservableObject {
                 self?.saveSettings()
             }
         }
+        statusClockObserver = NotificationCenter.default.addObserver(
+            forName: .tvShellSetStatusClockHidden,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let hidden = notification.userInfo?[StatusClockNotification.hiddenKey] as? Bool else {
+                return
+            }
+            Task { @MainActor in
+                self?.isStatusClockHidden = hidden
+            }
+        }
         if startNetworkRemote {
             startNetworkRemoteServer()
         }
@@ -177,6 +191,9 @@ public final class AppState: ObservableObject {
         }
         if let animeStreamPreferenceObserver {
             NotificationCenter.default.removeObserver(animeStreamPreferenceObserver)
+        }
+        if let statusClockObserver {
+            NotificationCenter.default.removeObserver(statusClockObserver)
         }
     }
 
@@ -488,6 +505,7 @@ public final class AppState: ObservableObject {
     private func handleRuntimeCommand(_ command: RemoteCommand) {
         if command == .home || (command == .back && activeRuntime.handlesBackInternally == false) {
             activeRuntime = .launcher
+            isStatusClockHidden = false
             NSApp.activate(ignoringOtherApps: true)
             return
         }

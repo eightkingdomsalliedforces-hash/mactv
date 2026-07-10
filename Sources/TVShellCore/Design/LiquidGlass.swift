@@ -12,11 +12,11 @@ public struct TVControlBackdrop: View {
             Color(red: 0.045, green: 0.055, blue: 0.075)
             Rectangle()
                 .fill(.ultraThinMaterial)
-                .opacity(0.16)
+                .opacity(0.08)
             if let accent {
-                accent.opacity(0.12)
+                accent.opacity(0.28)
             }
-            Color.black.opacity(0.20)
+            Color.black.opacity(0.10)
         }
         .ignoresSafeArea()
     }
@@ -38,7 +38,8 @@ public struct LiquidGlassCardModifier: ViewModifier {
             .background(
                 shape
                     .fill(.ultraThinMaterial)
-                    .overlay(Color.black.opacity(isFocused ? 0.08 : 0.18))
+                    .overlay(Color.white.opacity(isFocused ? 0.13 : 0.07))
+                    .overlay(Color.black.opacity(isFocused ? 0.06 : 0.12))
                     .clipShape(shape)
             )
             .clipShape(shape)

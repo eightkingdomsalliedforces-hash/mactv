@@ -87,7 +87,7 @@ public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
         guard let watchURL = episode.identity.playbackURL else {
             throw AnimeHTTPError.missingRoute("ani-subs css1 playback url: \(episode.identity.episodeID)")
         }
-        let source = try await source(named: episode.identity.providerID)
+        let source = try await source(named: css1SourceName(for: episode))
         let watchHTML = try await html(for: watchURL, source: source)
         let playbackHTML: String
         let playbackBaseURL: URL
@@ -251,14 +251,26 @@ public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
                 title: anchor.title,
                 number: number,
                 identity: AnimeEpisodeIdentity(
-                    providerID: source.name,
+                    providerID: id,
                     subjectID: subjectTitle,
                     episodeID: anchor.url.absoluteString,
-                    subjectAliases: [subjectTitle],
+                    subjectAliases: [subjectTitle, css1SourceMarker(source.name)],
                     playbackURL: anchor.url
                 )
             )
         }
+    }
+
+    private func css1SourceMarker(_ sourceName: String) -> String {
+        "css1-source:\(sourceName)"
+    }
+
+    private func css1SourceName(for episode: AnimeEpisode) -> String {
+        let prefix = "css1-source:"
+        return episode.identity.subjectAliases
+            .first(where: { $0.hasPrefix(prefix) })
+            .map { String($0.dropFirst(prefix.count)) }
+            ?? id
     }
 
     private func stableID(_ value: String) -> String {
@@ -289,7 +301,7 @@ public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
             item.episodes = result.episodes.map { episode in
                 var copy = episode
                 copy.identity.subjectID = item.title
-                copy.identity.subjectAliases = uniqueNonEmpty([item.title, subject.name, result.title])
+                copy.identity.subjectAliases = uniqueNonEmpty(copy.identity.subjectAliases + [item.title, subject.name, result.title])
                 return copy
             }
             enriched.append(item)

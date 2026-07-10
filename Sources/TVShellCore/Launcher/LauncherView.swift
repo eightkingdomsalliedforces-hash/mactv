@@ -57,8 +57,10 @@ public struct LauncherView: View {
                     .zIndex(40)
             }
 
-            TVStatusClockOverlay()
-                .zIndex(appState.isControlCenterPresented ? 20 : 30)
+            if appState.isStatusClockHidden == false {
+                TVStatusClockOverlay()
+                    .zIndex(appState.isControlCenterPresented ? 20 : 30)
+            }
         }
         .animation(TVMotion.runtime, value: appState.activeRuntime)
         .animation(TVMotion.runtime, value: appState.openingAppName)
@@ -267,12 +269,7 @@ private struct TVOSAppDock: View {
                 .padding(.vertical, 34 * metrics.scale)
             }
             .scrollIndicators(.hidden)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 34 * metrics.scale, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 34 * metrics.scale, style: .continuous)
-                    .stroke(.white.opacity(0.16), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.38), radius: 30, x: 0, y: 18)
+            .liquidGlassCard(isFocused: false, cornerRadius: 34 * metrics.scale)
         }
     }
 }

@@ -60,6 +60,12 @@ public struct YouTubeRuntimeView: View {
         .onChange(of: appState.watchingHistory) { _, history in
             controller.updateWatchHistory(history)
         }
+        .onChange(of: controller.state.phase) { _, phase in
+            setStatusClockHidden(phase == .playing)
+        }
+        .onDisappear {
+            setStatusClockHidden(false)
+        }
     }
 
     private func videoGridColumns(for metrics: TVMetrics, size: CGSize) -> Int {
@@ -160,6 +166,14 @@ public struct YouTubeRuntimeView: View {
         }
         .background(.black)
     }
+}
+
+private func setStatusClockHidden(_ hidden: Bool) {
+    NotificationCenter.default.post(
+        name: .tvShellSetStatusClockHidden,
+        object: nil,
+        userInfo: [StatusClockNotification.hiddenKey: hidden]
+    )
 }
 
 @MainActor

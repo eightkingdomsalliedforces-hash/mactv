@@ -101,6 +101,9 @@ public struct AnimeRuntimeView: View {
         .onDisappear {
             controller.stop()
         }
+        .onChange(of: controller.state.phase) { _, phase in
+            setStatusClockHidden(phase == .playing)
+        }
     }
 
     private func reloadConfiguredSources() {
@@ -426,6 +429,14 @@ public struct AnimeRuntimeView: View {
     }
 }
 
+private func setStatusClockHidden(_ hidden: Bool) {
+    NotificationCenter.default.post(
+        name: .tvShellSetStatusClockHidden,
+        object: nil,
+        userInfo: [StatusClockNotification.hiddenKey: hidden]
+    )
+}
+
 @MainActor
 final class AnimeRuntimeController: ObservableObject {
     let player = AVPlayer()
@@ -574,6 +585,7 @@ final class AnimeRuntimeController: ObservableObject {
         hidePlayerHUDTask?.cancel()
         isPlayerHUDVisible = false
         canRestartFromBeginningWithSelect = false
+        setStatusClockHidden(false)
     }
 
     func updateWatchHistory(_ history: [WatchHistoryEntry]) {
@@ -1123,6 +1135,7 @@ final class AnimeRuntimeController: ObservableObject {
         isDanmakuClockRunning = false
         statusText = message
         subtitleStatusText = "字幕：播放未就緒"
+        setStatusClockHidden(false)
         state = AnimeRuntimeState(
             titleCount: titles.count,
             episodeCount: episodes.count,
