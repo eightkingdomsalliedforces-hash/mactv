@@ -265,11 +265,12 @@ public enum AnimeSourceProviderFactory {
         let mediaServerAdapters = mediaServerConfigs.map { config in
             MediaServerAnimeSourceProvider(config: config, transport: transport) as any AnimeMediaSourceAdapter
         }
+        let metadataProvider = BangumiYouTubeAnimeSourceProvider(
+            youtubeCredentials: youtubeCredentials,
+            transport: transport
+        )
         let adapters: [any AnimeMediaSourceAdapter] = [
-            BangumiYouTubeAnimeSourceProvider(
-                youtubeCredentials: youtubeCredentials,
-                transport: transport
-            ),
+            metadataProvider,
             BTFeedAnimeSourceProvider(
                 id: "mikan",
                 displayName: "Mikan Project",
@@ -292,6 +293,6 @@ public enum AnimeSourceProviderFactory {
                 .includingDynamicDefinitions(selectorConfigs.map(\.catalogDefinition)),
             registry: registry
         )
-        return AnimeHomeSourceProvider(base: catalogProvider)
+        return AnimeHomeSourceProvider(homeProvider: metadataProvider, resolver: catalogProvider)
     }
 }

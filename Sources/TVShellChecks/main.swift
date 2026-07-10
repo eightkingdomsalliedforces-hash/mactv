@@ -81,6 +81,27 @@ private final class DelayedAnimeHTTPTransport: AnimeHTTPTransport, @unchecked Se
     }
 }
 
+private struct DelayedAnimeSourceProvider: AnimeMediaSourceAdapter {
+    let id: String
+    let displayName: String
+    let resolverKind: AnimeResolverKind
+    let delayNanoseconds: UInt64
+    let results: [AnimeSearchResult]
+
+    func search(_ query: AnimeSearchQuery) async throws -> [AnimeSearchResult] {
+        try await Task.sleep(nanoseconds: delayNanoseconds)
+        return results
+    }
+
+    func episodes(for result: AnimeSearchResult) async throws -> [AnimeEpisode] {
+        result.episodes
+    }
+
+    func streams(for episode: AnimeEpisode) async throws -> [AnimeStreamCandidate] {
+        []
+    }
+}
+
 @main
 struct TVShellChecks {
     static func main() async throws {
@@ -126,6 +147,7 @@ struct TVShellChecks {
         try checkTorrentPlaybackEngine()
         try checkInternalVLCPlaybackStrategy()
         try await checkAnimeHomeProviderAggregatesDistinctTitles()
+        try await checkLazyAnimeSourceResolution()
         try checkAnimekoStyleSourceCatalog()
         try await checkAnimeSourceRegistryUsesCatalog()
         try await checkCatalogAnimeSourceProviderAggregatesResults()
@@ -1501,6 +1523,116 @@ struct TVShellChecks {
         try expect(search.map(\.title) == ["葬送的芙莉蓮", "葬送的芙莉蓮 第二季"], "anime home provider keeps full search results for explicit search")
     }
 
+    static func checkLazyAnimeSourceResolution() async throws {
+        let metadataTitle = AnimeSearchResult(id: "metadata-title", title: "測試動畫", episodes: [])
+        let cssEpisode = AnimeEpisode(
+            id: "css-episode-1",
+            title: "測試動畫 第 1 話",
+            number: 1,
+            identity: AnimeEpisodeIdentity(providerID: "css1", subjectID: "測試動畫", episodeID: "css-1")
+        )
+        let btEpisode = AnimeEpisode(
+            id: "bt-episode-1",
+            title: "測試動畫 第 1 話",
+            number: 1,
+            identity: AnimeEpisodeIdentity(providerID: "bt", subjectID: "測試動畫", episodeID: "bt-1")
+        )
+        let metadata = KeywordAnimeSourceProvider(
+            id: "metadata",
+            displayName: "Bangumi",
+            resultsByKeyword: ["測試動畫": [metadataTitle]]
+        )
+        let css = KeywordAnimeSourceProvider(
+            id: "css1",
+            displayName: "CSS1",
+            resultsByKeyword: ["測試動畫": [AnimeSearchResult(id: "css-title", title: "測試動畫", episodes: [cssEpisode])]],
+            streams: [
+                cssEpisode.id: [
+                    AnimeStreamCandidate(
+                        url: URL(string: "https://css.example/episode-1.m3u8")!,
+                        quality: "CSS1",
+                        headers: ["resolver": "web-selector"]
+                    )
+                ]
+            ]
+        )
+        let bt = KeywordAnimeSourceProvider(
+            id: "bt",
+            displayName: "BT",
+            resultsByKeyword: ["測試動畫": [AnimeSearchResult(id: "bt-title", title: "測試動畫", episodes: [btEpisode])]],
+            streams: [
+                btEpisode.id: [
+                    AnimeStreamCandidate(
+                        url: URL(string: "magnet:?xt=urn:btih:TEST")!,
+                        quality: "BT",
+                        headers: ["resolver": "torrent"]
+                    )
+                ]
+            ],
+            resolverKind: .torrent
+        )
+        let catalog = AnimeSourceCatalogState(definitions: [
+            AnimeSourceDefinition(id: "css1", title: "CSS1", iconLabel: "CSS", lines: []),
+            AnimeSourceDefinition(id: "bt", title: "BT", iconLabel: "BT", lines: [])
+        ])
+        let resolver = CatalogAnimeSourceProvider(
+            catalog: catalog,
+            registry: AnimeSourceRegistry(adapters: [css, bt]),
+            sourceResolutionTimeoutNanoseconds: 10_000_000
+        )
+        let provider = AnimeHomeSourceProvider(
+            homeProvider: metadata,
+            resolver: resolver,
+            homeKeywords: ["測試動畫"]
+        )
+
+        let home = try await provider.search(AnimeSearchQuery(keyword: ""))
+        try expect(home.map(\.title) == ["測試動畫"], "home loads metadata without waiting for CSS1 or BT")
+        let episodes: [AnimeEpisode]
+        do {
+            episodes = try await provider.episodes(for: home[0])
+        } catch {
+            throw CheckFailure("deferred source resolution failed: \(error)")
+        }
+        try expect(episodes.map(\.number) == [1], "deferred CSS1 and BT resolution merges one episode by number")
+        let streams: [AnimeStreamCandidate]
+        do {
+            streams = try await provider.streams(for: episodes[0])
+        } catch {
+            throw CheckFailure("deferred stream resolution failed: \(error)")
+        }
+        try expect(streams.map { $0.headers["resolver"] } == ["web-selector", "torrent"], "CSS1 stream is preferred before BT fallback")
+
+        let stalled = DelayedAnimeSourceProvider(
+            id: "stalled-css1",
+            displayName: "Stalled CSS1",
+            resolverKind: .http,
+            delayNanoseconds: 500_000_000,
+            results: [AnimeSearchResult(id: "stalled", title: "測試動畫", episodes: [cssEpisode])]
+        )
+        let timeoutCatalog = AnimeSourceCatalogState(definitions: [
+            AnimeSourceDefinition(id: "stalled-css1", title: "Stalled CSS1", iconLabel: "CSS", lines: []),
+            AnimeSourceDefinition(id: "bt", title: "BT", iconLabel: "BT", lines: [])
+        ])
+        let timeoutResolver = CatalogAnimeSourceProvider(
+            catalog: timeoutCatalog,
+            registry: AnimeSourceRegistry(adapters: [stalled, bt]),
+            sourceResolutionTimeoutNanoseconds: 5_000_000
+        )
+        let started = Date()
+        let timeoutSearch = try await timeoutResolver.search(AnimeSearchQuery(keyword: "測試動畫"))
+        try expect(timeoutSearch.map(\.title) == ["測試動畫"], "healthy source search remains available when CSS1 stalls")
+        try expect(Date().timeIntervalSince(started) < 0.2, "timed-out CSS1 search does not block the anime screen")
+        let timeoutEpisodes: [AnimeEpisode]
+        do {
+            timeoutEpisodes = try await timeoutResolver.episodes(for: metadataTitle)
+        } catch {
+            throw CheckFailure("timeout source resolution failed: \(error)")
+        }
+        try expect(timeoutEpisodes.map(\.number) == [1], "healthy source remains available when CSS1 times out")
+        try expect(Date().timeIntervalSince(started) < 0.2, "timed-out CSS1 source does not block the episode screen")
+    }
+
     static func checkBuiltInAnimekoStyleSources() async throws {
         let sources = AnimeSourceCatalog.defaultSources
         try expect(sources.contains { $0.id == "mikan" && $0.title == "Mikan Project" }, "catalog includes built-in Mikan source")
@@ -2403,6 +2535,8 @@ struct TVShellChecks {
         try expect(animeRuntime.contains("AVURLAssetHTTPHeaderFieldsKey"), "anime player forwards CSS1 HTTP playback headers")
         try expect(animeRuntime.contains("currentVLCHeaders"), "anime VLC path retains CSS1 playback headers")
         try expect(animeRuntime.contains("setStatusClockHidden(phase == .playing)"), "anime player hides the status clock only while playing")
+        try expect(animeRuntime.contains("onChange(of: appState.animeSourceCatalog)"), "anime runtime reloads when source selections change")
+        try expect(animeRuntime.contains("loadGeneration"), "anime runtime ignores stale source-load completions")
 
         let inputRouter = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Input/InputRouter.swift"))
         try expect(inputRouter.contains("scheduleMenuDispatch"), "menu short press is deferred while long press is detected")

@@ -98,6 +98,9 @@ public struct AnimeRuntimeView: View {
         .onChange(of: appState.dandanplayCredentials) { _, _ in
             reloadConfiguredSources()
         }
+        .onChange(of: appState.animeSourceCatalog) { _, _ in
+            reloadConfiguredSources()
+        }
         .onDisappear {
             controller.stop()
         }
@@ -478,6 +481,8 @@ final class AnimeRuntimeController: ObservableObject {
     private var playbackCandidateIndex = 0
     private var pendingStreamEpisode: AnimeEpisode?
     private var currentPlayingEpisode: AnimeEpisode?
+    private var loadGeneration: UInt = 0
+    private var sourceLoadTask: Task<[AnimeSearchResult], Error>?
     private var lastRecordedMediaID: String?
     private var lastRecordedTime: Double = -1
     private nonisolated(unsafe) var observer: NSObjectProtocol?
@@ -551,14 +556,29 @@ final class AnimeRuntimeController: ObservableObject {
             self.danmakuProvider = danmakuProvider
         }
 
+        loadGeneration &+= 1
+        let generation = loadGeneration
+        sourceLoadTask?.cancel()
+
         guard let sourceProvider else {
             statusText = "沒有可用動畫來源。請先到動漫來源頁啟用來源。"
             return
         }
 
+        let keyword = currentQuery
+        statusText = keyword.isEmpty ? "正在載入動漫來源..." : "正在搜尋：\(keyword)..."
+        let task = Task {
+            try await sourceProvider.search(AnimeSearchQuery(keyword: keyword))
+        }
+        sourceLoadTask = task
+
         do {
-            let keyword = currentQuery
-            titles = try await sourceProvider.search(AnimeSearchQuery(keyword: keyword))
+            let loadedTitles = try await task.value
+            guard generation == loadGeneration else {
+                return
+            }
+            sourceLoadTask = nil
+            titles = loadedTitles
             guard titles.isEmpty == false else {
                 statusText = "沒有找到動畫。"
                 return
@@ -571,11 +591,21 @@ final class AnimeRuntimeController: ObservableObject {
                 statusText = "來源：\(sourceProvider.displayName) · 找到 \(titles.count) 部作品 · 搜尋：\(keyword)"
             }
         } catch {
+            guard generation == loadGeneration else {
+                return
+            }
+            sourceLoadTask = nil
+            if error is CancellationError {
+                return
+            }
             statusText = "動畫源載入失敗：\(error.localizedDescription)"
         }
     }
 
     func stop() {
+        loadGeneration &+= 1
+        sourceLoadTask?.cancel()
+        sourceLoadTask = nil
         recordPlaybackProgress(force: true)
         player.pause()
         player.replaceCurrentItem(with: nil)

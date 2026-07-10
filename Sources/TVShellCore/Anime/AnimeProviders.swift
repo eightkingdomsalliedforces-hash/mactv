@@ -65,29 +65,39 @@ public struct AnimeHomeSourceProvider: AnimeSourceProvider {
     public let id: String
     public let displayName: String
 
-    private let base: any AnimeSourceProvider
+    private let homeProvider: any AnimeSourceProvider
+    private let resolver: any AnimeSourceProvider
     private let homeKeywords: [String]
 
     public init(
         base: any AnimeSourceProvider,
         homeKeywords: [String] = AnimeSearchKeywordCatalog.defaultKeywords
     ) {
-        self.base = base
+        self.init(homeProvider: base, resolver: base, homeKeywords: homeKeywords)
+    }
+
+    public init(
+        homeProvider: any AnimeSourceProvider,
+        resolver: any AnimeSourceProvider,
+        homeKeywords: [String] = AnimeSearchKeywordCatalog.defaultKeywords
+    ) {
+        self.homeProvider = homeProvider
+        self.resolver = resolver
         self.homeKeywords = homeKeywords
-        id = "\(base.id)-home"
-        displayName = base.displayName
+        id = "\(resolver.id)-home"
+        displayName = resolver.displayName
     }
 
     public func search(_ query: AnimeSearchQuery) async throws -> [AnimeSearchResult] {
         let keyword = query.keyword.trimmingCharacters(in: .whitespacesAndNewlines)
         guard keyword.isEmpty else {
-            return try await searchWithSimplifiedFallback(keyword)
+            return try await searchWithSimplifiedFallback(keyword, using: resolver)
         }
 
         var matches: [(Int, AnimeSearchResult)] = []
         for (index, homeKeyword) in homeKeywords.enumerated() {
             do {
-                let candidates = try await searchWithSimplifiedFallback(homeKeyword)
+                let candidates = try await searchWithSimplifiedFallback(homeKeyword, using: homeProvider)
                 if let result = bestHomeCandidate(from: candidates, keyword: homeKeyword) {
                     matches.append((index, result))
                 }
@@ -109,14 +119,17 @@ public struct AnimeHomeSourceProvider: AnimeSourceProvider {
         return results
     }
 
-    private func searchWithSimplifiedFallback(_ keyword: String) async throws -> [AnimeSearchResult] {
-        if let results = try? await base.search(AnimeSearchQuery(keyword: keyword)), results.isEmpty == false {
+    private func searchWithSimplifiedFallback(
+        _ keyword: String,
+        using provider: any AnimeSourceProvider
+    ) async throws -> [AnimeSearchResult] {
+        if let results = try? await provider.search(AnimeSearchQuery(keyword: keyword)), results.isEmpty == false {
             return results
         }
 
         let simplified = simplifiedChinese(keyword)
         guard simplified != keyword,
-              let results = try? await base.search(AnimeSearchQuery(keyword: simplified)),
+              let results = try? await provider.search(AnimeSearchQuery(keyword: simplified)),
               results.isEmpty == false
         else {
             throw AnimeSourceCatalogError.noPlayableAdapter
@@ -131,11 +144,11 @@ public struct AnimeHomeSourceProvider: AnimeSourceProvider {
     }
 
     public func episodes(for result: AnimeSearchResult) async throws -> [AnimeEpisode] {
-        try await base.episodes(for: result)
+        try await resolver.episodes(for: result)
     }
 
     public func streams(for episode: AnimeEpisode) async throws -> [AnimeStreamCandidate] {
-        try await base.streams(for: episode)
+        try await resolver.streams(for: episode)
     }
 
     private func bestHomeCandidate(from candidates: [AnimeSearchResult], keyword: String) -> AnimeSearchResult? {
