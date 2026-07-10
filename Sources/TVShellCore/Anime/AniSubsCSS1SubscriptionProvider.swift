@@ -297,11 +297,15 @@ public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
                 )
             }
 
-        return anchors.enumerated().map { offset, anchor in
+        var seenEpisodeNumbers = Set<Int>()
+        return anchors.enumerated().compactMap { offset, anchor in
             let number = CSS1HTMLSelectorEngine.episodeNumber(
                 from: anchor.title,
                 pattern: source.episodeSortPattern
             ) ?? offset + 1
+            guard seenEpisodeNumbers.insert(number).inserted else {
+                return nil
+            }
             return AnimeEpisode(
                 id: "\(id)-\(stableID(source.name))-\(stableID(anchor.url.absoluteString))",
                 title: anchor.title,

@@ -1783,6 +1783,10 @@ struct TVShellChecks {
           <div><span class="episode-title">第 1 話</span><a class="play-link" href="/watch/frieren-1">播放</a></div>
           <div><span class="episode-title">第 2 話</span><a class="play-link" href="/watch/frieren-2">播放</a></div>
         </div>
+        <div class="module-play-list-content">
+          <div><span class="episode-title">第 1 話</span><a class="play-link" href="/watch/frieren-backup-1">備用</a></div>
+          <div><span class="episode-title">第 2 話</span><a class="play-link" href="/watch/frieren-backup-2">備用</a></div>
+        </div>
         <section class="module-card-item">
           <span class="episode-title">第 522 話</span><a class="play-link" href="/watch/recommendation-522">推薦</a>
         </section>
