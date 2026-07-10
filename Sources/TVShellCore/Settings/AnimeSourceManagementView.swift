@@ -10,16 +10,7 @@ public struct AnimeSourceManagementView: View {
             let scale = max(0.82, min(proxy.size.width / 1920, 1.45))
 
             ZStack {
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.04, green: 0.04, blue: 0.07),
-                        Color(red: 0.10, green: 0.08, blue: 0.14),
-                        Color(red: 0.03, green: 0.10, blue: 0.15)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+                TVControlBackdrop()
 
                 VStack(alignment: .leading, spacing: 28 * scale) {
                     header(scale: scale)
@@ -156,8 +147,8 @@ private struct AnimeSourceRow: View {
 
     private var iconColor: Color {
         switch source.definition.health {
-        case .available: .cyan
-        case .loading: .purple
+        case .available: .green
+        case .loading: .white.opacity(0.62)
         case .needsCloudflare, .needsCaptcha: .orange
         case .needsAdapter: .yellow
         case .failed: .red
@@ -226,7 +217,7 @@ private struct AnimeSourceHealthBadge: View {
         }
 
         switch health {
-        case .loading: return .purple
+        case .loading: return .white.opacity(0.62)
         case .available: return .green
         case .failed: return .red
         case .needsCloudflare, .needsCaptcha: return .orange

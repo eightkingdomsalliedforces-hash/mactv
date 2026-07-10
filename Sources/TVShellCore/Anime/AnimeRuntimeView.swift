@@ -17,16 +17,7 @@ public struct AnimeRuntimeView: View {
             let metrics = TVMetrics(size: proxy.size)
 
             ZStack {
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.03, green: 0.04, blue: 0.08),
-                        Color(red: 0.08, green: 0.10, blue: 0.16),
-                        Color(red: 0.16, green: 0.06, blue: 0.12)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+                TVControlBackdrop()
 
                 switch controller.state.phase {
                 case .titles:
@@ -1407,20 +1398,18 @@ private struct AnimeTitleCard: View {
                     .foregroundStyle(.white.opacity(0.74))
             }
 
-            LinearGradient(
-                colors: [.clear, .black.opacity(0.82)],
-                startPoint: .center,
-                endPoint: .bottom
-            )
+            VStack {
+                Spacer()
+                Text(title.title)
+                    .font(.system(size: 18 * metrics.scale, weight: .bold))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.66)
+                    .foregroundStyle(.white)
+                    .padding(10 * metrics.scale)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.ultraThinMaterial)
+            }
             .frame(width: posterWidth, height: posterHeight)
-
-            Text(title.title)
-                .font(.system(size: 18 * metrics.scale, weight: .bold))
-                .lineLimit(2)
-                .minimumScaleFactor(0.66)
-                .foregroundStyle(.white)
-                .padding(10 * metrics.scale)
-                .shadow(color: .black.opacity(0.9), radius: 5, x: 0, y: 2)
         }
         .frame(width: posterWidth, height: posterHeight)
         .clipShape(RoundedRectangle(cornerRadius: 16 * metrics.scale, style: .continuous))
@@ -1428,7 +1417,7 @@ private struct AnimeTitleCard: View {
             RoundedRectangle(cornerRadius: 16 * metrics.scale, style: .continuous)
                 .stroke(.white.opacity(isFocused ? 0.96 : 0.08), lineWidth: isFocused ? 4 : 1)
         )
-        .shadow(color: isFocused ? .cyan.opacity(0.28) : .black.opacity(0.16), radius: isFocused ? 18 : 6, x: 0, y: isFocused ? 10 : 4)
+        .shadow(color: .black.opacity(isFocused ? 0.36 : 0.16), radius: isFocused ? 18 : 6, x: 0, y: isFocused ? 10 : 4)
         .scaleEffect(isFocused ? 1.045 : 1)
         .animation(TVMotion.focus, value: isFocused)
     }

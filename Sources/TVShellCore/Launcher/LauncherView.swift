@@ -7,16 +7,7 @@ public struct LauncherView: View {
 
     public var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.04, green: 0.05, blue: 0.09),
-                    Color(red: 0.08, green: 0.12, blue: 0.18),
-                    Color(red: 0.15, green: 0.10, blue: 0.18)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            TVControlBackdrop()
 
             switch appState.activeRuntime {
             case .launcher:
@@ -197,39 +188,20 @@ public struct LauncherView: View {
     }
 
     private var heroBackground: some View {
-        ZStack {
-            LinearGradient(
-                colors: heroColors,
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-
-            RadialGradient(
-                colors: [.white.opacity(0.22), .clear],
-                center: .topTrailing,
-                startRadius: 40,
-                endRadius: 780
-            )
-            .ignoresSafeArea()
-
-            LinearGradient(
-                colors: [.black.opacity(0.05), .black.opacity(0.72)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-        }
+        TVControlBackdrop(accent: wallpaperAccent)
         .animation(TVMotion.hero, value: appState.focusedAppID)
         .animation(TVMotion.hero, value: appState.wallpaperSource)
     }
 
-    private var heroColors: [Color] {
+    private var wallpaperAccent: Color? {
         switch appState.wallpaperSource {
         case let .builtIn(preset):
-            return preset.palette.colors.map(Color.init(wallpaperColor:))
+            guard let color = preset.palette.colors.first else {
+                return nil
+            }
+            return Color(red: color.red, green: color.green, blue: color.blue)
         case .localFile, .remoteImage:
-            return WallpaperPreset.graphite.palette.colors.map(Color.init(wallpaperColor:))
+            return nil
         }
     }
 
@@ -331,12 +303,6 @@ private struct OpeningAppOverlay: View {
             .padding(.vertical, 58)
             .liquidGlassCard(isFocused: true, cornerRadius: 34)
         }
-    }
-}
-
-private extension Color {
-    init(wallpaperColor: WallpaperColor) {
-        self.init(red: wallpaperColor.red, green: wallpaperColor.green, blue: wallpaperColor.blue)
     }
 }
 

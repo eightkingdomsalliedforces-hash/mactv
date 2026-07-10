@@ -2265,6 +2265,7 @@ struct TVShellChecks {
         let launcher = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Launcher/LauncherView.swift"))
         try expect(launcher.contains("TVOSAppDock"), "launcher uses a tvOS-style bottom app dock")
         try expect(launcher.contains("TVOSHeroHeader"), "launcher uses a focused tvOS-style hero stage")
+        try expect(launcher.contains("TVControlBackdrop"), "launcher uses the shared control-center backdrop")
         try expect(launcher.contains("ScrollView(.horizontal"), "launcher dock uses horizontal scrolling instead of overflowing")
         try expect(launcher.contains("scaleEffect(appState.displayScale.multiplier())") == false, "launcher dock avoids clipping cards with a visual-only scale transform")
         try expect(launcher.contains("TVStatusClockOverlay"), "root shell shows time on every interface")
@@ -2283,6 +2284,11 @@ struct TVShellChecks {
         try expect(controlCenter.contains("控制中心"), "control center uses a dedicated tvOS-style panel")
         try expect(controlCenter.contains(".ultraThinMaterial"), "control center uses frosted glass material")
         try expect(controlCenter.contains("ControlCenterTile"), "control center exposes large remote-focusable tiles")
+
+        let glass = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Design/LiquidGlass.swift"))
+        try expect(glass.contains("TVControlBackdrop"), "shared design system provides the control-center backdrop")
+        try expect(glass.contains(".ultraThinMaterial"), "shared cards use the control-center frosted material")
+        try expect(glass.contains("LinearGradient") == false, "shared control-center cards avoid decorative gradients")
 
         let appStateSource = try String(contentsOf: root.appending(path: "Sources/TVShellCore/App/AppState.swift"))
         try expect(appStateSource.contains("SystemVolumeController.apply"), "volume remote commands apply macOS system volume")
@@ -2406,8 +2412,8 @@ struct TVShellChecks {
         try expect(animeRuntime.contains("isChineseSubtitleOption"), "anime player prefers Chinese subtitles")
 
         let liquidGlass = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Design/LiquidGlass.swift"))
-        try expect(liquidGlass.contains(".regularMaterial"), "liquid glass uses frosted glass material")
-        try expect(liquidGlass.contains(".ultraThinMaterial") == false, "liquid glass avoids the previous ultra-thin material on every card")
+        try expect(liquidGlass.contains(".ultraThinMaterial"), "liquid glass uses the control-center frosted material")
+        try expect(liquidGlass.contains(".ultraThinMaterial"), "liquid glass matches the control-center material across cards")
         try expect(liquidGlass.contains("radius: isFocused ? 42") == false, "liquid glass avoids very large focus shadows")
         try expect(liquidGlass.contains(".clipShape(shape)"), "liquid glass clips material to rounded shape")
         try expect(liquidGlass.contains(".compositingGroup()"), "liquid glass composites rounded material without square corner artifacts")

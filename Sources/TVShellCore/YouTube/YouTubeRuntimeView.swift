@@ -15,16 +15,7 @@ public struct YouTubeRuntimeView: View {
             let metrics = TVMetrics(size: proxy.size)
 
             ZStack {
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.08, green: 0.02, blue: 0.03),
-                        Color(red: 0.14, green: 0.04, blue: 0.06),
-                        Color(red: 0.03, green: 0.03, blue: 0.05)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+                TVControlBackdrop()
 
                 switch controller.state.phase {
                 case .browsing:

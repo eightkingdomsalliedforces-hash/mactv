@@ -16,16 +16,7 @@ public struct BilibiliRuntimeView: View {
             let metrics = TVMetrics(size: proxy.size)
 
             ZStack {
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.04, green: 0.06, blue: 0.10),
-                        Color(red: 0.07, green: 0.12, blue: 0.18),
-                        Color(red: 0.20, green: 0.08, blue: 0.14)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+                TVControlBackdrop()
 
                 switch controller.state.phase {
                 case .browsing:

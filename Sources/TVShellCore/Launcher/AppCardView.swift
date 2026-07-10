@@ -24,6 +24,7 @@ public struct AppCardView: View {
         VStack(spacing: 18 * metrics.scale) {
             RoundedRectangle(cornerRadius: 28 * metrics.scale, style: .continuous)
                 .fill(iconFill)
+                .overlay(Color.accentColor.opacity(isFocused ? 0.30 : 0.08))
                 .overlay(
                     Image(systemName: symbolName)
                         .font(.system(size: 76 * metrics.scale, weight: .semibold))
@@ -67,13 +68,7 @@ public struct AppCardView: View {
         }
     }
 
-    private var iconFill: LinearGradient {
-        LinearGradient(
-            colors: isFocused
-                ? [.blue.opacity(0.86), .indigo.opacity(0.76), .pink.opacity(0.62)]
-                : [.white.opacity(0.22), .blue.opacity(0.28), .indigo.opacity(0.20)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+    private var iconFill: Color {
+        isFocused ? .white.opacity(0.24) : .white.opacity(0.12)
     }
 }
