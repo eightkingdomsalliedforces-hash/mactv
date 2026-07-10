@@ -119,6 +119,7 @@ struct TVShellChecks {
         try await checkBuiltInAnimekoStyleSources()
         try await checkAniSubsBTSubscriptionProvider()
         try await checkAniSubsCSS1SubscriptionProvider()
+        try await checkAniSubsCSS1PrefersMatchingAnimeOverSameTitleDrama()
         try checkAnimeEpisodeGridLayout()
         try checkTorrentPlaybackEngine()
         try checkInternalVLCPlaybackStrategy()
@@ -1932,6 +1933,91 @@ struct TVShellChecks {
         )
         let nextRunResults = try await nextRunProvider.search(AnimeSearchQuery(keyword: "86"))
         try expect(nextRunResults.first?.subtitle == "fast", "css1 provider skips disabled sources on the next run")
+    }
+
+    static func checkAniSubsCSS1PrefersMatchingAnimeOverSameTitleDrama() async throws {
+        let subscriptionURL = URL(string: "https://sub.example/oshi-css1.json")!
+        let subscription = """
+        {
+          "exportedMediaSourceDataList": {
+            "mediaSources": [{
+              "factoryId": "web-selector",
+              "arguments": {
+                "name": "test-source",
+                "searchConfig": {
+                  "searchUrl": "https://web.example/search?wd={keyword}",
+                  "selectorSubjectFormatA": { "selectLists": ".module-card-item>.module-card-item-info>.module-card-item-title>a" },
+                  "selectorChannelFormatFlattened": {
+                    "selectEpisodeLists": ".module-play-list-content",
+                    "selectEpisodesFromList": "span.episode-title",
+                    "selectEpisodeLinksFromList": "a.play-link",
+                    "matchEpisodeSortFromName": "第\\\\s*(?<ep>.+)\\\\s*[话集]"
+                  },
+                  "matchVideo": { "matchVideoUrl": "https?://.+\\\\.m3u8" }
+                }
+              }
+            }]
+          }
+        }
+        """.data(using: .utf8)!
+        let searchHTML = """
+        <div class="module-card-item"><div class="module-card-item-info"><div class="module-card-item-title"><a href="/show/oshi-anime">我推的孩子</a></div></div></div>
+        <div class="module-card-item"><div class="module-card-item-info"><div class="module-card-item-title"><a href="/show/oshi-drama">我推的孩子</a></div></div></div>
+        """.data(using: .utf8)!
+        let animeDetail = """
+        <div class="module-play-list-content">
+          <div><span class="episode-title">第 1 話</span><a class="play-link" href="/watch/oshi-anime-1">播放</a></div>
+          <div><span class="episode-title">第 2 話</span><a class="play-link" href="/watch/oshi-anime-2">播放</a></div>
+        </div>
+        """.data(using: .utf8)!
+        let dramaDetail = """
+        <div class="module-play-list-content">
+          <div><span class="episode-title">第 1 話</span><a class="play-link" href="/watch/oshi-drama-1">播放</a></div>
+          <div><span class="episode-title">第 2 話</span><a class="play-link" href="/watch/oshi-drama-2">播放</a></div>
+          <div><span class="episode-title">第 3 話</span><a class="play-link" href="/watch/oshi-drama-3">播放</a></div>
+        </div>
+        """.data(using: .utf8)!
+        let bangumiResponse = """
+        {
+          "data": [{
+            "id": 531543,
+            "name": "Oshi no Ko",
+            "name_cn": "我推的孩子",
+            "eps": 2,
+            "images": { "large": "https://example.com/oshi-cover.jpg" }
+          }]
+        }
+        """.data(using: .utf8)!
+        let transport = HandlerAnimeHTTPTransport { request in
+            switch request.url.absoluteString {
+            case subscriptionURL.absoluteString:
+                subscription
+            case let url where url.contains("https://web.example/search?"):
+                searchHTML
+            case "https://web.example/show/oshi-anime":
+                animeDetail
+            case "https://web.example/show/oshi-drama":
+                dramaDetail
+            case BangumiAPI.baseURL.appending(path: "/v0/search/subjects").appending(queryItems: [URLQueryItem(name: "limit", value: "30")]).absoluteString:
+                bangumiResponse
+            default:
+                throw AnimeHTTPError.missingRoute(request.url.absoluteString)
+            }
+        }
+        let healthURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("TVShellChecks-CSS1Oshi-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: healthURL) }
+        let provider = AniSubsCSS1SubscriptionProvider(
+            subscriptionURL: subscriptionURL,
+            transport: transport,
+            healthStore: AniSubsCSS1SourceHealthStore(fileURL: healthURL)
+        )
+
+        let results = try await provider.search(AnimeSearchQuery(keyword: "我推的孩子"))
+        try expect(results.count == 1, "css1 collapses same-title search pages into one anime result")
+        try expect(results.first?.title == "我推的孩子", "css1 keeps the matched Bangumi anime title")
+        try expect(results.first?.episodes.count == 2, "css1 keeps the episode set whose count matches Bangumi instead of combining drama episodes")
+        try expect(results.first?.episodes.allSatisfy { $0.identity.playbackURL?.path.contains("/oshi-anime-") == true } == true, "css1 keeps anime playback links instead of same-title drama links")
     }
 
     static func checkTorrentPlaybackEngine() throws {

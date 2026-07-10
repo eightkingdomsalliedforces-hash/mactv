@@ -118,6 +118,11 @@ private func betterSearchResult(_ left: AnimeSearchResult, _ right: AnimeSearchR
     if (right.coverURL != nil) != (left.coverURL != nil) {
         return right.coverURL != nil ? right : left
     }
+    let leftDistance = episodeCountDistance(for: left)
+    let rightDistance = episodeCountDistance(for: right)
+    if leftDistance != rightDistance {
+        return rightDistance < leftDistance ? right : left
+    }
     let leftEpisodes = left.episodeCount ?? left.episodes.count
     let rightEpisodes = right.episodeCount ?? right.episodes.count
     if leftEpisodes != rightEpisodes {
@@ -127,6 +132,13 @@ private func betterSearchResult(_ left: AnimeSearchResult, _ right: AnimeSearchR
         return (right.score ?? 0) > (left.score ?? 0) ? right : left
     }
     return left
+}
+
+private func episodeCountDistance(for result: AnimeSearchResult) -> Int {
+    guard let expected = result.episodeCount, expected > 0 else {
+        return 0
+    }
+    return abs(result.episodes.count - expected)
 }
 
 private func normalizedAnimeTitle(_ title: String) -> String {

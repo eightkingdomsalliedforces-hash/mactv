@@ -70,8 +70,10 @@ public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
             try? healthStore.recordSuccess(sourceName: source.name)
         }
 
-        let merged = Array(mergeCSS1Results(allResults).prefix(60))
-        return await enrichWithBangumi(merged)
+        // Enrich before deduplicating so same-title live-action pages cannot
+        // win merely because they expose more episodes than the animation.
+        let enriched = await enrichWithBangumi(allResults)
+        return Array(mergeCSS1Results(enriched).prefix(60))
     }
 
     public func episodes(for result: AnimeSearchResult) async throws -> [AnimeEpisode] {
@@ -179,8 +181,15 @@ public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
             guard titleKey.isEmpty == false else {
                 return false
             }
-            return titleKey.contains(keywordKey) || keywordKey.contains(titleKey)
+            return (titleKey.contains(keywordKey) || keywordKey.contains(titleKey))
+                && isLiveActionTitle(subject.title) == false
         }
+    }
+
+    private func isLiveActionTitle(_ title: String) -> Bool {
+        let lowercased = title.lowercased()
+        return ["真人", "日劇", "韩剧", "韓劇", "偶像劇", "电视剧", "電視劇", "ドラマ", "live action", "drama"]
+            .contains { lowercased.contains($0.lowercased()) }
     }
 
     private func normalizedSearchKey(_ value: String) -> String {
@@ -994,18 +1003,33 @@ private func mergeCSS1Results(_ results: [AnimeSearchResult]) -> [AnimeSearchRes
         let key = result.title
             .folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: .current)
             .replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
-        if var existing = byTitle[key] {
-            let episodes = (existing.episodes + result.episodes).sorted { $0.number < $1.number }
-            var seen = Set<String>()
-            existing.episodes = episodes.filter { seen.insert($0.identity.episodeID).inserted }
-            existing.episodeCount = existing.episodes.count
-            byTitle[key] = existing
+        if let existing = byTitle[key] {
+            byTitle[key] = preferredCSS1Result(existing, result)
         } else {
             byTitle[key] = result
             order.append(key)
         }
     }
     return order.compactMap { byTitle[$0] }
+}
+
+private func preferredCSS1Result(_ left: AnimeSearchResult, _ right: AnimeSearchResult) -> AnimeSearchResult {
+    let leftDistance = episodeCountDistance(for: left)
+    let rightDistance = episodeCountDistance(for: right)
+    if leftDistance != rightDistance {
+        return leftDistance < rightDistance ? left : right
+    }
+    if (left.coverURL != nil) != (right.coverURL != nil) {
+        return left.coverURL != nil ? left : right
+    }
+    return left
+}
+
+private func episodeCountDistance(for result: AnimeSearchResult) -> Int {
+    guard let expected = result.episodeCount, expected > 0 else {
+        return 0
+    }
+    return abs(result.episodes.count - expected)
 }
 
 private extension String {
