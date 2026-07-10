@@ -277,4 +277,3 @@ git commit -m "docs: explain deferred anime source loading"
 ```
 
 Only run this commit when `README.md` changed.
-
