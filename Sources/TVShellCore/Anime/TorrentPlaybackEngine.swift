@@ -17,6 +17,81 @@ public enum TorrentPlaybackError: LocalizedError, Equatable {
     }
 }
 
+public struct TorrentTaskStatus: Equatable, Sendable {
+    public var peerCount: Int
+    public var trackerURL: String?
+    public var completedPieces: Int
+    public var totalPieces: Int
+    public var downloadSpeedBytesPerSecond: UInt64
+    public var etaSeconds: Int?
+    public var errorMessage: String?
+
+    public init(
+        peerCount: Int,
+        trackerURL: String? = nil,
+        completedPieces: Int,
+        totalPieces: Int,
+        downloadSpeedBytesPerSecond: UInt64,
+        etaSeconds: Int? = nil,
+        errorMessage: String? = nil
+    ) {
+        self.peerCount = max(peerCount, 0)
+        self.trackerURL = trackerURL
+        self.completedPieces = max(completedPieces, 0)
+        self.totalPieces = max(totalPieces, 0)
+        self.downloadSpeedBytesPerSecond = downloadSpeedBytesPerSecond
+        self.etaSeconds = etaSeconds
+        self.errorMessage = errorMessage
+    }
+}
+
+public enum Aria2RPCStatusDecoder {
+    public static func decode(_ data: Data) throws -> TorrentTaskStatus {
+        let response = try JSONDecoder().decode(Aria2RPCStatusResponse.self, from: data)
+        let status = response.result
+        let totalLength = UInt64(status.totalLength) ?? 0
+        let completedLength = UInt64(status.completedLength) ?? 0
+        let speed = UInt64(status.downloadSpeed) ?? 0
+        let bitfield = status.bitfield ?? ""
+        let totalPieces = bitfield.count * 4
+        let completedPieces = bitfield.reduce(into: 0) { count, character in
+            count += character.hexDigitValue?.nonzeroBitCount ?? 0
+        }
+        let remaining = totalLength > completedLength ? totalLength - completedLength : 0
+        let eta = speed > 0 && remaining > 0 ? Int(remaining / speed) : nil
+        let tracker = status.bittorrent?.announceList?.joined().first
+        let error = status.errorMessage?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return TorrentTaskStatus(
+            peerCount: Int(status.connections) ?? Int(status.numSeeders ?? "") ?? 0,
+            trackerURL: tracker,
+            completedPieces: completedPieces,
+            totalPieces: totalPieces,
+            downloadSpeedBytesPerSecond: speed,
+            etaSeconds: eta,
+            errorMessage: error?.isEmpty == false ? error : nil
+        )
+    }
+}
+
+private struct Aria2RPCStatusResponse: Decodable {
+    var result: Aria2RPCStatusResult
+}
+
+private struct Aria2RPCStatusResult: Decodable {
+    var connections: String
+    var numSeeders: String?
+    var bitfield: String?
+    var totalLength: String
+    var completedLength: String
+    var downloadSpeed: String
+    var errorMessage: String?
+    var bittorrent: Aria2RPCBitTorrent?
+}
+
+private struct Aria2RPCBitTorrent: Decodable {
+    var announceList: [[String]]?
+}
+
 public struct TorrentDownloadProgress: Equatable, Sendable {
     public var downloadedBytes: UInt64
     public var selectedFileBytes: UInt64?

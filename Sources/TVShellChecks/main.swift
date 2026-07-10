@@ -2159,6 +2159,15 @@ struct TVShellChecks {
     }
 
     static func checkTorrentPlaybackEngine() throws {
+        let telemetryJSON = """
+        {"jsonrpc":"2.0","result":{"connections":"12","numSeeders":"3","bitfield":"ff00","totalLength":"104857600","completedLength":"83886080","downloadSpeed":"1048576","errorMessage":"","bittorrent":{"announceList":[["https://tracker.example/announce"]]}}}
+        """.data(using: .utf8)!
+        let telemetry = try Aria2RPCStatusDecoder.decode(telemetryJSON)
+        try expect(telemetry.peerCount == 12, "torrent telemetry reads aria2 peer count")
+        try expect(telemetry.completedPieces == 8 && telemetry.totalPieces == 16, "torrent telemetry reads aria2 piece bitmap")
+        try expect(telemetry.downloadSpeedBytesPerSecond == 1_048_576 && telemetry.etaSeconds == 20, "torrent telemetry calculates transfer speed and ETA")
+        try expect(telemetry.trackerURL == "https://tracker.example/announce", "torrent telemetry reads aria2 tracker")
+
         let stream = AnimeStreamCandidate(
             url: URL(string: "magnet:?xt=urn:btih:ABCDEF1234567890&dn=Frieren")!,
             quality: "BT 1080p",
