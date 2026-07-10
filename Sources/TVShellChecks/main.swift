@@ -1631,6 +1631,30 @@ struct TVShellChecks {
         }
         try expect(timeoutEpisodes.map(\.number) == [1], "healthy source remains available when CSS1 times out")
         try expect(Date().timeIntervalSince(started) < 0.2, "timed-out CSS1 source does not block the episode screen")
+
+        let slowCSSEpisode = AnimeEpisode(
+            id: "slow-css-episode-1",
+            title: "測試動畫 第 1 話",
+            number: 1,
+            identity: AnimeEpisodeIdentity(providerID: "ani-subs-css1", subjectID: "測試動畫", episodeID: "slow-css-1")
+        )
+        let slowCSS = DelayedAnimeSourceProvider(
+            id: "ani-subs-css1",
+            displayName: "ani-subs CSS1",
+            resolverKind: .http,
+            delayNanoseconds: 20_000_000,
+            results: [AnimeSearchResult(id: "slow-css-title", title: "測試動畫", episodes: [slowCSSEpisode])]
+        )
+        let cssTimeoutCatalog = AnimeSourceCatalogState(definitions: [
+            AnimeSourceDefinition(id: "ani-subs-css1", title: "ani-subs CSS1", iconLabel: "CSS", lines: [])
+        ])
+        let cssTimeoutResolver = CatalogAnimeSourceProvider(
+            catalog: cssTimeoutCatalog,
+            registry: AnimeSourceRegistry(adapters: [slowCSS]),
+            sourceResolutionTimeoutNanoseconds: 5_000_000
+        )
+        let cssTimeoutEpisodes = try await cssTimeoutResolver.episodes(for: metadataTitle)
+        try expect(cssTimeoutEpisodes.map(\.number) == [1], "CSS1 selection keeps resolving beyond the general source deadline")
     }
 
     static func checkBuiltInAnimekoStyleSources() async throws {

@@ -32,15 +32,18 @@ public struct CatalogAnimeSourceProvider: AnimeSourceProvider {
     private let registry: AnimeSourceRegistry
     private let playableAdapters: [(instance: AnimeSourceInstance, adapter: any AnimeMediaSourceAdapter)]
     private let sourceResolutionTimeoutNanoseconds: UInt64
+    private let css1ResolutionTimeoutNanoseconds: UInt64
     private let episodeCache = CatalogEpisodeCache()
 
     public init(
         catalog: AnimeSourceCatalogState,
         registry: AnimeSourceRegistry,
-        sourceResolutionTimeoutNanoseconds: UInt64 = 8_000_000_000
+        sourceResolutionTimeoutNanoseconds: UInt64 = 8_000_000_000,
+        css1ResolutionTimeoutNanoseconds: UInt64 = 45_000_000_000
     ) {
         self.registry = registry
         self.sourceResolutionTimeoutNanoseconds = max(sourceResolutionTimeoutNanoseconds, 1_000_000)
+        self.css1ResolutionTimeoutNanoseconds = max(css1ResolutionTimeoutNanoseconds, sourceResolutionTimeoutNanoseconds)
         playableAdapters = catalog.enabledInstances.compactMap { instance in
             guard instance.definition.health.canAttemptPlayback,
                   let adapter = registry.adapter(for: instance.id)
@@ -96,7 +99,11 @@ public struct CatalogAnimeSourceProvider: AnimeSourceProvider {
         let resolved = await withTaskGroup(of: [CatalogEpisodeEntry].self) { group in
             for entry in playableAdapters {
                 group.addTask {
-                    await resolveEpisodes(for: entry, matching: result, timeoutNanoseconds: sourceResolutionTimeoutNanoseconds)
+                    await resolveEpisodes(
+                        for: entry,
+                        matching: result,
+                        timeoutNanoseconds: resolutionTimeout(for: entry.adapter)
+                    )
                 }
             }
 
@@ -149,6 +156,10 @@ public struct CatalogAnimeSourceProvider: AnimeSourceProvider {
             throw AnimeSourceCatalogError.missingAdapter(episode.identity.providerID)
         }
         return try await adapter.streams(for: episode)
+    }
+
+    private func resolutionTimeout(for adapter: any AnimeMediaSourceAdapter) -> UInt64 {
+        adapter.id == "ani-subs-css1" ? css1ResolutionTimeoutNanoseconds : sourceResolutionTimeoutNanoseconds
     }
 }
 
