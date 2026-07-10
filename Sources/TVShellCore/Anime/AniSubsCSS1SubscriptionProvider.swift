@@ -93,47 +93,59 @@ public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
     }
 
     public func streams(for episode: AnimeEpisode) async throws -> [AnimeStreamCandidate] {
-        guard let watchURL = episode.identity.playbackURL else {
+        let lines = episode.playbackLines ?? episode.identity.playbackURL.map {
+            [AnimeEpisodePlaybackLine(id: episode.id, title: "播放線 1", sourceName: css1SourceName(for: episode), playbackURL: $0)]
+        } ?? []
+        guard lines.isEmpty == false else {
             throw AnimeHTTPError.missingRoute("ani-subs css1 playback url: \(episode.identity.episodeID)")
         }
         let source = try await source(named: css1SourceName(for: episode))
-        let watchHTML = try await html(for: watchURL, source: source)
+        var candidates: [AnimeStreamCandidate] = []
+        for (index, line) in lines.enumerated() {
+            do {
+            let watchHTML = try await html(for: line.playbackURL, source: source)
         let playbackHTML: String
         let playbackBaseURL: URL
         if source.enableNestedURL,
            let nestedURL = CSS1HTMLSelectorEngine.firstNestedURL(
                 in: watchHTML,
                 pattern: source.nestedURLPattern,
-                baseURL: watchURL
+                baseURL: line.playbackURL
            ) {
             playbackHTML = try await html(for: nestedURL, source: source)
             playbackBaseURL = nestedURL
         } else {
             playbackHTML = watchHTML
-            playbackBaseURL = watchURL
+            playbackBaseURL = line.playbackURL
         }
         guard let streamURL = CSS1HTMLSelectorEngine.firstVideoURL(
             in: playbackHTML,
             pattern: source.videoPattern,
             baseURL: playbackBaseURL
         ) else {
-            throw AnimeHTTPError.missingRoute("ani-subs css1 video url: \(watchURL.absoluteString)")
+            throw AnimeHTTPError.missingRoute("ani-subs css1 video url: \(line.playbackURL.absoluteString)")
         }
 
-        return [
-            AnimeStreamCandidate(
+            candidates.append(AnimeStreamCandidate(
                 url: streamURL,
                 quality: "CSS1",
-                priority: 64,
+                priority: 64 - index,
                 headers: [
                     "resolver": "web-selector",
                     "source": source.name,
-                    "title": episode.identity.subjectID,
+                    "title": "\(episode.identity.subjectID) · \(line.title)",
                     "episode": episode.title,
                     "User-Agent": source.userAgent
                 ].merging(source.videoHeaders, uniquingKeysWith: { _, new in new })
-            )
-        ]
+            ))
+            } catch {
+                continue
+            }
+        }
+        guard candidates.isEmpty == false else {
+            throw AnimeHTTPError.missingRoute("ani-subs css1 video url: \(episode.identity.episodeID)")
+        }
+        return candidates
     }
 
     private func source(named name: String) async throws -> AniSubsCSS1Source {
