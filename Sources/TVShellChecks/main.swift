@@ -84,6 +84,8 @@ private final class DelayedAnimeHTTPTransport: AnimeHTTPTransport, @unchecked Se
 @main
 struct TVShellChecks {
     static func main() async throws {
+        let transport = URLSessionAnimeHTTPTransport()
+        try expect(transport.requestTimeout == 8, "anime requests use an eight-second timeout")
         try checkKeyCodeMapper()
         try checkVirtualKeyboardState()
         try checkRemoteMappingStore()

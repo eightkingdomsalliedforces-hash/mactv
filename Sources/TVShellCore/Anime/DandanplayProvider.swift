@@ -5,17 +5,30 @@ public protocol AnimeHTTPTransport: Sendable {
 }
 
 public struct URLSessionAnimeHTTPTransport: AnimeHTTPTransport {
-    public init() {}
+    public let requestTimeout: TimeInterval
+
+    public init(requestTimeout: TimeInterval = 8) {
+        self.requestTimeout = max(1, requestTimeout)
+    }
 
     public func data(for request: AnimeHTTPRequest) async throws -> Data {
         var urlRequest = URLRequest(url: request.url)
         urlRequest.httpMethod = request.method
         urlRequest.httpBody = request.body
+        urlRequest.timeoutInterval = requestTimeout
         for (key, value) in request.headers {
             urlRequest.setValue(value, forHTTPHeaderField: key)
         }
 
-        let (data, response) = try await URLSession.shared.data(for: urlRequest)
+        let data: Data
+        let response: URLResponse
+        do {
+            try Task.checkCancellation()
+            (data, response) = try await URLSession.shared.data(for: urlRequest)
+            try Task.checkCancellation()
+        } catch let error as URLError where error.code == .timedOut {
+            throw AnimeHTTPError.timedOut(request.url.absoluteString)
+        }
         if let response = response as? HTTPURLResponse,
            (200..<300).contains(response.statusCode) == false {
             throw AnimeHTTPError.badStatus(response.statusCode)
@@ -45,6 +58,7 @@ public enum AnimeHTTPError: Error, Equatable, Sendable {
     case badStatus(Int)
     case missingRoute(String)
     case missingCredentials
+    case timedOut(String)
 }
 
 public struct DandanplayCredentials: Codable, Equatable, Sendable {
