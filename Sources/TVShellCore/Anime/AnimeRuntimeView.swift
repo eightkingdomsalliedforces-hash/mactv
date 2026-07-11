@@ -19,19 +19,31 @@ public struct AnimeRuntimeView: View {
             ZStack {
                 TVOS18Backdrop()
 
-                switch controller.state.phase {
-                case .titles:
-                    titleBrowser(metrics: metrics)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
-                case .details:
-                    detailBrowser(metrics: metrics)
-                        .transition(.opacity.combined(with: .move(edge: .trailing)))
-                case .episodes:
-                    episodeBrowser(metrics: metrics, size: proxy.size)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
-                case .playing:
-                    player(metrics: metrics)
-                        .transition(.opacity.combined(with: .scale(scale: 1.02)))
+                if let url = controller.officialAniGamerURL {
+                    AniGamerOfficialPlayerView(url: url) {
+                        controller.closeOfficialPlayer()
+                    }
+                    .ignoresSafeArea()
+                } else if let videoID = controller.officialYouTubeVideoID {
+                    YouTubePlayerView(videoID: videoID, startSeconds: 0, restartOnSelect: false) { _, _ in }
+                        .ignoresSafeArea()
+                } else if controller.isOfficialSourcesVisible {
+                    officialSourcesBrowser(metrics: metrics)
+                } else {
+                    switch controller.state.phase {
+                    case .titles:
+                        titleBrowser(metrics: metrics)
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    case .details:
+                        detailBrowser(metrics: metrics)
+                            .transition(.opacity.combined(with: .move(edge: .trailing)))
+                    case .episodes:
+                        episodeBrowser(metrics: metrics, size: proxy.size)
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    case .playing:
+                        player(metrics: metrics)
+                            .transition(.opacity.combined(with: .scale(scale: 1.02)))
+                    }
                 }
 
                 if controller.isKeyboardVisible {
@@ -73,6 +85,7 @@ public struct AnimeRuntimeView: View {
             }
         }
         .task {
+            controller.updateOfficialYouTubeCredentials(appState.youtubeCredentials)
             controller.updateWatchHistory(appState.watchingHistory)
             controller.updatePreferredStreams(appState.preferredAnimeStreams)
             await controller.load(
@@ -93,6 +106,7 @@ public struct AnimeRuntimeView: View {
             controller.updatePreferredStreams(preferences)
         }
         .onChange(of: appState.youtubeCredentials) { _, _ in
+            controller.updateOfficialYouTubeCredentials(appState.youtubeCredentials)
             reloadConfiguredSources()
         }
         .onChange(of: appState.dandanplayCredentials) { _, _ in
@@ -230,7 +244,7 @@ public struct AnimeRuntimeView: View {
                         }
                     }
 
-                    Text("方向鍵選作品，OK 進入詳情，Menu 搜尋動漫，Home 回主畫面。")
+                    Text("方向鍵選作品，OK 進入詳情，Menu 搜尋動漫，播放/暫停鍵開啟正版來源，Home 回主畫面。")
                         .font(.system(size: 25 * metrics.scale, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.62))
                 }
@@ -251,6 +265,69 @@ public struct AnimeRuntimeView: View {
                 }
             }
         }
+    }
+
+    private func officialSourcesBrowser(metrics: TVMetrics) -> some View {
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 30 * metrics.scale) {
+                TVOSMediaTopNavigation(
+                    items: AnimeOfficialSource.allCases.map { .init(id: $0.rawValue, title: $0.title) },
+                    focusedID: controller.officialSourcesState.selectedSource.rawValue,
+                    metrics: metrics
+                )
+                .opacity(controller.isOfficialSourceNavigationFocused ? 1 : 0.78)
+                .scaleEffect(controller.isOfficialSourceNavigationFocused ? 1.035 : 1)
+                .frame(maxWidth: .infinity, alignment: .center)
+
+                HStack(alignment: .firstTextBaseline) {
+                    Text(controller.officialSourcesState.selectedSource.title)
+                        .font(.system(size: 46 * metrics.scale, weight: .bold))
+                    Spacer()
+                    Text(controller.officialStatusText)
+                        .font(.system(size: 20 * metrics.scale, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.58))
+                        .lineLimit(1)
+                }
+
+                if controller.officialSourcesState.selectedSource == .aniGamer {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 190 * metrics.scale), spacing: 22 * metrics.scale)], spacing: 26 * metrics.scale) {
+                        ForEach(Array(controller.aniGamerItems.enumerated()), id: \.element.id) { index, item in
+                            AniGamerOfficialCard(item: item, isFocused: index == controller.officialFocusedIndex, metrics: metrics)
+                        }
+                    }
+                } else {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 390 * metrics.scale), spacing: 24 * metrics.scale)], spacing: 30 * metrics.scale) {
+                        ForEach(Array(controller.officialYouTubeVideos.enumerated()), id: \.element.id) { index, video in
+                            TVOSMediaVideoCard(
+                                title: video.title,
+                                subtitle: video.channelTitle,
+                                metadata: "YouTube 官方頻道",
+                                imageURL: video.thumbnailURL,
+                                isFocused: index == controller.officialFocusedIndex,
+                                metrics: metrics
+                            )
+                        }
+                    }
+                }
+
+                if controller.officialResultCount == 0 {
+                    TVOSMediaEmptyState(
+                        title: "沒有結果",
+                        message: controller.officialStatusText,
+                        isLoading: controller.officialStatusText.contains("載入") || controller.officialStatusText.contains("搜尋"),
+                        metrics: metrics
+                    )
+                }
+
+                Text("頂部分頁左右切換動畫瘋與官方 YouTube，按下進入結果；Menu 搜尋，Back 回動畫首頁。動畫瘋播放保留官方廣告、登入與地區限制。")
+                    .font(.system(size: 21 * metrics.scale, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.56))
+            }
+            .padding(.horizontal, metrics.horizontalPadding)
+            .padding(.top, metrics.topPadding)
+            .padding(.bottom, 60 * metrics.scale)
+        }
+        .scrollIndicators(.hidden)
     }
 
     private func episodeBrowser(metrics: TVMetrics, size: CGSize) -> some View {
@@ -478,8 +555,18 @@ final class AnimeRuntimeController: ObservableObject {
     @Published private(set) var torrentDownloads: [TorrentCachedDownload] = []
     @Published private(set) var focusedTorrentDownloadIndex = 0
     @Published private(set) var keyboardState = VirtualKeyboardState(text: "", layout: .zhuyin)
+    @Published private(set) var officialSourcesState = AnimeOfficialSourcesState()
+    @Published private(set) var isOfficialSourcesVisible = false
+    @Published private(set) var isOfficialSourceNavigationFocused = true
+    @Published private(set) var aniGamerItems: [AniGamerCatalogItem] = []
+    @Published private(set) var officialYouTubeVideos: [YouTubeVideo] = []
+    @Published private(set) var officialStatusText = "選擇正版來源"
+    @Published private(set) var officialAniGamerURL: URL?
+    @Published private(set) var officialYouTubeVideoID: String?
 
     private var sourceProvider: (any AnimeSourceProvider)?
+    private var officialYouTubeProvider: any YouTubeVideoProvider = YouTubeProviderFactory.defaultProvider()
+    private let officialHTTPTransport: any AnimeHTTPTransport = URLSessionAnimeHTTPTransport()
     private var danmakuProvider: any DanmakuProvider
     private var comments: [DanmakuComment] = []
     private var titleColumns = 6
@@ -553,6 +640,27 @@ final class AnimeRuntimeController: ObservableObject {
 
     var pendingStreamEpisodeTitle: String {
         pendingStreamEpisode?.title ?? "選擇播放來源"
+    }
+
+    var officialFocusedIndex: Int {
+        officialSourcesState.session(for: officialSourcesState.selectedSource).focusedIndex
+    }
+
+    var officialResultCount: Int {
+        switch officialSourcesState.selectedSource {
+        case .aniGamer: aniGamerItems.count
+        case .officialYouTube: officialYouTubeVideos.count
+        }
+    }
+
+    func updateOfficialYouTubeCredentials(_ credentials: YouTubeCredentials) {
+        officialYouTubeProvider = YouTubeProviderFactory.defaultProvider(credentials: credentials)
+    }
+
+    func closeOfficialPlayer() {
+        officialAniGamerURL = nil
+        officialYouTubeVideoID = nil
+        setStatusClockHidden(false)
     }
 
     func load(
@@ -652,6 +760,17 @@ final class AnimeRuntimeController: ObservableObject {
     }
 
     private func handle(_ command: RemoteCommand) {
+        if officialYouTubeVideoID != nil, command == .back {
+            closeOfficialPlayer()
+            return
+        }
+        if officialAniGamerURL != nil || officialYouTubeVideoID != nil {
+            if command == .home {
+                closeOfficialPlayer()
+            }
+            return
+        }
+
         if isKeyboardVisible {
             handleKeyboard(command)
             return
@@ -664,6 +783,19 @@ final class AnimeRuntimeController: ObservableObject {
 
         if isDownloadManagerVisible {
             handleDownloadManager(command)
+            return
+        }
+
+        if isOfficialSourcesVisible {
+            handleOfficialSources(command)
+            return
+        }
+
+        if state.phase == .titles, command == .playPause {
+            isOfficialSourcesVisible = true
+            isOfficialSourceNavigationFocused = true
+            officialStatusText = "正在載入動畫瘋..."
+            Task { await loadOfficialSource() }
             return
         }
 
@@ -741,6 +873,12 @@ final class AnimeRuntimeController: ObservableObject {
             break
         case let .submitted(query):
             isKeyboardVisible = false
+            if isOfficialSourcesVisible {
+                officialSourcesState.updateQuery(query, for: officialSourcesState.selectedSource)
+                officialStatusText = "正在搜尋：\(query)..."
+                Task { await loadOfficialSource() }
+                return
+            }
             currentQuery = query
             titles = []
             episodes = []
@@ -751,6 +889,104 @@ final class AnimeRuntimeController: ObservableObject {
         case .cancelled:
             isKeyboardVisible = false
             statusText = "已關閉搜尋"
+        }
+    }
+
+    private func handleOfficialSources(_ command: RemoteCommand) {
+        if command == .back || command == .home {
+            isOfficialSourcesVisible = false
+            officialStatusText = "已回到動畫首頁"
+            return
+        }
+        if command == .menu {
+            let session = officialSourcesState.session(for: officialSourcesState.selectedSource)
+            keyboardState = VirtualKeyboardState(text: session.query, layout: .zhuyin)
+            isKeyboardVisible = true
+            return
+        }
+        if isOfficialSourceNavigationFocused {
+            switch command {
+            case .left:
+                officialSourcesState.selectedSource = .aniGamer
+                Task { await loadOfficialSourceIfNeeded() }
+            case .right:
+                officialSourcesState.selectedSource = .officialYouTube
+                Task { await loadOfficialSourceIfNeeded() }
+            case .down, .select:
+                isOfficialSourceNavigationFocused = false
+            default:
+                break
+            }
+            return
+        }
+
+        let columns = officialSourcesState.selectedSource == .aniGamer ? 6 : 4
+        var index = officialFocusedIndex
+        switch command {
+        case .left: index = max(0, index - 1)
+        case .right: index = min(max(officialResultCount - 1, 0), index + 1)
+        case .up:
+            if index < columns {
+                isOfficialSourceNavigationFocused = true
+                return
+            }
+            index = max(0, index - columns)
+        case .down: index = min(max(officialResultCount - 1, 0), index + columns)
+        case .select:
+            openFocusedOfficialResult()
+            return
+        default:
+            return
+        }
+        officialSourcesState.updateFocus(index, for: officialSourcesState.selectedSource)
+    }
+
+    private func loadOfficialSourceIfNeeded() async {
+        if officialResultCount == 0 {
+            await loadOfficialSource()
+        }
+    }
+
+    private func loadOfficialSource() async {
+        let source = officialSourcesState.selectedSource
+        let query = officialSourcesState.session(for: source).query.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            switch source {
+            case .aniGamer:
+                let keyword = query.isEmpty ? "咒術迴戰" : query
+                let data = try await officialHTTPTransport.data(for: AniGamerCatalog.searchRequest(keyword: keyword))
+                aniGamerItems = AniGamerCatalog.decodeSearchHTML(data)
+                officialStatusText = aniGamerItems.isEmpty ? "動畫瘋搜尋不到：\(keyword)" : "動畫瘋 · 找到 \(aniGamerItems.count) 部"
+            case .officialYouTube:
+                let keyword = query.isEmpty ? "動畫" : query
+                async let muse = officialYouTubeProvider.search(query: "Muse木棉花 \(keyword)")
+                async let aniOne = officialYouTubeProvider.search(query: "Ani-One \(keyword)")
+                let combined = try await muse + aniOne
+                var seen = Set<String>()
+                officialYouTubeVideos = combined.filter { seen.insert($0.id).inserted }
+                officialStatusText = officialYouTubeVideos.isEmpty ? "官方 YouTube 搜尋不到：\(keyword)；請檢查 YouTube API Key。" : "官方 YouTube · 找到 \(officialYouTubeVideos.count) 部"
+            }
+            officialSourcesState.updateFocus(0, for: source)
+        } catch {
+            officialStatusText = "\(source.title) 載入失敗：\(error.localizedDescription)"
+        }
+    }
+
+    private func openFocusedOfficialResult() {
+        let index = officialFocusedIndex
+        switch officialSourcesState.selectedSource {
+        case .aniGamer:
+            guard aniGamerItems.indices.contains(index) else { return }
+            let item = aniGamerItems[index]
+            officialSourcesState.recordHistory(item.id, for: .aniGamer)
+            officialAniGamerURL = item.officialURL
+            setStatusClockHidden(true)
+        case .officialYouTube:
+            guard officialYouTubeVideos.indices.contains(index) else { return }
+            let video = officialYouTubeVideos[index]
+            officialSourcesState.recordHistory(video.id, for: .officialYouTube)
+            officialYouTubeVideoID = video.id
+            setStatusClockHidden(true)
         }
     }
 
@@ -1432,6 +1668,40 @@ private struct AnimeStreamPickerView: View {
             .padding(38 * metrics.scale)
             .tvOS18Surface(role: .panel, cornerRadius: 20 * metrics.scale)
         }
+    }
+}
+
+private struct AniGamerOfficialCard: View {
+    let item: AniGamerCatalogItem
+    let isFocused: Bool
+    let metrics: TVMetrics
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10 * metrics.scale) {
+            AsyncImage(url: item.coverURL) { phase in
+                if case let .success(image) = phase {
+                    image.resizable().scaledToFill()
+                } else {
+                    ZStack {
+                        Color.white.opacity(0.07)
+                        Text(String(item.title.prefix(1)))
+                            .font(.system(size: 52 * metrics.scale, weight: .heavy))
+                    }
+                }
+            }
+            .frame(width: 180 * metrics.scale, height: 254 * metrics.scale)
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: 13 * metrics.scale, style: .continuous))
+            .tvOS18ContentFocus(isFocused: isFocused)
+            Text(item.title)
+                .font(.system(size: 20 * metrics.scale, weight: .bold))
+                .lineLimit(2)
+            Text(item.subtitle ?? "動畫瘋官方")
+                .font(.system(size: 16 * metrics.scale, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.52))
+                .lineLimit(1)
+        }
+        .frame(width: 180 * metrics.scale, alignment: .leading)
     }
 }
 

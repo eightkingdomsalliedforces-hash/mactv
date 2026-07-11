@@ -168,6 +168,7 @@ struct TVShellChecks {
         try await checkDandanplaySearchEpisodesFallback()
         try checkYouTubeNativeRuntimeAndAPI()
         try await checkBilibiliBangumiRuntimeAndAPI()
+        try checkOfficialAnimeSourceStateAndAniGamerCatalog()
         try checkYouTubeEmbedPageIncludesOriginAndFallback()
         try checkYouTubeLayoutAndPlayerShell()
         try await checkBangumiYouTubeAnimeSourceFindsPlayableCandidates()
@@ -1588,6 +1589,47 @@ struct TVShellChecks {
         try expect(runtimeSource.contains("toggleContentMode"), "bilibili runtime can switch between bangumi and general video")
         try expect(runtimeSource.contains("DanmakuOverlay("), "bilibili runtime renders danmaku overlay")
         try expect(runtimeSource.contains("provider.danmaku"), "bilibili runtime loads bilibili danmaku")
+    }
+
+    static func checkOfficialAnimeSourceStateAndAniGamerCatalog() throws {
+        var state = AnimeOfficialSourcesState()
+        state.updateQuery("咒術", for: .aniGamer)
+        state.updateFocus(3, for: .aniGamer)
+        try expect(state.session(for: .aniGamer).query == "咒術", "aniGamer keeps its own search query")
+        try expect(state.session(for: .officialYouTube).query.isEmpty, "official YouTube search state stays independent from aniGamer")
+        try expect(state.session(for: .officialYouTube).focusedIndex == 0, "official YouTube focus stays independent from aniGamer")
+
+        let request = AniGamerCatalog.searchRequest(keyword: "咒術 回戰")
+        try expect(request.method == "POST", "aniGamer search uses the official POST form")
+        try expect(request.url.absoluteString == "https://ani.gamer.com.tw/search.php", "aniGamer search stays on the official host")
+        try expect(String(data: request.body ?? Data(), encoding: .utf8) == "keyword=%E5%92%92%E8%A1%93%20%E5%9B%9E%E6%88%B0", "aniGamer search form percent-encodes the query")
+
+        let html = """
+        <a href='animeRef.php?sn=112457' class='theme-list-main'>
+          <img class='theme-img lazyload' data-src='https://p2.bahamut.com.tw/jujutsu.jpg' alt='咒術迴戰'>
+          <p class='theme-name'>咒術迴戰</p>
+          <p class='theme-time'>年份：2020/10</p><span class='theme-number'>共24集</span>
+        </a>
+        """
+        let results = AniGamerCatalog.decodeSearchHTML(Data(html.utf8))
+        try expect(results.first?.id == "112457", "aniGamer catalog reads the official reference id")
+        try expect(results.first?.title == "咒術迴戰", "aniGamer catalog reads the official title")
+        try expect(results.first?.coverURL?.absoluteString == "https://p2.bahamut.com.tw/jujutsu.jpg", "aniGamer catalog reads the official cover")
+        try expect(results.first?.officialURL.absoluteString == "https://ani.gamer.com.tw/animeRef.php?sn=112457", "aniGamer catalog opens only the official work page")
+
+        let playerPath = "Sources/TVShellCore/Anime/AniGamerOfficialPlayerView.swift"
+        try expect(FileManager.default.fileExists(atPath: playerPath), "aniGamer official player has a dedicated WebKit container")
+        let playerSource = try String(contentsOfFile: playerPath)
+        try expect(playerSource.contains("WKWebsiteDataStore.default()"), "aniGamer official player preserves login and official session data")
+        try expect(playerSource.contains("NSEvent.keyEvent"), "aniGamer remote bridge sends standard keyboard events")
+        try expect(playerSource.contains("currentTime") == false, "aniGamer remote bridge never changes official playback time directly")
+        try expect(playerSource.lowercased().contains("m3u8") == false, "aniGamer official player never extracts stream URLs")
+        try expect(playerSource.lowercased().contains("skipad") == false, "aniGamer official player never attempts to skip ads")
+        let animeRuntime = try String(contentsOfFile: "Sources/TVShellCore/Anime/AnimeRuntimeView.swift")
+        try expect(animeRuntime.contains("officialSourcesBrowser("), "anime app exposes a dedicated official sources page")
+        try expect(animeRuntime.contains("AniGamerOfficialPlayerView("), "anime app opens aniGamer results in the official player container")
+        try expect(animeRuntime.contains("officialYouTubeVideos"), "anime app keeps official YouTube results separate from aniGamer results")
+        try expect(animeRuntime.contains("officialYouTubeVideoID != nil, command == .back"), "Back exits official YouTube playback to its independent result page")
     }
 
     static func checkYouTubeEmbedPageIncludesOriginAndFallback() throws {
