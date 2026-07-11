@@ -423,12 +423,13 @@ public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
             in: detailHTML,
             baseURL: detailURL
         )
-        let anchors = (narrowedAnchors.isEmpty ? fullAnchors : narrowedAnchors)
+        let isWithinEpisodeList = narrowedAnchors.isEmpty == false
+        let anchors = (isWithinEpisodeList ? narrowedAnchors : fullAnchors)
             .filter { anchor in
                 CSS1HTMLSelectorEngine.isEpisodeAnchor(
                     anchor,
                     subjectTitle: subjectTitle,
-                    sortPattern: source.episodeSortPattern
+                    isWithinEpisodeList: isWithinEpisodeList
                 )
             }
 
@@ -821,12 +822,25 @@ private enum CSS1HTMLSelectorEngine {
     static func isEpisodeAnchor(
         _ anchor: Anchor,
         subjectTitle: String,
-        sortPattern: String?
+        isWithinEpisodeList: Bool
     ) -> Bool {
         let title = normalize(anchor.title)
         guard title.isEmpty == false,
               normalizedComparable(title) != normalizedComparable(subjectTitle)
         else {
+            return false
+        }
+
+        let metadataTerms = [
+            "豆瓣", "評分", "评分", "更新至", "更新到", "更新為", "更新为",
+            "上映", "年份", "首播", "完結", "完结", "簡介", "简介"
+        ]
+        guard metadataTerms.contains(where: { title.localizedCaseInsensitiveContains($0) }) == false else {
+            return false
+        }
+
+        let isYearOnly = title.range(of: #"^(?:19|20)\d{2}$"#, options: .regularExpression) != nil
+        guard isYearOnly == false else {
             return false
         }
 
@@ -839,13 +853,15 @@ private enum CSS1HTMLSelectorEngine {
             options: [.regularExpression, .caseInsensitive]
         ) != nil
 
-        if hasEpisodeLabel || isPureEpisodeNumber {
-            return true
-        }
-
         let path = anchor.url.path.lowercased()
-        let hasPlaybackPath = path.range(of: #"(?:play|episode|vod|watch|detail)[/_-]"#, options: .regularExpression) != nil
-        return hasPlaybackPath && (episodeNumber(from: title, pattern: sortPattern) != nil && hasEpisodeLabel)
+        let hasPlaybackPath = path.range(
+            of: #"(?:play|episode|watch)[/_-]"#,
+            options: .regularExpression
+        ) != nil
+        guard hasEpisodeLabel || isPureEpisodeNumber else {
+            return false
+        }
+        return isWithinEpisodeList || hasPlaybackPath
     }
 
     static func anchors(matching selector: String, in html: String, baseURL: URL) -> [Anchor] {

@@ -38,19 +38,32 @@ public struct URLSessionAnimeHTTPTransport: AnimeHTTPTransport {
 }
 
 public final class StaticAnimeHTTPTransport: AnimeHTTPTransport, @unchecked Sendable {
-    public private(set) var requests: [AnimeHTTPRequest] = []
     private let routes: [String: Data]
+    private let requestsLock = NSLock()
+    private var storedRequests: [AnimeHTTPRequest] = []
+
+    public var requests: [AnimeHTTPRequest] {
+        requestsLock.lock()
+        defer { requestsLock.unlock() }
+        return storedRequests
+    }
 
     public init(routes: [String: Data]) {
         self.routes = routes
     }
 
     public func data(for request: AnimeHTTPRequest) async throws -> Data {
-        requests.append(request)
+        record(request)
         guard let data = routes[request.url.absoluteString] else {
             throw AnimeHTTPError.missingRoute(request.url.absoluteString)
         }
         return data
+    }
+
+    private func record(_ request: AnimeHTTPRequest) {
+        requestsLock.lock()
+        storedRequests.append(request)
+        requestsLock.unlock()
     }
 }
 

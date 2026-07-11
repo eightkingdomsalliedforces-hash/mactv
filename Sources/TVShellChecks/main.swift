@@ -2130,7 +2130,14 @@ struct TVShellChecks {
         }
         """.data(using: .utf8)!
         let qualitySearch = #"<div class="anime"><a href="/show/quality">畫質動畫</a></div>"#.data(using: .utf8)!
-        let qualityDetail = #"<div class="episodes"><a href="/watch/series-9876-1">第 1 話</a></div>"#.data(using: .utf8)!
+        let qualityDetail = """
+        <div class="episodes">
+          <a href="/watch/series-9876-1">第 1 話</a>
+          <a href="/detail/rating">第13集 豆瓣:8.0分 豆瓣的評分</a>
+          <a href="/detail/latest">更新至第25集 豆瓣評分</a>
+          <a href="/detail/year">2021</a>
+        </div>
+        """.data(using: .utf8)!
         let qualityHealthURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("TVShellChecks-CSS1Quality-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: qualityHealthURL) }
@@ -2148,6 +2155,7 @@ struct TVShellChecks {
             healthStore: AniSubsCSS1SourceHealthStore(fileURL: qualityHealthURL)
         )
         let qualityResults = try await qualityProvider.search(AnimeSearchQuery(keyword: "畫質"))
+        try expect(qualityResults.first?.episodes.map(\.number) == [1], "css1 excludes rating, update-status, and year metadata from episode choices")
         guard let qualityEpisode = qualityResults.first?.episodes.first else {
             throw CheckFailure("missing merged CSS1 quality episode")
         }
