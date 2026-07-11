@@ -25,6 +25,11 @@ private struct CSS1SubjectSearchResolution: Sendable {
     var failureReason: String?
 }
 
+private struct CSS1StreamResolution: Sendable {
+    var lineIndex: Int
+    var candidate: AnimeStreamCandidate?
+}
+
 public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
     public let id = "ani-subs-css1"
     public let displayName = "ani-subs CSS1"
@@ -198,55 +203,25 @@ public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
         let sources = try await webSelectorSources()
             .filter { healthState.skippedSourceNames.contains($0.name) == false }
         let fallbackSourceName = css1SourceName(for: episode)
-        var candidates: [AnimeStreamCandidate] = []
-        for (index, line) in lines.enumerated() {
-            do {
-            guard let source = sources.first(where: { $0.name == line.sourceName })
-                ?? sources.first(where: { $0.name == fallbackSourceName })
-                ?? sources.first
-            else {
-                continue
+        let resolutions = await withTaskGroup(of: CSS1StreamResolution.self) { group in
+            for (lineIndex, line) in lines.enumerated() {
+                group.addTask {
+                    await resolveStream(
+                        for: line,
+                        lineIndex: lineIndex,
+                        episode: episode,
+                        sources: sources,
+                        fallbackSourceName: fallbackSourceName
+                    )
+                }
             }
-            let watchHTML = try await html(for: line.playbackURL, source: source)
-        let playbackHTML: String
-        let playbackBaseURL: URL
-        if source.enableNestedURL,
-           let nestedURL = CSS1HTMLSelectorEngine.firstNestedURL(
-                in: watchHTML,
-                pattern: source.nestedURLPattern,
-                baseURL: line.playbackURL
-           ) {
-            playbackHTML = try await html(for: nestedURL, source: source)
-            playbackBaseURL = nestedURL
-        } else {
-            playbackHTML = watchHTML
-            playbackBaseURL = line.playbackURL
-        }
-        guard let streamURL = CSS1HTMLSelectorEngine.firstVideoURL(
-            in: playbackHTML,
-            pattern: source.videoPattern,
-            baseURL: playbackBaseURL
-        ) else {
-            throw AnimeHTTPError.missingRoute("ani-subs css1 video url: \(line.playbackURL.absoluteString)")
-        }
-
-            let quality = css1QualityLabel(sourceName: source.name, streamURL: streamURL)
-            candidates.append(AnimeStreamCandidate(
-                url: streamURL,
-                quality: quality,
-                priority: css1QualityPriority(quality) + max(0, 64 - index),
-                headers: [
-                    "resolver": "web-selector",
-                    "source": source.name,
-                    "title": "\(episode.identity.subjectID) · \(line.title)",
-                    "episode": episode.title,
-                    "User-Agent": source.userAgent
-                ].merging(source.videoHeaders, uniquingKeysWith: { _, new in new })
-            ))
-            } catch {
-                continue
+            var values: [CSS1StreamResolution] = []
+            for await value in group {
+                values.append(value)
             }
+            return values.sorted { $0.lineIndex < $1.lineIndex }
         }
+        let candidates = resolutions.compactMap(\.candidate)
         guard candidates.isEmpty == false else {
             throw AnimeHTTPError.missingRoute("ani-subs css1 video url: \(episode.identity.episodeID)")
         }
@@ -255,6 +230,64 @@ public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
                 return left.quality.localizedStandardCompare(right.quality) == .orderedDescending
             }
             return left.priority > right.priority
+        }
+    }
+
+    private func resolveStream(
+        for line: AnimeEpisodePlaybackLine,
+        lineIndex: Int,
+        episode: AnimeEpisode,
+        sources: [AniSubsCSS1Source],
+        fallbackSourceName: String
+    ) async -> CSS1StreamResolution {
+        do {
+            guard let source = sources.first(where: { $0.name == line.sourceName })
+                ?? sources.first(where: { $0.name == fallbackSourceName })
+                ?? sources.first
+            else {
+                return CSS1StreamResolution(lineIndex: lineIndex, candidate: nil)
+            }
+            let watchHTML = try await html(for: line.playbackURL, source: source)
+            let playbackHTML: String
+            let playbackBaseURL: URL
+            if source.enableNestedURL,
+               let nestedURL = CSS1HTMLSelectorEngine.firstNestedURL(
+                in: watchHTML,
+                pattern: source.nestedURLPattern,
+                baseURL: line.playbackURL
+               ) {
+                playbackHTML = try await html(for: nestedURL, source: source)
+                playbackBaseURL = nestedURL
+            } else {
+                playbackHTML = watchHTML
+                playbackBaseURL = line.playbackURL
+            }
+            guard let streamURL = CSS1HTMLSelectorEngine.firstVideoURL(
+                in: playbackHTML,
+                pattern: source.videoPattern,
+                baseURL: playbackBaseURL
+            ) else {
+                return CSS1StreamResolution(lineIndex: lineIndex, candidate: nil)
+            }
+
+            let quality = css1QualityLabel(sourceName: source.name, streamURL: streamURL)
+            return CSS1StreamResolution(
+                lineIndex: lineIndex,
+                candidate: AnimeStreamCandidate(
+                    url: streamURL,
+                    quality: quality,
+                    priority: css1QualityPriority(quality) + max(0, 64 - lineIndex),
+                    headers: [
+                        "resolver": "web-selector",
+                        "source": source.name,
+                        "title": "\(episode.identity.subjectID) · \(line.title)",
+                        "episode": episode.title,
+                        "User-Agent": source.userAgent
+                    ].merging(source.videoHeaders, uniquingKeysWith: { _, new in new })
+                )
+            )
+        } catch {
+            return CSS1StreamResolution(lineIndex: lineIndex, candidate: nil)
         }
     }
 

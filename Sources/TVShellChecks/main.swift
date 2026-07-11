@@ -2143,15 +2143,22 @@ struct TVShellChecks {
         defer { try? FileManager.default.removeItem(at: qualityHealthURL) }
         let qualityProvider = AniSubsCSS1SubscriptionProvider(
             subscriptionURL: subscriptionURL,
-            transport: StaticAnimeHTTPTransport(routes: [
-                subscriptionURL.absoluteString: qualitySubscription,
-                "https://quality-low.example/search?wd=%E7%95%AB%E8%B3%AA": qualitySearch,
-                "https://quality-high.example/search?wd=%E7%95%AB%E8%B3%AA": qualitySearch,
-                "https://quality-low.example/show/quality": qualityDetail,
-                "https://quality-high.example/show/quality": qualityDetail,
-                "https://quality-low.example/watch/series-9876-1": #"https://cdn.example/quality-480p.mp4"#.data(using: .utf8)!,
-                "https://quality-high.example/watch/series-9876-1": #"https://cdn.example/quality-1080p.mp4"#.data(using: .utf8)!
-            ]),
+            transport: DelayedAnimeHTTPTransport(
+                routes: [
+                    subscriptionURL.absoluteString: qualitySubscription,
+                    "https://quality-low.example/search?wd=%E7%95%AB%E8%B3%AA": qualitySearch,
+                    "https://quality-high.example/search?wd=%E7%95%AB%E8%B3%AA": qualitySearch,
+                    "https://quality-low.example/show/quality": qualityDetail,
+                    "https://quality-high.example/show/quality": qualityDetail,
+                    "https://quality-low.example/watch/series-9876-1": #"https://cdn.example/quality-480p.mp4"#.data(using: .utf8)!,
+                    "https://quality-high.example/watch/series-9876-1": #"https://cdn.example/quality-1080p.mp4"#.data(using: .utf8)!
+                ],
+                delayedURLs: [
+                    "https://quality-low.example/watch/series-9876-1",
+                    "https://quality-high.example/watch/series-9876-1"
+                ],
+                delayNanoseconds: 150_000_000
+            ),
             healthStore: AniSubsCSS1SourceHealthStore(fileURL: qualityHealthURL)
         )
         let qualityResults = try await qualityProvider.search(AnimeSearchQuery(keyword: "畫質"))
@@ -2161,9 +2168,13 @@ struct TVShellChecks {
         }
         try expect(qualityEpisode.playbackLines?.count == 2, "css1 merges same-title playback lines from every source")
         try expect(qualityEpisode.identity.episodeID == "1", "css1 stores the parsed episode number instead of URL digits for danmaku matching")
+        let qualityStreamsStarted = Date()
         let qualityStreams = try await qualityProvider.streams(for: qualityEpisode)
+        let qualityStreamsElapsed = Date().timeIntervalSince(qualityStreamsStarted)
         try expect(qualityStreams.first?.url.absoluteString == "https://cdn.example/quality-1080p.mp4", "css1 puts the highest-quality stream first")
         try expect(qualityStreams.first?.quality == "1080p", "css1 exposes the inferred stream resolution")
+        try expect(qualityStreams.count == 2, "css1 concurrent stream resolution preserves every playable line")
+        try expect(qualityStreamsElapsed < 0.26, "css1 playback lines resolve concurrently instead of accumulating delays: \(qualityStreamsElapsed)")
 
         let timeoutSubscription = """
         {
