@@ -64,7 +64,9 @@
 - 作品卡以封面為主，焦點時 Hero 同步更新；不再把整頁做成密集小海報牆。
 - 詳情頁使用大幅背景、作品資訊和醒目的「選集」操作；選集以橫向長方形列顯示。
 - 收藏第一階段使用現有觀看紀錄衍生內容；若沒有收藏資料，顯示清楚的空狀態，不偽造收藏。
-- 來源頁導向既有動漫來源管理，不在瀏覽頁複製另一套來源設定。
+- 來源頁先選擇目前瀏覽來源，再導向對應內容；來源管理仍負責啟用、停用與排序。
+- 動畫瘋、官方 YouTube 與其他解析來源各自擁有獨立頁面狀態，不在同一作品牆混合結果。
+- 切換來源時清除前一來源的焦點與列表，載入新來源自己的首頁或搜尋結果；返回時恢復該來源上次焦點。
 
 ## YouTube UI
 
@@ -106,13 +108,22 @@
 
 ### 來源類型
 
-新增「官方 Web 播放」來源類型，與可解析為 AVPlayer URL 的 CSS1/BT 分開。來源結果包含官方作品 URL、官方集數 URL、服務名稱與地區／登入提示，不包含影片直連。
+新增「官方 Web 播放」來源類型，與官方 YouTube、CSS1、BT 分開。來源結果包含官方作品 URL、官方集數 URL、服務名稱與地區／登入提示，不包含影片直連。
+
+所有來源在同一個動畫 App 中以獨立來源頁呈現：
+
+- 動畫瘋頁只顯示動畫瘋作品、選集與官方 Web 播放。
+- 官方 YouTube 頁只顯示 Muse 木棉花、Ani-One 等已確認官方頻道的結果，並使用 YouTube embed。
+- CSS1、BT 與自有媒體來源保持各自頁面，不把同名作品自動合併到動畫瘋或官方 YouTube。
+- 搜尋只送給目前選中的來源；使用者主動切換來源後才搜尋另一來源。
+- 觀看紀錄包含來源 ID，因此動畫瘋與 YouTube 的同名作品不會互相覆蓋進度。
 
 預設來源：
 
-- 巴哈姆特動畫瘋：原生搜尋、作品與選集 UI；播放使用動畫瘋官方頁面。
-- Muse 木棉花官方 YouTube：透過現有 YouTube Data API 搜尋並使用 YouTube 官方 embed 播放。
-- Ani-One Asia 官方 YouTube：同上；依影片本身的地區限制顯示結果。
+- 巴哈姆特動畫瘋頁：原生搜尋、作品與選集 UI；播放使用動畫瘋官方頁面。
+- 官方 YouTube 頁：透過現有 YouTube Data API 搜尋 Muse 木棉花、Ani-One Asia 等官方頻道，並使用 YouTube 官方 embed 播放。
+
+既有獨立 YouTube App 維持一般 YouTube 瀏覽體驗。動畫 App 的「官方 YouTube」來源頁只是經官方頻道白名單篩選的動畫內容入口，兩者 controller、搜尋狀態與觀看紀錄命名空間分開。
 
 只有能確認為官方發布者的 YouTube 結果才標示為正版來源；一般 YouTube 搜尋結果不自動視為官方動畫。
 
@@ -157,6 +168,7 @@
 - 動畫、YouTube、Bilibili source contracts 驗證共用 top navigation、Hero、shelf/grid 與 stable scroll IDs。
 - Bilibili 驗證分類切換、四欄 grid、登入空狀態、詳情與播放狀態不破壞既有 API 測試。
 - 正版來源驗證只產生官方頁面／YouTube embed，不出現 m3u8、token、unlock、AES 或廣告跳過流程。
+- 驗證動畫瘋與官方 YouTube 使用不同來源 ID、不同搜尋結果集合與不同觀看紀錄 ID；切換來源不得殘留前一頁內容。
 - OfficialWebPlaybackView 測試所有遙控器鍵映射，並驗證程式碼不設定 `currentTime`、不尋找 skip-ad 元件。
 - 完整執行 `swift run TVShellChecks`、`swift build --target TVShellCore` 與 `git diff --check`。
 
