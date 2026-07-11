@@ -256,6 +256,7 @@ struct TVShellChecks {
         try expect(components.contains("struct TVOSMediaVideoCard"), "media browsers share a 16:9 video card")
         try expect(components.contains("aspectRatio(16.0 / 9.0"), "shared media cards preserve a 16:9 thumbnail")
         try expect(components.contains("struct TVOSMediaEmptyState"), "media browsers share loading and empty states")
+        try expect(components.contains("struct TVOSMediaHero"), "media browsers share a tvOS hero detail component")
         let paths = [
             "Sources/TVShellCore/Anime/AnimeRuntimeView.swift",
             "Sources/TVShellCore/YouTube/YouTubeRuntimeView.swift",
@@ -271,6 +272,11 @@ struct TVShellChecks {
         try expect(youtube.contains("TVOSMediaTopNavigation("), "YouTube uses the centered tvOS media navigation")
         try expect(youtube.contains("TVOSMediaVideoCard("), "YouTube uses shared 16:9 browsing cards")
         try expect(youtube.contains("TVOSMediaEmptyState("), "YouTube reports loading and empty results in the media layout")
+        let anime = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Anime/AnimeRuntimeView.swift"))
+        try expect(anime.contains("TVOSMediaTopNavigation("), "anime uses the centered tvOS media navigation")
+        try expect(anime.contains("TVOSMediaEmptyState("), "anime reports loading and empty results in the media layout")
+        try expect(anime.contains("TVOSMediaHero("), "anime details use the shared tvOS hero layout")
+        try expect(anime.contains("scrollProxy.scrollTo(\"anime-title-"), "anime title focus remains visible while navigating")
     }
 
     static func checkTVOS18PlayerHUD() throws {

@@ -125,33 +125,15 @@ public struct AnimeRuntimeView: View {
         let title = controller.focusedTitle
 
         return ScrollView(.vertical) {
-            HStack(alignment: .top, spacing: 48 * metrics.scale) {
-                AnimeTitleCard(
-                    title: title ?? AnimeSearchResult(id: "empty", title: "動漫", subtitle: nil, coverURL: nil, episodes: []),
-                    isFocused: false,
-                    metrics: metrics
-                )
-                .scaleEffect(1.08)
-
-                VStack(alignment: .leading, spacing: 24 * metrics.scale) {
-                    animeHeader(
-                        metrics: metrics,
-                        title: title?.title ?? "動漫詳情",
-                        subtitle: title?.subtitle ?? controller.statusText
-                    )
-
-                    if let detail = title?.detailLine {
-                        Text(detail)
-                            .font(.system(size: 26 * metrics.scale, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.74))
-                            .lineLimit(3)
-                    }
-
-                    Text(title?.summaryText ?? "選擇開始觀看後進入選集。")
-                        .font(.system(size: 27 * metrics.scale, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.68))
-                        .lineLimit(8)
-
+            TVOSMediaHero(
+                eyebrow: title?.detailLine ?? "動畫",
+                title: title?.title ?? "動漫詳情",
+                subtitle: title?.subtitle ?? controller.statusText,
+                description: title?.summaryText ?? "選擇開始觀看後進入選集。",
+                imageURL: title?.coverURL,
+                metrics: metrics
+            ) {
+                VStack(alignment: .leading, spacing: 20 * metrics.scale) {
                     Text("開始觀看")
                         .font(.system(size: 34 * metrics.scale, weight: .bold))
                         .padding(.horizontal, 34 * metrics.scale)
@@ -162,9 +144,7 @@ public struct AnimeRuntimeView: View {
                         .font(.system(size: 24 * metrics.scale, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.62))
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
             .padding(.horizontal, metrics.horizontalPadding)
             .padding(.top, metrics.topPadding)
             .padding(.bottom, 54 * metrics.scale)
@@ -203,20 +183,50 @@ public struct AnimeRuntimeView: View {
         ScrollViewReader { scrollProxy in
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 34 * metrics.scale) {
-                    animeHeader(metrics: metrics, title: app.name, subtitle: controller.statusText)
+                    TVOSMediaTopNavigation(
+                        items: [
+                            .init(id: "browse", title: "推薦"),
+                            .init(id: "official", title: "正版來源"),
+                            .init(id: "subscriptions", title: "我的訂閱"),
+                            .init(id: "history", title: "觀看記錄"),
+                            .init(id: "search", title: "搜尋", symbolName: "magnifyingglass")
+                        ],
+                        focusedID: "browse",
+                        metrics: metrics
+                    )
+                    .frame(maxWidth: .infinity, alignment: .center)
 
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 184 * metrics.scale), spacing: 18 * metrics.scale)],
-                        alignment: .leading,
-                        spacing: 18 * metrics.scale
-                    ) {
-                        ForEach(Array(controller.titles.enumerated()), id: \.element.id) { index, title in
-                            AnimeTitleCard(
-                                title: title,
-                                isFocused: index == controller.state.focusedTitleIndex,
-                                metrics: metrics
-                            )
-                            .id("anime-title-\(index)")
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(app.name)
+                            .font(.system(size: 48 * metrics.scale, weight: .bold))
+                        Spacer()
+                        Text(controller.statusText)
+                            .font(.system(size: 21 * metrics.scale, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.58))
+                            .lineLimit(1)
+                    }
+
+                    if controller.titles.isEmpty {
+                        TVOSMediaEmptyState(
+                            title: "沒有動畫",
+                            message: controller.statusText,
+                            isLoading: controller.statusText.contains("載入") || controller.statusText.contains("搜尋"),
+                            metrics: metrics
+                        )
+                    } else {
+                        LazyVGrid(
+                            columns: [GridItem(.adaptive(minimum: 184 * metrics.scale), spacing: 18 * metrics.scale)],
+                            alignment: .leading,
+                            spacing: 18 * metrics.scale
+                        ) {
+                            ForEach(Array(controller.titles.enumerated()), id: \.element.id) { index, title in
+                                AnimeTitleCard(
+                                    title: title,
+                                    isFocused: index == controller.state.focusedTitleIndex,
+                                    metrics: metrics
+                                )
+                                .id("anime-title-\(index)")
+                            }
                         }
                     }
 
