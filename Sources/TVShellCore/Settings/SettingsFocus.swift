@@ -13,27 +13,36 @@ public enum SettingsFocus: String, Codable, Equatable, Sendable {
         switch self {
         case .scale: .wallpaper
         case .wallpaper: .webZoom
-        case .webZoom: .danmakuSize
+        case .webZoom: .videoSource
+        case .videoSource: .danmakuSize
         case .danmakuSize: .danmakuSpeed
         case .danmakuSpeed: .danmakuOpacity
         case .danmakuOpacity: .danmakuDensity
-        case .danmakuDensity: .videoSource
-        case .videoSource: .credentials
-        case .credentials: .scale
+        case .danmakuDensity: .credentials
+        case .credentials: .credentials
         }
     }
 
     public var previous: SettingsFocus {
         switch self {
-        case .scale: .videoSource
+        case .scale: .scale
         case .wallpaper: .scale
         case .webZoom: .wallpaper
-        case .danmakuSize: .webZoom
+        case .videoSource: .webZoom
+        case .danmakuSize: .videoSource
         case .danmakuSpeed: .danmakuSize
         case .danmakuOpacity: .danmakuSpeed
         case .danmakuDensity: .danmakuOpacity
-        case .videoSource: .danmakuDensity
-        case .credentials: .videoSource
+        case .credentials: .danmakuDensity
+        }
+    }
+
+    public var isAdjustable: Bool {
+        switch self {
+        case .videoSource, .credentials:
+            false
+        default:
+            true
         }
     }
 }

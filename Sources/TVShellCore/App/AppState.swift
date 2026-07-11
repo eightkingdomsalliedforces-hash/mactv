@@ -547,9 +547,17 @@ public final class AppState: ObservableObject {
         case .down:
             settingsFocus = settingsFocus.next
         case .left:
-            changeFocusedSetting(previous: true)
-        case .right, .select:
-            changeFocusedSetting(previous: false)
+            if settingsFocus.isAdjustable {
+                changeFocusedSetting(previous: true)
+            }
+        case .right:
+            if settingsFocus.isAdjustable {
+                changeFocusedSetting(previous: false)
+            }
+        case .select:
+            if settingsFocus.isAdjustable == false {
+                changeFocusedSetting(previous: false)
+            }
         case .home, .back:
             activeRuntime = .launcher
         default:

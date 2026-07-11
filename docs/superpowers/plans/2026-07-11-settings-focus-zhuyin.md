@@ -8,6 +8,8 @@
 
 **Tech Stack:** Swift 6, SwiftUI, TVShellChecks executable
 
+**Status:** Completed and verified on 2026-07-11. The browser-injected keyboard was also synchronized with the native Da-Qian layout.
+
 ---
 
 ## Task 1: Lock down Settings focus behavior
@@ -36,4 +38,3 @@
 - [ ] Inspect `git diff` and confirm no unrelated user changes are included.
 - [ ] Commit the implementation on `main` with a focused message.
 - [ ] Push `main` to `origin`.
-

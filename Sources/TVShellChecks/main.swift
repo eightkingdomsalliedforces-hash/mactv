@@ -378,6 +378,13 @@ struct TVShellChecks {
 
         var zhuyinKeyboard = VirtualKeyboardState(layout: .zhuyin)
         try expect(zhuyinKeyboard.focusedKey.label == "ㄅ", "zhuyin keyboard starts at bopomofo keys")
+        try expect(zhuyinKeyboard.rows.map { $0.map(\.label) } == [
+            ["ㄅ", "ㄉ", "ˇ", "ˋ", "ㄓ", "ˊ", "˙", "ㄚ", "ㄞ", "ㄢ", "ㄦ"],
+            ["ㄆ", "ㄊ", "ㄍ", "ㄐ", "ㄔ", "ㄗ", "ㄧ", "ㄛ", "ㄟ", "ㄣ"],
+            ["ㄇ", "ㄋ", "ㄎ", "ㄑ", "ㄕ", "ㄘ", "ㄨ", "ㄜ", "ㄠ", "ㄤ"],
+            ["ㄈ", "ㄌ", "ㄏ", "ㄒ", "ㄖ", "ㄙ", "ㄩ", "ㄝ", "ㄡ", "ㄥ"],
+            ["空格", "刪除", "搜尋", "ABC", "取消"]
+        ], "zhuyin keyboard uses the standard Taiwan Da-Qian layout")
         try expect(zhuyinKeyboard.apply(.select) == .textChanged, "zhuyin keyboard types focused bopomofo key")
         try expect(zhuyinKeyboard.composition == "ㄅ", "zhuyin keyboard keeps bopomofo composition")
         try expect(zhuyinKeyboard.candidates.contains("不"), "zhuyin keyboard exposes Chinese candidates")
@@ -388,17 +395,19 @@ struct TVShellChecks {
         _ = zhuyinKeyboard.apply(.down)
         _ = zhuyinKeyboard.apply(.down)
         _ = zhuyinKeyboard.apply(.down)
-        _ = zhuyinKeyboard.apply(.down)
-        _ = zhuyinKeyboard.apply(.right)
-        _ = zhuyinKeyboard.apply(.right)
-        _ = zhuyinKeyboard.apply(.right)
-        _ = zhuyinKeyboard.apply(.right)
         _ = zhuyinKeyboard.apply(.right)
         _ = zhuyinKeyboard.apply(.right)
         _ = zhuyinKeyboard.apply(.right)
         try expect(zhuyinKeyboard.focusedKey.label == "ABC", "zhuyin keyboard exposes ABC switch")
         try expect(zhuyinKeyboard.apply(.select) == .none, "layout switch does not submit text")
         try expect(zhuyinKeyboard.layout == .latin, "zhuyin keyboard switches back to latin")
+        try expect(zhuyinKeyboard.focusedKey.label == "1", "layout switch resets focus to the first key")
+
+        var spatialKeyboard = VirtualKeyboardState(layout: .zhuyin)
+        for _ in 0..<5 { _ = spatialKeyboard.apply(.right) }
+        for _ in 0..<3 { _ = spatialKeyboard.apply(.down) }
+        _ = spatialKeyboard.apply(.down)
+        try expect(spatialKeyboard.focusedKey.label == "搜尋", "vertical keyboard navigation follows the nearest key center")
 
         var phraseKeyboard = VirtualKeyboardState(layout: .zhuyin)
         phraseKeyboard.typeZhuyinForTesting("ㄈㄨˊ")
@@ -845,6 +854,9 @@ struct TVShellChecks {
         try expect(webRuntime.contains("tv-shell-cursor-label"), "virtual cursor includes a visible TV label")
         try expect(webRuntime.contains("tv-shell-keyboard"), "web runtime injects an in-browser virtual keyboard")
         try expect(webRuntime.contains("zhuyinMap") && webRuntime.contains("ㄅ"), "web runtime injects a zhuyin browser keyboard")
+        try expect(webRuntime.contains("['ㄅ','ㄉ','ˇ','ˋ','ㄓ','ˊ','˙','ㄚ','ㄞ','ㄢ','ㄦ']"), "web zhuyin keyboard uses the first Da-Qian row")
+        try expect(webRuntime.contains("['ㄈ','ㄌ','ㄏ','ㄒ','ㄖ','ㄙ','ㄩ','ㄝ','ㄡ','ㄥ']"), "web zhuyin keyboard uses the fourth Da-Qian row")
+        try expect(webRuntime.contains("const moveKeyboardFocus"), "web keyboard moves vertically by nearest key center")
         try expect(webRuntime.contains("candidateIndex"), "web zhuyin keyboard can focus candidates")
         try expect(webRuntime.contains("keyboardState.candidateIndex !== null"), "web zhuyin keyboard commits focused candidates")
         try expect(webRuntime.contains("mode === 'mouse'") && webRuntime.contains("ensureCursor()"), "mouse mode ensures the cursor exists")
@@ -857,13 +869,19 @@ struct TVShellChecks {
     static func checkSettingsFocusIncludesVideoAndWebZoom() throws {
         try expect(SettingsFocus.scale.next == .wallpaper, "settings moves from scale to wallpaper")
         try expect(SettingsFocus.wallpaper.next == .webZoom, "settings moves from wallpaper to web zoom")
-        try expect(SettingsFocus.webZoom.next == .danmakuSize, "settings moves from web zoom to danmaku size")
+        try expect(SettingsFocus.webZoom.next == .videoSource, "settings moves from web zoom to the visually adjacent video source")
+        try expect(SettingsFocus.videoSource.next == .danmakuSize, "settings moves from video source to danmaku size")
         try expect(SettingsFocus.danmakuSize.next == .danmakuSpeed, "settings moves from danmaku size to danmaku speed")
         try expect(SettingsFocus.danmakuSpeed.next == .danmakuOpacity, "settings moves from danmaku speed to danmaku opacity")
         try expect(SettingsFocus.danmakuOpacity.next == .danmakuDensity, "settings moves from danmaku opacity to danmaku density")
-        try expect(SettingsFocus.danmakuDensity.next == .videoSource, "settings moves from danmaku density to video source")
-        try expect(SettingsFocus.videoSource.next == .credentials, "settings moves from video source to credentials")
-        try expect(SettingsFocus.credentials.next == .scale, "settings wraps to scale")
+        try expect(SettingsFocus.danmakuDensity.next == .credentials, "settings moves from danmaku density to credentials")
+        try expect(SettingsFocus.credentials.next == .credentials, "settings stays at the bottom boundary")
+        try expect(SettingsFocus.scale.previous == .scale, "settings stays at the top boundary")
+        try expect(SettingsFocus.videoSource.previous == .webZoom, "settings reverse navigation follows visual order")
+        try expect(SettingsFocus.scale.isAdjustable, "display scale is adjusted with left and right")
+        try expect(SettingsFocus.danmakuDensity.isAdjustable, "danmaku density is adjusted with left and right")
+        try expect(SettingsFocus.videoSource.isAdjustable == false, "video source is activated only with OK")
+        try expect(SettingsFocus.credentials.isAdjustable == false, "credentials are activated only with OK")
         try expect(DanmakuDisplaySettings(sizeScale: 1.0).adjusted(previous: false).sizeScale == 1.1, "danmaku size setting grows in readable steps")
         try expect(DanmakuDisplaySettings(speedScale: 1.0).adjustedSpeed(previous: false).speedScale == 1.1, "danmaku speed setting grows in readable steps")
         try expect(DanmakuDisplaySettings(opacity: 0.8).adjustedOpacity(previous: true).opacity == 0.7, "danmaku opacity setting changes in readable steps")

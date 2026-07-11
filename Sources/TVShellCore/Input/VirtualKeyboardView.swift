@@ -93,14 +93,7 @@ public struct VirtualKeyboardView: View {
     }
 
     private func keyWidth(for key: VirtualKeyboardKey) -> Double {
-        switch key.kind {
-        case .character:
-            68 * metrics.scale
-        case .space:
-            150 * metrics.scale
-        case .delete, .submit, .cancel, .layoutSwitch:
-            132 * metrics.scale
-        }
+        key.navigationWidth * metrics.scale
     }
 
     private var previewText: String {

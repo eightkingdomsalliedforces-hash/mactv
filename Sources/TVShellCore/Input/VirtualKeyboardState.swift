@@ -39,6 +39,17 @@ public struct VirtualKeyboardKey: Identifiable, Equatable, Sendable {
         self.value = value
         self.kind = kind
     }
+
+    public var navigationWidth: Double {
+        switch kind {
+        case .character:
+            68
+        case .space:
+            150
+        case .delete, .submit, .cancel, .layoutSwitch:
+            132
+        }
+    }
 }
 
 public struct VirtualKeyboardState: Equatable, Sendable {
@@ -94,16 +105,11 @@ public struct VirtualKeyboardState: Equatable, Sendable {
             ]
         case .zhuyin:
             return [
-                "ㄅㄆㄇㄈㄉㄊㄋㄌ".map { VirtualKeyboardKey(String($0)) },
-                "ㄍㄎㄏㄐㄑㄒ".map { VirtualKeyboardKey(String($0)) },
-                "ㄓㄔㄕㄖㄗㄘㄙ".map { VirtualKeyboardKey(String($0)) },
-                "ㄧㄨㄩㄚㄛㄜㄝ".map { VirtualKeyboardKey(String($0)) },
-                "ㄞㄟㄠㄡㄢㄣㄤㄥㄦ".map { VirtualKeyboardKey(String($0)) },
+                ["ㄅ", "ㄉ", "ˇ", "ˋ", "ㄓ", "ˊ", "˙", "ㄚ", "ㄞ", "ㄢ", "ㄦ"].map { VirtualKeyboardKey($0) },
+                ["ㄆ", "ㄊ", "ㄍ", "ㄐ", "ㄔ", "ㄗ", "ㄧ", "ㄛ", "ㄟ", "ㄣ"].map { VirtualKeyboardKey($0) },
+                ["ㄇ", "ㄋ", "ㄎ", "ㄑ", "ㄕ", "ㄘ", "ㄨ", "ㄜ", "ㄠ", "ㄤ"].map { VirtualKeyboardKey($0) },
+                ["ㄈ", "ㄌ", "ㄏ", "ㄒ", "ㄖ", "ㄙ", "ㄩ", "ㄝ", "ㄡ", "ㄥ"].map { VirtualKeyboardKey($0) },
                 [
-                    VirtualKeyboardKey("ˊ"),
-                    VirtualKeyboardKey("ˇ"),
-                    VirtualKeyboardKey("ˋ"),
-                    VirtualKeyboardKey("˙"),
                     VirtualKeyboardKey("空格", value: " ", kind: .space),
                     VirtualKeyboardKey("刪除", kind: .delete),
                     VirtualKeyboardKey("搜尋", kind: .submit),
@@ -140,8 +146,7 @@ public struct VirtualKeyboardState: Equatable, Sendable {
             } else if shouldEnterCandidateRow {
                 focusedCandidateIndex = min(focusedColumn, visibleCandidates.count - 1)
             } else {
-                focusedRow = max(0, focusedRow - 1)
-                focusedColumn = min(focusedColumn, rows[focusedRow].count - 1)
+                moveFocus(toRow: max(0, focusedRow - 1))
             }
             return .none
         case .down:
@@ -149,8 +154,7 @@ public struct VirtualKeyboardState: Equatable, Sendable {
                 focusedColumn = min(index, rows[focusedRow].count - 1)
                 focusedCandidateIndex = nil
             } else {
-                focusedRow = min(rows.count - 1, focusedRow + 1)
-                focusedColumn = min(focusedColumn, rows[focusedRow].count - 1)
+                moveFocus(toRow: min(rows.count - 1, focusedRow + 1))
             }
             return .none
         case .back:
@@ -225,10 +229,27 @@ public struct VirtualKeyboardState: Equatable, Sendable {
             composition = ""
             lastCompositionKey = nil
             focusedCandidateIndex = nil
-            focusedRow = min(focusedRow, rows.count - 1)
-            focusedColumn = min(focusedColumn, rows[focusedRow].count - 1)
+            focusedRow = 0
+            focusedColumn = 0
             return .none
         }
+    }
+
+    private mutating func moveFocus(toRow destinationRow: Int) {
+        guard destinationRow != focusedRow else { return }
+        let sourceCenter = keyCenter(in: rows[focusedRow], at: focusedColumn)
+        let destination = rows[destinationRow]
+        focusedRow = destinationRow
+        focusedColumn = destination.indices.min { left, right in
+            abs(keyCenter(in: destination, at: left) - sourceCenter)
+                < abs(keyCenter(in: destination, at: right) - sourceCenter)
+        } ?? 0
+    }
+
+    private func keyCenter(in row: [VirtualKeyboardKey], at index: Int) -> Double {
+        let spacing = 12.0
+        let leadingWidth = row.prefix(index).reduce(0) { $0 + $1.navigationWidth }
+        return leadingWidth + (Double(index) * spacing) + (row[index].navigationWidth / 2)
     }
 
     private var shouldEnterCandidateRow: Bool {
