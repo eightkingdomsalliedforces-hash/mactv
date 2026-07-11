@@ -1615,34 +1615,37 @@ struct DanmakuOverlay: View {
                         speedScale: settings.speedScale
                     )
                 }
-                ForEach(visibleComments, id: \.stableIdentity) { comment in
-                    let age = max(0, interpolatedTime - comment.time)
-                    let textWidth = DanmakuMotion.textWidth(
-                        comment.text,
-                        fontSize: fontSize,
-                        horizontalPadding: horizontalPadding
-                    )
-                    Text(verbatim: comment.text)
-                        .modifier(DanmakuTextStyle(settings: settings, metrics: metrics))
-                        .foregroundStyle(.white.opacity(settings.opacity))
-                        .shadow(color: .black.opacity(0.92), radius: 8, x: 0, y: 3)
-                        .padding(.horizontal, 20 * metrics.scale)
-                        .padding(.vertical, 8 * metrics.scale)
-                        .background(.black.opacity(0.22 * settings.opacity), in: Capsule())
-                        .offset(
-                            x: DanmakuMotion.horizontalOffset(
-                                age: age,
-                                viewportWidth: viewportWidth,
-                                textWidth: textWidth,
-                                speedScale: settings.speedScale
-                            ),
-                            y: CGFloat(DanmakuMotion.laneIndex(for: comment.stableIdentity, laneCount: settings.density))
-                                * CGFloat(54 * metrics.scale * settings.sizeScale)
+                ZStack(alignment: .topLeading) {
+                    ForEach(visibleComments, id: \.stableIdentity) { comment in
+                        let age = max(0, interpolatedTime - comment.time)
+                        let textWidth = DanmakuMotion.textWidth(
+                            comment.text,
+                            fontSize: fontSize,
+                            horizontalPadding: horizontalPadding
                         )
-                        .transaction { transaction in
-                            transaction.animation = nil
-                        }
+                        Text(verbatim: comment.text)
+                            .modifier(DanmakuTextStyle(settings: settings, metrics: metrics))
+                            .foregroundStyle(.white.opacity(settings.opacity))
+                            .shadow(color: .black.opacity(0.92), radius: 8, x: 0, y: 3)
+                            .padding(.horizontal, 20 * metrics.scale)
+                            .padding(.vertical, 8 * metrics.scale)
+                            .background(.black.opacity(0.22 * settings.opacity), in: Capsule())
+                            .offset(
+                                x: DanmakuMotion.horizontalOffset(
+                                    age: age,
+                                    viewportWidth: viewportWidth,
+                                    textWidth: textWidth,
+                                    speedScale: settings.speedScale
+                                ),
+                                y: CGFloat(DanmakuMotion.laneIndex(for: comment.stableIdentity, laneCount: settings.density))
+                                    * CGFloat(54 * metrics.scale * settings.sizeScale)
+                            )
+                            .transaction { transaction in
+                                transaction.animation = nil
+                            }
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

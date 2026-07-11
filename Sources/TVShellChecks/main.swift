@@ -189,6 +189,9 @@ struct TVShellChecks {
 
         try expect(longWidth > shortWidth, "danmaku text measurement accounts for comment length")
         try expect(longLifetime > shortLifetime, "long danmaku remains visible until its wider text exits")
+        let startingX = DanmakuMotion.horizontalOffset(age: 0, viewportWidth: viewportWidth, textWidth: longWidth, speedScale: 1)
+        let laterX = DanmakuMotion.horizontalOffset(age: 1, viewportWidth: viewportWidth, textWidth: longWidth, speedScale: 1)
+        try expect(laterX < startingX, "danmaku always travels horizontally from right to left")
         try expect(
             DanmakuMotion.horizontalOffset(
                 age: longLifetime,
@@ -208,6 +211,10 @@ struct TVShellChecks {
         let stableLane = DanmakuMotion.laneIndex(for: "10.0-同一條彈幕", laneCount: 5)
         try expect(stableLane == DanmakuMotion.laneIndex(for: "10.0-同一條彈幕", laneCount: 5), "danmaku keeps the same lane while older comments expire")
         try expect((0..<5).contains(stableLane), "danmaku lane stays within the configured density")
+
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        let animeRuntime = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Anime/AnimeRuntimeView.swift"))
+        try expect(animeRuntime.contains("TimelineView(.animation) { timeline in") && animeRuntime.contains("ZStack(alignment: .topLeading)"), "danmaku comments overlap in fixed lanes instead of participating in vertical layout")
     }
 
     static func checkKeyCodeMapper() throws {
@@ -2900,8 +2907,13 @@ struct TVShellChecks {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
 
         let launcher = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Launcher/LauncherView.swift"))
+        let appCard = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Launcher/AppCardView.swift"))
         try expect(launcher.contains("TVOSAppDock"), "launcher uses a tvOS-style bottom app dock")
-        try expect(launcher.contains("TVOSHeroHeader"), "launcher uses a focused tvOS-style hero stage")
+        try expect(launcher.contains("TVOS18WallpaperView(source: appState.wallpaperSource)"), "launcher renders the selected wallpaper edge to edge")
+        try expect(launcher.contains("TVOSHeroHeader") == false, "tvOS 18 home removes the oversized hero header")
+        try expect(launcher.contains("ZStack(alignment: .bottom)"), "launcher anchors the app dock at the bottom")
+        try expect(appCard.contains("metrics.appTileWidth") && appCard.contains("metrics.appTileHeight"), "launcher apps are rectangular tvOS 18 tiles")
+        try expect(appCard.contains("liquidGlassCard") == false, "launcher app tiles do not use Liquid Glass")
         try expect(launcher.contains("TVControlBackdrop"), "launcher uses the shared control-center backdrop")
         try expect(launcher.contains("ScrollView(.horizontal"), "launcher dock uses horizontal scrolling instead of overflowing")
         try expect(launcher.contains("scaleEffect(appState.displayScale.multiplier())") == false, "launcher dock avoids clipping cards with a visual-only scale transform")

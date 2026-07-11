@@ -72,21 +72,22 @@ public struct LauncherView: View {
             let metrics = TVMetrics(size: proxy.size)
             let dockMetrics = TVMetrics(size: proxy.size, interfaceScale: appState.displayScale.multiplier())
 
-            ZStack(alignment: .topLeading) {
-                heroBackground
+            ZStack(alignment: .bottom) {
+                TVOS18WallpaperView(source: appState.wallpaperSource)
 
                 ScrollViewReader { scrollProxy in
                     ScrollView(.vertical) {
                         VStack(alignment: .leading, spacing: 34 * metrics.scale) {
-                            TVOSHeroHeader(
-                                title: focusedApp?.name ?? "MacTV",
-                                subtitle: heroSubtitle,
-                                symbolName: AppCardView.symbolName(for: focusedApp?.name ?? "MacTV"),
-                                metrics: metrics
-                            )
-                            .padding(.top, metrics.topPadding)
+                            Color.clear
+                                .frame(height: 1)
+                                .id("launcher-top")
 
-                            Spacer(minLength: max(40, proxy.size.height * 0.20))
+                            Spacer(minLength: max(380 * metrics.scale, proxy.size.height * 0.48))
+
+                            Text(focusedApp?.name ?? "MacTV")
+                                .font(.system(size: 30 * metrics.scale, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .padding(.leading, 30 * metrics.scale)
 
                             TVOSAppDock(
                                 apps: appState.apps.filter(\.isVisibleOnHome),
@@ -122,9 +123,9 @@ public struct LauncherView: View {
                                 .minimumScaleFactor(0.72)
                                 .padding(.bottom, 42 * metrics.scale)
                         }
-                        .id("launcher-top")
                         .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .topLeading)
                         .padding(.horizontal, metrics.horizontalPadding)
+                        .padding(.bottom, 60 * metrics.scale)
                     }
                     .scrollIndicators(.hidden)
                     .onChange(of: appState.focusedWatchHistoryID) { _, id in
@@ -155,87 +156,6 @@ public struct LauncherView: View {
         appState.apps.first { $0.id == appState.focusedAppID }
     }
 
-    private var heroSubtitle: String {
-        guard let app = focusedApp else {
-            return "適合大螢幕與遙控器的 macOS 主畫面"
-        }
-
-        switch app.target {
-        case .youtube:
-            return "原生大螢幕 YouTube，使用 Data API 解析影片列表"
-        case .bilibili:
-            return "原生大螢幕 Bilibili 番劇，搜尋、選集與遙控器播放"
-        case .anime:
-            return "自動解析動畫源、選集播放，並顯示 Bangumi 風格彈幕"
-        case .media:
-            return "用大螢幕控制列播放本機或串流影片"
-        case .nativeApp:
-            return "開啟並用輔助使用控制原生 macOS App"
-        case let .web(url) where url.scheme == "tv-shell" && url.host == "anime-sources":
-            return "管理 Animeko 風格來源、線路、狀態與驗證入口"
-        case let .web(url) where url.scheme == "tv-shell":
-            return "設定遙控器、縮放、壁紙與系統控制"
-        case .web:
-            return "以放大網頁與虛擬滑鼠模式瀏覽"
-        }
-    }
-
-    private var heroBackground: some View {
-        TVControlBackdrop(accent: wallpaperAccent)
-        .animation(TVMotion.hero, value: appState.focusedAppID)
-        .animation(TVMotion.hero, value: appState.wallpaperSource)
-    }
-
-    private var wallpaperAccent: Color? {
-        switch appState.wallpaperSource {
-        case let .builtIn(preset):
-            guard let color = preset.palette.colors.first else {
-                return nil
-            }
-            return Color(red: color.red, green: color.green, blue: color.blue)
-        case .localFile, .remoteImage:
-            return nil
-        }
-    }
-
-}
-
-private struct TVOSHeroHeader: View {
-    let title: String
-    let subtitle: String
-    let symbolName: String
-    let metrics: TVMetrics
-
-    var body: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 14 * metrics.scale) {
-                Text("MacTV")
-                    .font(.system(size: 30 * metrics.scale, weight: .bold, design: .rounded))
-                    .tracking(1.2)
-                    .foregroundStyle(.white.opacity(0.94))
-
-                Text(title)
-                    .font(.system(size: min(metrics.heroTitleSize, 76 * metrics.scale), weight: .black, design: .rounded))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-
-                Text(subtitle)
-                    .font(.system(size: 25 * metrics.scale, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.74))
-                    .lineLimit(2)
-                    .frame(maxWidth: 620 * metrics.scale, alignment: .leading)
-            }
-
-            Spacer()
-
-            Image(systemName: symbolName)
-                .font(.system(size: 116 * metrics.scale, weight: .medium))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.white.opacity(0.22))
-                .padding(.trailing, 116 * metrics.scale)
-                .padding(.top, 28 * metrics.scale)
-        }
-    }
 }
 
 private struct TVOSAppDock: View {
@@ -244,24 +164,19 @@ private struct TVOSAppDock: View {
     let metrics: TVMetrics
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18 * metrics.scale) {
-            Text("App")
-                .font(.system(size: 25 * metrics.scale, weight: .bold))
-                .foregroundStyle(.white.opacity(0.74))
-
-            ScrollView(.horizontal) {
-                HStack(alignment: .bottom, spacing: 28 * metrics.scale) {
-                    ForEach(apps) { app in
-                        AppCardView(app: app, isFocused: app.id == focusedAppID, metrics: metrics)
-                            .id("tvos-dock-app-\(app.id.uuidString)")
-                    }
+        ScrollView(.horizontal) {
+            HStack(alignment: .bottom, spacing: 24 * metrics.scale) {
+                ForEach(apps) { app in
+                    AppCardView(app: app, isFocused: app.id == focusedAppID, metrics: metrics)
+                        .id("tvos-dock-app-\(app.id.uuidString)")
                 }
-                .padding(.horizontal, 34 * metrics.scale + metrics.appIconSize * 0.08)
-                .padding(.vertical, 34 * metrics.scale)
             }
-            .scrollIndicators(.hidden)
-            .liquidGlassCard(isFocused: false, cornerRadius: 34 * metrics.scale)
+            .padding(.horizontal, 34 * metrics.scale)
+            .padding(.top, 26 * metrics.scale)
+            .padding(.bottom, 14 * metrics.scale)
         }
+        .scrollIndicators(.hidden)
+        .tvOS18Surface(role: .panel, cornerRadius: 28 * metrics.scale)
     }
 }
 

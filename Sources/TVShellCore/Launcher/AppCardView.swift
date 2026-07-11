@@ -21,34 +21,26 @@ public struct AppCardView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 18 * metrics.scale) {
-            RoundedRectangle(cornerRadius: 28 * metrics.scale, style: .continuous)
+        VStack(spacing: 12 * metrics.scale) {
+            RoundedRectangle(cornerRadius: 18 * metrics.scale, style: .continuous)
                 .fill(iconFill)
-                .overlay(Color.accentColor.opacity(isFocused ? 0.30 : 0.08))
                 .overlay(
                     Image(systemName: symbolName)
-                        .font(.system(size: 76 * metrics.scale, weight: .semibold))
+                        .font(.system(size: 58 * metrics.scale, weight: .semibold))
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(.white)
                 )
-                .frame(width: metrics.appIconSize, height: metrics.appIconSize)
-                .liquidGlassCard(isFocused: isFocused)
+                .frame(width: metrics.appTileWidth, height: metrics.appTileHeight)
+                .tvOS18Surface(role: .content, isFocused: isFocused, cornerRadius: 18 * metrics.scale)
+                .tvOS18ContentFocus(isFocused: isFocused)
 
-            if isFocused {
-                Text(title)
-                    .font(.system(size: metrics.appTitleSize, weight: .bold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .frame(width: metrics.appTitleWidth)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-            } else {
-                Color.clear
-                    .frame(height: metrics.appTitleSize * 1.35)
-            }
+            Text(title)
+                .font(.system(size: 24 * metrics.scale, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .frame(width: metrics.appTileWidth)
+                .opacity(isFocused ? 1 : 0)
         }
-        .scaleEffect(isFocused ? 1.12 : 1.0)
-        .rotation3DEffect(.degrees(isFocused ? 1.4 : 0), axis: (x: 1, y: -1, z: 0), perspective: 0.72)
-        .offset(y: isFocused ? -16 * metrics.scale : 0)
         .animation(TVMotion.focus, value: isFocused)
         .accessibilityLabel(title)
     }
@@ -69,6 +61,14 @@ public struct AppCardView: View {
     }
 
     private var iconFill: Color {
-        isFocused ? .white.opacity(0.24) : .white.opacity(0.12)
+        switch title.lowercased() {
+        case "youtube": Color(red: 0.86, green: 0.08, blue: 0.10)
+        case "bilibili": Color(red: 0.94, green: 0.34, blue: 0.52)
+        case "動畫": Color(red: 0.40, green: 0.24, blue: 0.72)
+        case "影片": Color(red: 0.12, green: 0.46, blue: 0.82)
+        case "設定": Color(red: 0.30, green: 0.32, blue: 0.36)
+        case "動漫來源": Color(red: 0.08, green: 0.52, blue: 0.50)
+        default: Color(red: 0.18, green: 0.20, blue: 0.24)
+        }
     }
 }
