@@ -15,7 +15,7 @@ public struct YouTubeRuntimeView: View {
             let metrics = TVMetrics(size: proxy.size)
 
             ZStack {
-                TVControlBackdrop()
+                TVOS18Backdrop()
 
                 switch controller.state.phase {
                 case .browsing:
@@ -155,7 +155,7 @@ public struct YouTubeRuntimeView: View {
                         .foregroundStyle(.white.opacity(0.72))
                 }
                 .padding(28 * metrics.scale)
-                .liquidGlassCard(isFocused: true, cornerRadius: 22 * metrics.scale)
+                .tvOS18Surface(role: .panel, cornerRadius: 14 * metrics.scale)
                 .padding(50 * metrics.scale)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
@@ -438,8 +438,8 @@ private struct YouTubeVideoCard: View {
         }
         .frame(width: cardWidth, alignment: .leading)
         .padding(22 * metrics.scale)
-        .liquidGlassCard(isFocused: isFocused, cornerRadius: 26 * metrics.scale)
-        .scaleEffect(isFocused ? 1.025 : 1)
+        .tvOS18Surface(role: .content, isFocused: isFocused, cornerRadius: 16 * metrics.scale)
+        .tvOS18ContentFocus(isFocused: isFocused)
         .animation(TVMotion.focus, value: isFocused)
     }
 }
@@ -459,7 +459,7 @@ private struct MacTVYouTubeControls: View {
         .foregroundStyle(.white.opacity(0.86))
         .padding(.horizontal, 26 * metrics.scale)
         .padding(.vertical, 18 * metrics.scale)
-        .liquidGlassCard(isFocused: false, cornerRadius: 24 * metrics.scale)
+        .tvOS18Surface(role: .panel, cornerRadius: 14 * metrics.scale)
     }
 }
 

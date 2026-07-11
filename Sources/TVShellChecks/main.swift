@@ -122,6 +122,7 @@ struct TVShellChecks {
         try checkTVOS18VisualSystem()
         try checkTVOS18SettingsLayout()
         try checkTVOS18SystemOverlays()
+        try checkTVOS18MediaBrowsers()
         try checkAppCatalogVisibilityAndOrdering()
         try checkSettingsPersistAcrossRelaunch()
         try checkCredentialsPersistAndLoadFromFile()
@@ -216,6 +217,21 @@ struct TVShellChecks {
         try expect(controlCenter.contains("liquidGlassCard") == false && controlCenter.contains(".ultraThinMaterial") == false, "control center removes Liquid Glass")
         try expect(keyboard.contains("liquidGlassCard") == false && keyboard.contains(".ultraThinMaterial") == false, "virtual keyboard removes Liquid Glass")
         try expect(launcher.contains("TVOS18StatusNotification"), "launcher shows status as a compact system notification")
+    }
+
+    static func checkTVOS18MediaBrowsers() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        let paths = [
+            "Sources/TVShellCore/Anime/AnimeRuntimeView.swift",
+            "Sources/TVShellCore/YouTube/YouTubeRuntimeView.swift",
+            "Sources/TVShellCore/Bilibili/BilibiliRuntimeView.swift"
+        ]
+        for path in paths {
+            let source = try String(contentsOf: root.appending(path: path))
+            try expect(source.contains("TVOS18Backdrop"), "media browser uses the tvOS 18 backdrop: \(path)")
+            try expect(source.contains("tvOS18ContentFocus"), "media browser uses image-based tvOS focus: \(path)")
+            try expect(source.contains("liquidGlassCard") == false, "media browser removes Liquid Glass: \(path)")
+        }
     }
 
     static func checkDanmakuMotionCompletesOffscreenTravel() throws {

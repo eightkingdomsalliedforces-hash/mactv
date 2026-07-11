@@ -17,7 +17,7 @@ public struct AnimeRuntimeView: View {
             let metrics = TVMetrics(size: proxy.size)
 
             ZStack {
-                TVControlBackdrop()
+                TVOS18Backdrop()
 
                 switch controller.state.phase {
                 case .titles:
@@ -156,7 +156,7 @@ public struct AnimeRuntimeView: View {
                         .font(.system(size: 34 * metrics.scale, weight: .bold))
                         .padding(.horizontal, 34 * metrics.scale)
                         .padding(.vertical, 22 * metrics.scale)
-                        .liquidGlassCard(isFocused: true, cornerRadius: 26 * metrics.scale)
+                        .tvOS18Surface(role: .row, isFocused: true, cornerRadius: 10 * metrics.scale)
 
                     Text("OK 開始觀看，Back 回封面牆，Menu 搜尋動漫。")
                         .font(.system(size: 24 * metrics.scale, weight: .semibold))
@@ -317,7 +317,7 @@ public struct AnimeRuntimeView: View {
                         .font(.system(size: 30 * metrics.scale, weight: .bold))
                         .foregroundStyle(.white.opacity(0.72))
                         .frame(maxWidth: .infinity, minHeight: 220 * metrics.scale, alignment: .center)
-                        .liquidGlassCard(isFocused: false, cornerRadius: 28 * metrics.scale)
+                        .tvOS18Surface(role: .panel, cornerRadius: 16 * metrics.scale)
                 } else {
                     ScrollViewReader { scrollProxy in
                         ScrollView(.vertical) {
@@ -343,7 +343,7 @@ public struct AnimeRuntimeView: View {
             }
             .padding(42 * metrics.scale)
             .frame(maxWidth: min(980 * metrics.scale, 980), maxHeight: min(760 * metrics.scale, 760), alignment: .topLeading)
-            .liquidGlassCard(isFocused: true, cornerRadius: 32 * metrics.scale)
+            .tvOS18Surface(role: .panel, cornerRadius: 20 * metrics.scale)
             .padding(.horizontal, metrics.horizontalPadding)
         }
     }
@@ -409,7 +409,7 @@ public struct AnimeRuntimeView: View {
                         .foregroundStyle(.white.opacity(0.72))
                 }
                 .padding(28 * metrics.scale)
-                .liquidGlassCard(isFocused: true, cornerRadius: 22 * metrics.scale)
+                .tvOS18Surface(role: .panel, cornerRadius: 14 * metrics.scale)
                 .padding(50 * metrics.scale)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
@@ -423,7 +423,7 @@ public struct AnimeRuntimeView: View {
             .foregroundStyle(.white.opacity(0.88))
             .padding(.horizontal, 20 * metrics.scale)
             .padding(.vertical, 12 * metrics.scale)
-            .liquidGlassCard(isFocused: false, cornerRadius: 18 * metrics.scale)
+            .tvOS18Surface(role: .panel, cornerRadius: 10 * metrics.scale)
             .padding(.top, 50 * metrics.scale)
             .padding(.trailing, 50 * metrics.scale)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -1403,7 +1403,7 @@ private struct AnimeStreamPickerView: View {
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(22 * metrics.scale)
-                                .liquidGlassCard(isFocused: index == focusedIndex, cornerRadius: 22 * metrics.scale)
+                                .tvOS18Surface(role: .row, isFocused: index == focusedIndex, cornerRadius: 10 * metrics.scale)
                                 .scaleEffect(index == focusedIndex ? 1.02 : 1)
                                 .id("anime-stream-choice-\(index)")
                             }
@@ -1420,7 +1420,7 @@ private struct AnimeStreamPickerView: View {
             }
             .frame(maxWidth: 1_120 * metrics.scale, maxHeight: 760 * metrics.scale, alignment: .topLeading)
             .padding(38 * metrics.scale)
-            .liquidGlassCard(isFocused: true, cornerRadius: 34 * metrics.scale)
+            .tvOS18Surface(role: .panel, cornerRadius: 20 * metrics.scale)
         }
     }
 }
@@ -1470,19 +1470,13 @@ private struct AnimeTitleCard: View {
                     .foregroundStyle(.white)
                     .padding(10 * metrics.scale)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.ultraThinMaterial)
+                    .background(.black.opacity(0.68))
             }
             .frame(width: posterWidth, height: posterHeight)
         }
         .frame(width: posterWidth, height: posterHeight)
         .clipShape(RoundedRectangle(cornerRadius: 16 * metrics.scale, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16 * metrics.scale, style: .continuous)
-                .stroke(.white.opacity(isFocused ? 0.96 : 0.08), lineWidth: isFocused ? 4 : 1)
-        )
-        .shadow(color: .black.opacity(isFocused ? 0.36 : 0.16), radius: isFocused ? 18 : 6, x: 0, y: isFocused ? 10 : 4)
-        .scaleEffect(isFocused ? 1.045 : 1)
-        .animation(TVMotion.focus, value: isFocused)
+        .tvOS18ContentFocus(isFocused: isFocused)
     }
 }
 
@@ -1501,8 +1495,8 @@ private struct EpisodeCard: View {
         }
         .frame(maxWidth: .infinity, minHeight: 138 * metrics.scale, alignment: .leading)
         .padding(26 * metrics.scale)
-        .liquidGlassCard(isFocused: isFocused, cornerRadius: 26 * metrics.scale)
-        .scaleEffect(isFocused ? 1.04 : 1)
+        .tvOS18Surface(role: .row, isFocused: isFocused, cornerRadius: 10 * metrics.scale)
+        .tvOS18ContentFocus(isFocused: isFocused)
         .animation(TVMotion.focus, value: isFocused)
     }
 }
@@ -1533,8 +1527,7 @@ private struct TorrentDownloadRow: View {
         .padding(.horizontal, 24 * metrics.scale)
         .padding(.vertical, 20 * metrics.scale)
         .frame(maxWidth: .infinity, minHeight: 94 * metrics.scale, alignment: .leading)
-        .liquidGlassCard(isFocused: isFocused, cornerRadius: 22 * metrics.scale)
-        .scaleEffect(isFocused ? 1.015 : 1)
+        .tvOS18Surface(role: .row, isFocused: isFocused, cornerRadius: 10 * metrics.scale)
         .animation(TVMotion.focus, value: isFocused)
     }
 }

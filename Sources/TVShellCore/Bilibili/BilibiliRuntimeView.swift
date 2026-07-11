@@ -16,7 +16,7 @@ public struct BilibiliRuntimeView: View {
             let metrics = TVMetrics(size: proxy.size)
 
             ZStack {
-                TVControlBackdrop()
+                TVOS18Backdrop()
 
                 switch controller.state.phase {
                 case .browsing:
@@ -238,7 +238,7 @@ public struct BilibiliRuntimeView: View {
                         .lineLimit(2)
                 }
                 .padding(28 * metrics.scale)
-                .liquidGlassCard(isFocused: true, cornerRadius: 22 * metrics.scale)
+                .tvOS18Surface(role: .panel, cornerRadius: 14 * metrics.scale)
                 .padding(50 * metrics.scale)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
@@ -827,9 +827,7 @@ private struct BilibiliSeasonCard: View {
                 .lineLimit(1)
         }
         .frame(width: width, alignment: .leading)
-        .scaleEffect(isFocused ? 1.08 : 1)
-        .shadow(color: .black.opacity(isFocused ? 0.48 : 0.18), radius: isFocused ? 24 : 8, x: 0, y: isFocused ? 18 : 6)
-        .animation(TVMotion.focus, value: isFocused)
+        .tvOS18ContentFocus(isFocused: isFocused)
         .accessibilityLabel(season.title)
     }
 }
@@ -856,8 +854,8 @@ private struct BilibiliEpisodeCard: View {
         }
         .frame(width: 170 * metrics.scale, height: 126 * metrics.scale, alignment: .leading)
         .padding(18 * metrics.scale)
-        .liquidGlassCard(isFocused: isFocused, cornerRadius: 20 * metrics.scale)
-        .scaleEffect(isFocused ? 1.04 : 1)
+        .tvOS18Surface(role: .row, isFocused: isFocused, cornerRadius: 10 * metrics.scale)
+        .tvOS18ContentFocus(isFocused: isFocused)
         .animation(TVMotion.focus, value: isFocused)
     }
 }
