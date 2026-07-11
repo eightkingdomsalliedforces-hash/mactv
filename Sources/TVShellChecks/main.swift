@@ -119,6 +119,7 @@ struct TVShellChecks {
         try checkLauncherLayoutNavigation()
         try checkAppStateOpensFocusedApps()
         try checkTVMetricsScaleWithWindowSize()
+        try checkTVOS18VisualSystem()
         try checkAppCatalogVisibilityAndOrdering()
         try checkSettingsPersistAcrossRelaunch()
         try checkCredentialsPersistAndLoadFromFile()
@@ -164,6 +165,19 @@ struct TVShellChecks {
         if condition() == false {
             throw CheckFailure(message)
         }
+    }
+
+    static func checkTVOS18VisualSystem() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        let source = try String(contentsOf: root.appending(path: "Sources/TVShellCore/Design/TVOS18VisualSystem.swift"))
+        try expect(source.contains("enum TVOS18SurfaceRole"), "tvOS 18 surfaces use semantic roles")
+        try expect(source.contains("case row") && source.contains("case panel") && source.contains("case alert"), "tvOS 18 exposes row, panel, and alert surfaces")
+        try expect(source.contains("reduceMotion"), "tvOS 18 focus respects Reduce Motion")
+        try expect(source.contains("Color.white") && source.contains("Color.black"), "focused system rows can use light backgrounds and dark content")
+
+        let metrics = TVMetrics(size: CGSize(width: 1_920, height: 1_080))
+        try expect(abs(metrics.appTileWidth / metrics.appTileHeight - 1.55) < 0.02, "launcher app tiles use the approved 1.55:1 ratio")
+        try expect(metrics.horizontalPadding >= 80, "tvOS layout keeps the horizontal safe area")
     }
 
     static func checkDanmakuMotionCompletesOffscreenTravel() throws {

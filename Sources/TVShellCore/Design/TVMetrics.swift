@@ -24,6 +24,9 @@ public struct TVMetrics: Equatable, Sendable {
     public var rowTitleSize: Double { 30 * scale }
     public var hintSize: Double { 26 * scale }
     public var appIconSize: Double { 220 * scale }
+    public var appTileWidth: Double { 222 * scale }
+    public var appTileHeight: Double { appTileWidth / 1.55 }
+    public var systemRowHeight: Double { 72 * scale }
     public var appTitleSize: Double { 34 * scale }
     public var appTitleWidth: Double { 260 * scale }
 }
