@@ -125,21 +125,32 @@ public struct BilibiliRuntimeView: View {
                             .lineLimit(1)
                     }
 
-                    BilibiliSectionGrid(
-                        title: "番劇",
-                        items: controller.bangumiItems,
-                        baseIndex: controller.bangumiStartIndex,
-                        focusedIndex: controller.state.focusedSeasonIndex,
-                        metrics: metrics
-                    )
+                    if controller.topTab == .dynamic {
+                        BilibiliDynamicPage(
+                            items: controller.videoItems,
+                            focusedIndex: controller.state.focusedSeasonIndex,
+                            isAuthenticated: controller.isAuthenticated,
+                            metrics: metrics
+                        )
+                    } else if controller.topTab == .profile {
+                        BilibiliProfilePage(isAuthenticated: controller.isAuthenticated, metrics: metrics)
+                    } else {
+                        BilibiliSectionGrid(
+                            title: "番劇",
+                            items: controller.bangumiItems,
+                            baseIndex: controller.bangumiStartIndex,
+                            focusedIndex: controller.state.focusedSeasonIndex,
+                            metrics: metrics
+                        )
 
-                    BilibiliSectionGrid(
-                        title: "一般影片",
-                        items: controller.videoItems,
-                        baseIndex: controller.videoStartIndex,
-                        focusedIndex: controller.state.focusedSeasonIndex,
-                        metrics: metrics
-                    )
+                        BilibiliSectionGrid(
+                            title: "一般影片",
+                            items: controller.videoItems,
+                            baseIndex: controller.videoStartIndex,
+                            focusedIndex: controller.state.focusedSeasonIndex,
+                            metrics: metrics
+                        )
+                    }
 
                     Text("第一排按上進入分頁，左右切換，按下回內容。OK 進入詳情，Menu 搜尋，Back 或 Home 返回。")
                         .font(.system(size: 22 * metrics.scale, weight: .semibold))
@@ -346,6 +357,10 @@ final class BilibiliRuntimeController: ObservableObject {
 
     var episodes: [BilibiliEpisode] {
         detail?.episodes ?? []
+    }
+
+    var isAuthenticated: Bool {
+        credentials.isConfigured
     }
 
     var bangumiItems: [BilibiliSeason] {
@@ -847,6 +862,101 @@ private struct BilibiliReferenceDetailHeader: View {
         .frame(width: 96 * metrics.scale, height: 72 * metrics.scale)
         .foregroundStyle(isFocused ? .black : .white)
         .tvOS18Surface(role: .row, isFocused: isFocused, cornerRadius: 10 * metrics.scale)
+    }
+}
+
+private struct BilibiliDynamicPage: View {
+    let items: [BilibiliSeason]
+    let focusedIndex: Int
+    let isAuthenticated: Bool
+    let metrics: TVMetrics
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 28 * metrics.scale) {
+            HStack(spacing: 18 * metrics.scale) {
+                ZStack {
+                    Circle().fill(.pink.opacity(0.28))
+                    Image(systemName: "person.crop.circle.fill")
+                        .font(.system(size: 48 * metrics.scale))
+                }
+                .frame(width: 82 * metrics.scale, height: 82 * metrics.scale)
+                VStack(alignment: .leading, spacing: 6 * metrics.scale) {
+                    Text(isAuthenticated ? "追蹤中的創作者" : "登入後顯示追蹤動態")
+                        .font(.system(size: 28 * metrics.scale, weight: .bold))
+                    Text(isAuthenticated ? "最新投稿" : "請在設定載入 Bilibili Cookie")
+                        .font(.system(size: 19 * metrics.scale, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.52))
+                }
+            }
+
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 330 * metrics.scale), spacing: 28 * metrics.scale)],
+                spacing: 34 * metrics.scale
+            ) {
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    TVOSMediaVideoCard(
+                        title: item.title,
+                        subtitle: item.subtitle,
+                        metadata: item.totalText,
+                        imageURL: item.coverURL,
+                        isFocused: index == focusedIndex,
+                        metrics: metrics
+                    )
+                    .frame(width: 330 * metrics.scale)
+                    .id("bilibili-season-\(index)")
+                }
+            }
+        }
+    }
+}
+
+private struct BilibiliProfilePage: View {
+    let isAuthenticated: Bool
+    let metrics: TVMetrics
+    private let menuItems = ["歷史記錄", "我的收藏", "稍後再看", "設定", "操作說明", "登出"]
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 54 * metrics.scale) {
+            VStack(alignment: .center, spacing: 14 * metrics.scale) {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.system(size: 112 * metrics.scale))
+                    .foregroundStyle(.pink.opacity(0.82))
+                Text(isAuthenticated ? "Bilibili 使用者" : "尚未登入")
+                    .font(.system(size: 28 * metrics.scale, weight: .bold))
+                Text(isAuthenticated ? "已載入登入 Cookie" : "請至設定載入 Cookie")
+                    .font(.system(size: 18 * metrics.scale, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+            .frame(width: 300 * metrics.scale)
+
+            VStack(alignment: .leading, spacing: 12 * metrics.scale) {
+                HStack(spacing: 38 * metrics.scale) {
+                    profileCount("硬幣", value: isAuthenticated ? "--" : "0")
+                    profileCount("動態", value: isAuthenticated ? "--" : "0")
+                    profileCount("關注", value: isAuthenticated ? "--" : "0")
+                    profileCount("粉絲", value: isAuthenticated ? "--" : "0")
+                }
+                .padding(.bottom, 12 * metrics.scale)
+
+                ForEach(Array(menuItems.enumerated()), id: \.offset) { index, item in
+                    Text(item)
+                        .font(.system(size: 24 * metrics.scale, weight: .semibold))
+                        .padding(.horizontal, 22 * metrics.scale)
+                        .frame(maxWidth: 520 * metrics.scale, minHeight: 54 * metrics.scale, alignment: .leading)
+                        .tvOS18Surface(role: .row, isFocused: index == 0, cornerRadius: 9 * metrics.scale)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 520 * metrics.scale, alignment: .topLeading)
+    }
+
+    private func profileCount(_ title: String, value: String) -> some View {
+        VStack(spacing: 5 * metrics.scale) {
+            Text(value).font(.system(size: 27 * metrics.scale, weight: .bold))
+            Text(title)
+                .font(.system(size: 18 * metrics.scale, weight: .medium))
+                .foregroundStyle(.white.opacity(0.52))
+        }
     }
 }
 

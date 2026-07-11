@@ -1343,6 +1343,8 @@ struct TVShellChecks {
         try expect(bilibiliRuntimeSource.contains("TVOSMediaVideoCard("), "bilibili general videos use the reference 16:9 grid card")
         try expect(bilibiliRuntimeSource.contains("isTopNavigationFocused"), "bilibili can move focus between its top navigation and content grid")
         try expect(bilibiliRuntimeSource.contains("BilibiliReferenceDetailHeader("), "bilibili detail follows the reference metadata-and-preview layout")
+        try expect(bilibiliRuntimeSource.contains("BilibiliDynamicPage("), "bilibili exposes the reference dynamic page")
+        try expect(bilibiliRuntimeSource.contains("BilibiliProfilePage("), "bilibili exposes the reference profile page")
         let bilibiliApp = SeedApps.defaultApps.first(where: { app in
             if case .bilibili = app.target { return true }
             return false
