@@ -11,6 +11,20 @@ public enum AniSubsCSS1ProviderError: LocalizedError, Equatable, Sendable {
     }
 }
 
+private struct CSS1SourceSearchResolution: Sendable {
+    var sourceIndex: Int
+    var sourceName: String
+    var results: [AnimeSearchResult]
+    var failureReasons: [String]
+    var healthFailureReason: String?
+}
+
+private struct CSS1SubjectSearchResolution: Sendable {
+    var subjectIndex: Int
+    var result: AnimeSearchResult?
+    var failureReason: String?
+}
+
 public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
     public let id = "ani-subs-css1"
     public let displayName = "ani-subs CSS1"
@@ -37,69 +51,30 @@ public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
         let healthState = (try? healthStore.load()) ?? AniSubsCSS1SourceHealthState()
         let sources = try await webSelectorSources()
             .filter { healthState.skippedSourceNames.contains($0.name) == false }
-        var allResults: [AnimeSearchResult] = []
-        var failureReasons: [String] = []
-
-        for source in sources {
-            var producedResult = false
-            var detailFailureReason: String?
-            let subjects: [CSS1HTMLSelectorEngine.Anchor]
-            let searchHTML: String
-            do {
-                let searchURL = try source.searchURL(keyword: query.keyword)
-                searchHTML = try await html(for: searchURL, source: source)
-                subjects = CSS1HTMLSelectorEngine.anchors(
-                    matching: source.searchSelector,
-                    in: searchHTML,
-                    baseURL: searchURL
-                )
-            } catch {
-                let reason = css1FailureReason(error)
-                failureReasons.append("\(source.name)：\(reason)")
-                try? healthStore.recordFailure(sourceName: source.name, reason: reason)
-                continue
-            }
-
-            let matchedSubjects = filteredSubjects(subjects, keyword: query.keyword)
-            for subject in matchedSubjects.prefix(20) {
-                do {
-                    guard isAnimeSearchCard(subject, in: searchHTML) else {
-                        continue
-                    }
-                    let detailHTML = try await html(for: subject.url, source: source)
-                    guard isAnimeDetailPage(detailHTML) else {
-                        continue
-                    }
-                    let episodes = parseEpisodes(
-                        source: source,
-                        subjectTitle: subject.title,
-                        detailHTML: detailHTML,
-                        detailURL: subject.url
-                    )
-                    guard episodes.isEmpty == false else {
-                        continue
-                    }
-                    allResults.append(AnimeSearchResult(
-                        id: "\(id)-\(stableID(source.name))-\(stableID(subject.url.absoluteString))",
-                        title: subject.title,
-                        subtitle: source.name,
-                        episodeCount: episodes.count,
-                        episodes: episodes
-                    ))
-                    producedResult = true
-                } catch {
-                    let reason = css1FailureReason(error)
-                    detailFailureReason = reason
-                    if failureReasons.contains(where: { $0.hasPrefix("\(source.name)：") }) == false {
-                        failureReasons.append("\(source.name)：\(reason)")
-                    }
-                    continue
+        let resolutions = await withTaskGroup(of: CSS1SourceSearchResolution.self) { group in
+            for (sourceIndex, source) in sources.enumerated() {
+                group.addTask {
+                    await resolveSource(source, sourceIndex: sourceIndex, keyword: query.keyword)
                 }
             }
-            if producedResult {
-                try? healthStore.recordSuccess(sourceName: source.name)
-            } else if let detailFailureReason {
-                try? healthStore.recordFailure(sourceName: source.name, reason: detailFailureReason)
+            var values: [CSS1SourceSearchResolution] = []
+            for await value in group {
+                values.append(value)
+            }
+            return values.sorted { $0.sourceIndex < $1.sourceIndex }
+        }
+
+        var allResults: [AnimeSearchResult] = []
+        var failureReasons: [String] = []
+        for resolution in resolutions {
+            allResults.append(contentsOf: resolution.results)
+            failureReasons.append(contentsOf: resolution.failureReasons)
+            if resolution.results.isEmpty {
+                if let reason = resolution.healthFailureReason {
+                    try? healthStore.recordFailure(sourceName: resolution.sourceName, reason: reason)
+                }
+            } else {
+                try? healthStore.recordSuccess(sourceName: resolution.sourceName)
             }
         }
 
@@ -111,6 +86,96 @@ public struct AniSubsCSS1SubscriptionProvider: AnimeMediaSourceAdapter {
             throw AniSubsCSS1ProviderError.allSourcesFailed(failureReasons)
         }
         return merged
+    }
+
+    private func resolveSource(
+        _ source: AniSubsCSS1Source,
+        sourceIndex: Int,
+        keyword: String
+    ) async -> CSS1SourceSearchResolution {
+        let subjects: [CSS1HTMLSelectorEngine.Anchor]
+        let searchHTML: String
+        do {
+            let searchURL = try source.searchURL(keyword: keyword)
+            searchHTML = try await html(for: searchURL, source: source)
+            subjects = CSS1HTMLSelectorEngine.anchors(
+                matching: source.searchSelector,
+                in: searchHTML,
+                baseURL: searchURL
+            )
+        } catch {
+            let reason = css1FailureReason(error)
+            return CSS1SourceSearchResolution(
+                sourceIndex: sourceIndex,
+                sourceName: source.name,
+                results: [],
+                failureReasons: ["\(source.name)：\(reason)"],
+                healthFailureReason: reason
+            )
+        }
+
+        let matchedSubjects = filteredSubjects(subjects, keyword: keyword)
+            .filter { isAnimeSearchCard($0, in: searchHTML) }
+        let subjectResolutions = await withTaskGroup(of: CSS1SubjectSearchResolution.self) { group in
+            for (subjectIndex, subject) in matchedSubjects.prefix(6).enumerated() {
+                group.addTask {
+                    await resolveSubject(subject, subjectIndex: subjectIndex, source: source)
+                }
+            }
+            var values: [CSS1SubjectSearchResolution] = []
+            for await value in group {
+                values.append(value)
+            }
+            return values.sorted { $0.subjectIndex < $1.subjectIndex }
+        }
+        let results = subjectResolutions.compactMap(\.result)
+        let detailFailureReason = subjectResolutions.compactMap(\.failureReason).first
+        return CSS1SourceSearchResolution(
+            sourceIndex: sourceIndex,
+            sourceName: source.name,
+            results: results,
+            failureReasons: detailFailureReason.map { ["\(source.name)：\($0)"] } ?? [],
+            healthFailureReason: results.isEmpty ? detailFailureReason : nil
+        )
+    }
+
+    private func resolveSubject(
+        _ subject: CSS1HTMLSelectorEngine.Anchor,
+        subjectIndex: Int,
+        source: AniSubsCSS1Source
+    ) async -> CSS1SubjectSearchResolution {
+        do {
+            let detailHTML = try await html(for: subject.url, source: source)
+            guard isAnimeDetailPage(detailHTML) else {
+                return CSS1SubjectSearchResolution(subjectIndex: subjectIndex, result: nil, failureReason: nil)
+            }
+            let episodes = parseEpisodes(
+                source: source,
+                subjectTitle: subject.title,
+                detailHTML: detailHTML,
+                detailURL: subject.url
+            )
+            guard episodes.isEmpty == false else {
+                return CSS1SubjectSearchResolution(subjectIndex: subjectIndex, result: nil, failureReason: nil)
+            }
+            return CSS1SubjectSearchResolution(
+                subjectIndex: subjectIndex,
+                result: AnimeSearchResult(
+                    id: "\(id)-\(stableID(source.name))-\(stableID(subject.url.absoluteString))",
+                    title: subject.title,
+                    subtitle: source.name,
+                    episodeCount: episodes.count,
+                    episodes: episodes
+                ),
+                failureReason: nil
+            )
+        } catch {
+            return CSS1SubjectSearchResolution(
+                subjectIndex: subjectIndex,
+                result: nil,
+                failureReason: css1FailureReason(error)
+            )
+        }
     }
 
     public func episodes(for result: AnimeSearchResult) async throws -> [AnimeEpisode] {
@@ -698,7 +763,7 @@ private struct AniSubsCSS1VideoHeaders: Decodable {
 }
 
 private enum CSS1HTMLSelectorEngine {
-    struct Anchor: Equatable {
+    struct Anchor: Equatable, Sendable {
         var title: String
         var url: URL
     }

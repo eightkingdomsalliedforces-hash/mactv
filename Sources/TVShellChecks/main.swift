@@ -2085,6 +2085,77 @@ struct TVShellChecks {
         let timeoutResults = try await timeoutProvider.search(AnimeSearchQuery(keyword: "86"))
         try expect(timeoutResults.first?.title == "86 不存在的戰區", "css1 provider skips timed-out sources instead of hanging anime loading")
 
+        let parallelSubscription = """
+        {
+          "exportedMediaSourceDataList": {
+            "mediaSources": [
+              {
+                "factoryId": "web-selector",
+                "arguments": {
+                  "name": "parallel-a",
+                  "searchConfig": {
+                    "searchUrl": "https://parallel-a.example/search?wd={keyword}",
+                    "selectorSubjectFormatA": { "selectLists": ".anime>a" },
+                    "selectorChannelFormatFlattened": {
+                      "selectEpisodeLists": ".episodes",
+                      "selectEpisodesFromList": "a",
+                      "matchEpisodeSortFromName": "第\\\\s*(?<ep>.+)\\\\s*[话集]"
+                    },
+                    "matchVideo": { "matchVideoUrl": "https?://.+\\\\.mp4" }
+                  }
+                }
+              },
+              {
+                "factoryId": "web-selector",
+                "arguments": {
+                  "name": "parallel-b",
+                  "searchConfig": {
+                    "searchUrl": "https://parallel-b.example/search?wd={keyword}",
+                    "selectorSubjectFormatA": { "selectLists": ".anime>a" },
+                    "selectorChannelFormatFlattened": {
+                      "selectEpisodeLists": ".episodes",
+                      "selectEpisodesFromList": "a",
+                      "matchEpisodeSortFromName": "第\\\\s*(?<ep>.+)\\\\s*[话集]"
+                    },
+                    "matchVideo": { "matchVideoUrl": "https?://.+\\\\.mp4" }
+                  }
+                }
+              }
+            ]
+          }
+        }
+        """.data(using: .utf8)!
+        let parallelSearchA = #"<div class="anime"><a href="/show/a">並行動畫 A</a></div>"#.data(using: .utf8)!
+        let parallelSearchB = #"<div class="anime"><a href="/show/b">並行動畫 B</a></div>"#.data(using: .utf8)!
+        let parallelDetail = #"<div class="episodes"><a href="/watch/1">第 1 話</a></div>"#.data(using: .utf8)!
+        let parallelHealthURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("TVShellChecks-CSS1Parallel-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: parallelHealthURL) }
+        let parallelProvider = AniSubsCSS1SubscriptionProvider(
+            subscriptionURL: subscriptionURL,
+            transport: DelayedAnimeHTTPTransport(
+                routes: [
+                    subscriptionURL.absoluteString: parallelSubscription,
+                    "https://parallel-a.example/search?wd=%E4%B8%A6%E8%A1%8C": parallelSearchA,
+                    "https://parallel-b.example/search?wd=%E4%B8%A6%E8%A1%8C": parallelSearchB,
+                    "https://parallel-a.example/show/a": parallelDetail,
+                    "https://parallel-b.example/show/b": parallelDetail
+                ],
+                delayedURLs: [
+                    "https://parallel-a.example/search?wd=%E4%B8%A6%E8%A1%8C",
+                    "https://parallel-b.example/search?wd=%E4%B8%A6%E8%A1%8C"
+                ],
+                delayNanoseconds: 150_000_000
+            ),
+            requestTimeoutNanoseconds: 1_000_000_000,
+            healthStore: AniSubsCSS1SourceHealthStore(fileURL: parallelHealthURL)
+        )
+        let parallelStarted = Date()
+        let parallelResults = try await parallelProvider.search(AnimeSearchQuery(keyword: "並行"))
+        let parallelElapsed = Date().timeIntervalSince(parallelStarted)
+        try expect(parallelResults.count == 2, "css1 concurrent search preserves results from every source")
+        try expect(parallelElapsed < 0.26, "css1 source searches run concurrently instead of accumulating delays: \(parallelElapsed)")
+
         let healthURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("TVShellChecks-CSS1Health-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: healthURL) }
