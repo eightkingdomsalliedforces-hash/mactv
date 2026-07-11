@@ -249,6 +249,13 @@ struct TVShellChecks {
 
     static func checkTVOS18MediaBrowsers() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        let componentsURL = root.appending(path: "Sources/TVShellCore/Design/TVOSMediaComponents.swift")
+        try expect(FileManager.default.fileExists(atPath: componentsURL.path), "media browsers share tvOS navigation and grid components")
+        let components = try String(contentsOf: componentsURL)
+        try expect(components.contains("struct TVOSMediaTopNavigation"), "media browsers share a centered capsule navigation")
+        try expect(components.contains("struct TVOSMediaVideoCard"), "media browsers share a 16:9 video card")
+        try expect(components.contains("aspectRatio(16.0 / 9.0"), "shared media cards preserve a 16:9 thumbnail")
+        try expect(components.contains("struct TVOSMediaEmptyState"), "media browsers share loading and empty states")
         let paths = [
             "Sources/TVShellCore/Anime/AnimeRuntimeView.swift",
             "Sources/TVShellCore/YouTube/YouTubeRuntimeView.swift",
@@ -260,6 +267,10 @@ struct TVShellChecks {
             try expect(source.contains("tvOS18ContentFocus"), "media browser uses image-based tvOS focus: \(path)")
             try expect(source.contains("liquidGlassCard") == false, "media browser removes Liquid Glass: \(path)")
         }
+        let youtube = try String(contentsOf: root.appending(path: "Sources/TVShellCore/YouTube/YouTubeRuntimeView.swift"))
+        try expect(youtube.contains("TVOSMediaTopNavigation("), "YouTube uses the centered tvOS media navigation")
+        try expect(youtube.contains("TVOSMediaVideoCard("), "YouTube uses shared 16:9 browsing cards")
+        try expect(youtube.contains("TVOSMediaEmptyState("), "YouTube reports loading and empty results in the media layout")
     }
 
     static func checkTVOS18PlayerHUD() throws {

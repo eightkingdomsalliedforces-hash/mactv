@@ -84,26 +84,52 @@ public struct YouTubeRuntimeView: View {
         ScrollViewReader { scrollProxy in
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 32 * metrics.scale) {
-                    VStack(alignment: .leading, spacing: 12 * metrics.scale) {
+                    TVOSMediaTopNavigation(
+                        items: [
+                            .init(id: "recommended", title: "推薦"),
+                            .init(id: "popular", title: "熱門"),
+                            .init(id: "subscriptions", title: "訂閱"),
+                            .init(id: "history", title: "記錄"),
+                            .init(id: "search", title: "搜尋", symbolName: "magnifyingglass")
+                        ],
+                        focusedID: "recommended",
+                        metrics: metrics
+                    )
+                    .frame(maxWidth: .infinity, alignment: .center)
+
+                    HStack(alignment: .firstTextBaseline) {
                         Text(app.name)
-                            .font(.system(size: 76 * metrics.scale, weight: .bold))
+                            .font(.system(size: 48 * metrics.scale, weight: .bold))
+                        Spacer()
                         Text(controller.statusText)
-                            .font(.system(size: 28 * metrics.scale, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.7))
+                            .font(.system(size: 21 * metrics.scale, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.58))
                     }
 
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 408 * metrics.scale), spacing: 28 * metrics.scale)],
-                        alignment: .leading,
-                        spacing: 30 * metrics.scale
-                    ) {
-                        ForEach(Array(controller.videos.enumerated()), id: \.element.id) { index, video in
-                            YouTubeVideoCard(
-                                video: video,
-                                isFocused: index == controller.state.focusedIndex,
-                                metrics: metrics
-                            )
-                            .id("youtube-video-\(index)")
+                    if controller.videos.isEmpty {
+                        TVOSMediaEmptyState(
+                            title: "沒有影片",
+                            message: controller.statusText,
+                            isLoading: controller.statusText.contains("載入"),
+                            metrics: metrics
+                        )
+                    } else {
+                        LazyVGrid(
+                            columns: [GridItem(.adaptive(minimum: 408 * metrics.scale), spacing: 28 * metrics.scale)],
+                            alignment: .leading,
+                            spacing: 32 * metrics.scale
+                        ) {
+                            ForEach(Array(controller.videos.enumerated()), id: \.element.id) { index, video in
+                                TVOSMediaVideoCard(
+                                    title: video.title,
+                                    subtitle: video.channelTitle,
+                                    metadata: "YouTube",
+                                    imageURL: video.thumbnailURL,
+                                    isFocused: index == controller.state.focusedIndex,
+                                    metrics: metrics
+                                )
+                                .id("youtube-video-\(index)")
+                            }
                         }
                     }
 
