@@ -198,16 +198,12 @@ public struct AnimeRuntimeView: View {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 34 * metrics.scale) {
                     TVOSMediaTopNavigation(
-                        items: [
-                            .init(id: "browse", title: "推薦"),
-                            .init(id: "official", title: "正版來源"),
-                            .init(id: "subscriptions", title: "我的訂閱"),
-                            .init(id: "history", title: "觀看記錄"),
-                            .init(id: "search", title: "搜尋", symbolName: "magnifyingglass")
-                        ],
-                        focusedID: "browse",
+                        items: AnimeMainTab.allCases.map { .init(id: $0.rawValue, title: $0.title, symbolName: $0.symbolName) },
+                        focusedID: controller.mainTab.rawValue,
                         metrics: metrics
                     )
+                    .opacity(controller.mainSourceNavigation.isNavigationFocused ? 1 : 0.78)
+                    .scaleEffect(controller.mainSourceNavigation.isNavigationFocused ? 1.035 : 1)
                     .frame(maxWidth: .infinity, alignment: .center)
 
                     HStack(alignment: .firstTextBaseline) {
@@ -268,6 +264,7 @@ public struct AnimeRuntimeView: View {
     }
 
     private func officialSourcesBrowser(metrics: TVMetrics) -> some View {
+        ScrollViewReader { scrollProxy in
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 30 * metrics.scale) {
                 TVOSMediaTopNavigation(
@@ -293,6 +290,7 @@ public struct AnimeRuntimeView: View {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 190 * metrics.scale), spacing: 22 * metrics.scale)], spacing: 26 * metrics.scale) {
                         ForEach(Array(controller.aniGamerItems.enumerated()), id: \.element.id) { index, item in
                             AniGamerOfficialCard(item: item, isFocused: index == controller.officialFocusedIndex, metrics: metrics)
+                                .id("official-anigamer-\(index)")
                         }
                     }
                 } else {
@@ -306,6 +304,7 @@ public struct AnimeRuntimeView: View {
                                 isFocused: index == controller.officialFocusedIndex,
                                 metrics: metrics
                             )
+                            .id("official-youtube-\(index)")
                         }
                     }
                 }
@@ -328,6 +327,26 @@ public struct AnimeRuntimeView: View {
             .padding(.bottom, 60 * metrics.scale)
         }
         .scrollIndicators(.hidden)
+        .onChange(of: controller.officialFocusedIndex) { _, index in
+            withAnimation(TVMotion.focus) {
+                if controller.officialSourcesState.selectedSource == .aniGamer {
+                    scrollProxy.scrollTo("official-anigamer-\(index)", anchor: .center)
+                } else {
+                    scrollProxy.scrollTo("official-youtube-\(index)", anchor: .center)
+                }
+            }
+        }
+        .onChange(of: controller.officialSourcesState.selectedSource) { _, source in
+            let index = controller.officialSourcesState.session(for: source).focusedIndex
+            withAnimation(TVMotion.focus) {
+                if source == .aniGamer {
+                    scrollProxy.scrollTo("official-anigamer-\(index)", anchor: .center)
+                } else {
+                    scrollProxy.scrollTo("official-youtube-\(index)", anchor: .center)
+                }
+            }
+        }
+        }
     }
 
     private func episodeBrowser(metrics: TVMetrics, size: CGSize) -> some View {
@@ -557,7 +576,9 @@ final class AnimeRuntimeController: ObservableObject {
     @Published private(set) var keyboardState = VirtualKeyboardState(text: "", layout: .zhuyin)
     @Published private(set) var officialSourcesState = AnimeOfficialSourcesState()
     @Published private(set) var isOfficialSourcesVisible = false
-    @Published private(set) var isOfficialSourceNavigationFocused = true
+    @Published private(set) var officialSourceNavigation = AnimeSourceNavigationState(sourceCount: AnimeOfficialSource.allCases.count)
+    @Published private(set) var mainSourceNavigation = AnimeSourceNavigationState(sourceCount: AnimeMainTab.allCases.count, isNavigationFocused: false)
+    @Published private(set) var mainTab: AnimeMainTab = .recommended
     @Published private(set) var aniGamerItems: [AniGamerCatalogItem] = []
     @Published private(set) var officialYouTubeVideos: [YouTubeVideo] = []
     @Published private(set) var officialStatusText = "選擇正版來源"
@@ -644,6 +665,10 @@ final class AnimeRuntimeController: ObservableObject {
 
     var officialFocusedIndex: Int {
         officialSourcesState.session(for: officialSourcesState.selectedSource).focusedIndex
+    }
+
+    var isOfficialSourceNavigationFocused: Bool {
+        officialSourceNavigation.isNavigationFocused
     }
 
     var officialResultCount: Int {
@@ -791,9 +816,19 @@ final class AnimeRuntimeController: ObservableObject {
             return
         }
 
+        if state.phase == .titles, mainSourceNavigation.isNavigationFocused {
+            handleMainSourceNavigation(command)
+            return
+        }
+
+        if state.phase == .titles, command == .up, state.focusedTitleIndex < titleColumns {
+            mainSourceNavigation.enterNavigation()
+            return
+        }
+
         if state.phase == .titles, command == .playPause {
             isOfficialSourcesVisible = true
-            isOfficialSourceNavigationFocused = true
+            officialSourceNavigation.enterNavigation()
             officialStatusText = "正在載入動畫瘋..."
             Task { await loadOfficialSource() }
             return
@@ -866,6 +901,48 @@ final class AnimeRuntimeController: ObservableObject {
         }
     }
 
+    private func handleMainSourceNavigation(_ command: RemoteCommand) {
+        switch command {
+        case .left:
+            mainSourceNavigation.move(.left)
+            mainTab = AnimeMainTab.allCases[mainSourceNavigation.focusedSourceIndex]
+        case .right:
+            mainSourceNavigation.move(.right)
+            mainTab = AnimeMainTab.allCases[mainSourceNavigation.focusedSourceIndex]
+        case .down:
+            mainSourceNavigation.enterContent()
+        case .select:
+            activateMainTab()
+        case .back, .home:
+            mainSourceNavigation.enterContent()
+        default:
+            break
+        }
+    }
+
+    private func activateMainTab() {
+        switch mainTab {
+        case .recommended:
+            mainSourceNavigation.enterContent()
+            statusText = titles.isEmpty ? "沒有推薦動畫。" : "推薦動畫 · \(titles.count) 部"
+        case .official:
+            isOfficialSourcesVisible = true
+            officialSourceNavigation.enterNavigation()
+            officialStatusText = "正在載入動畫瘋..."
+            Task { await loadOfficialSourceIfNeeded() }
+        case .subscriptions:
+            mainSourceNavigation.enterContent()
+            statusText = "我的訂閱 · 目前顯示已啟用來源的作品"
+        case .history:
+            mainSourceNavigation.enterContent()
+            statusText = watchHistory.isEmpty ? "目前沒有觀看記錄。" : "觀看記錄 · \(watchHistory.count) 筆"
+        case .search:
+            keyboardState = VirtualKeyboardState(text: currentQuery, layout: .zhuyin)
+            isKeyboardVisible = true
+            statusText = "動漫搜尋"
+        }
+    }
+
     private func handleKeyboard(_ command: RemoteCommand) {
         let action = keyboardState.apply(command)
         switch action {
@@ -907,13 +984,15 @@ final class AnimeRuntimeController: ObservableObject {
         if isOfficialSourceNavigationFocused {
             switch command {
             case .left:
-                officialSourcesState.selectedSource = .aniGamer
+                officialSourceNavigation.move(.left)
+                officialSourcesState.selectedSource = AnimeOfficialSource.allCases[officialSourceNavigation.focusedSourceIndex]
                 Task { await loadOfficialSourceIfNeeded() }
             case .right:
-                officialSourcesState.selectedSource = .officialYouTube
+                officialSourceNavigation.move(.right)
+                officialSourcesState.selectedSource = AnimeOfficialSource.allCases[officialSourceNavigation.focusedSourceIndex]
                 Task { await loadOfficialSourceIfNeeded() }
             case .down, .select:
-                isOfficialSourceNavigationFocused = false
+                officialSourceNavigation.enterContent()
             default:
                 break
             }
@@ -927,7 +1006,7 @@ final class AnimeRuntimeController: ObservableObject {
         case .right: index = min(max(officialResultCount - 1, 0), index + 1)
         case .up:
             if index < columns {
-                isOfficialSourceNavigationFocused = true
+                officialSourceNavigation.enterNavigation()
                 return
             }
             index = max(0, index - columns)

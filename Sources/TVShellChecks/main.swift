@@ -1642,6 +1642,21 @@ struct TVShellChecks {
         try expect(animeRuntime.contains("AniGamerOfficialPlayerView("), "anime app opens aniGamer results in the official player container")
         try expect(animeRuntime.contains("officialYouTubeVideos"), "anime app keeps official YouTube results separate from aniGamer results")
         try expect(animeRuntime.contains("officialYouTubeVideoID != nil, command == .back"), "Back exits official YouTube playback to its independent result page")
+        var sourceNavigation = AnimeSourceNavigationState(sourceCount: 2)
+        sourceNavigation.move(.right)
+        try expect(sourceNavigation.focusedSourceIndex == 1, "anime source navigation moves right")
+        sourceNavigation.move(.right)
+        try expect(sourceNavigation.focusedSourceIndex == 1, "anime source navigation clamps right")
+        sourceNavigation.move(.left)
+        sourceNavigation.move(.left)
+        try expect(sourceNavigation.focusedSourceIndex == 0, "anime source navigation clamps left")
+        sourceNavigation.enterContent()
+        try expect(sourceNavigation.isNavigationFocused == false, "anime source navigation can return focus to content")
+        try expect(AnimeMainTab.allCases.map(\.title) == ["推薦", "正版來源", "我的訂閱", "觀看記錄", "搜尋"], "anime main navigation exposes every visible tab")
+        try expect(animeRuntime.contains("mainSourceNavigation.move(.right)"), "anime main top navigation responds to right")
+        try expect(animeRuntime.contains("mainSourceNavigation.move(.left)"), "anime main top navigation responds to left")
+        try expect(animeRuntime.contains("official-youtube-\\(index)"), "official YouTube results have stable scroll IDs")
+        try expect(animeRuntime.contains("scrollProxy.scrollTo(\"official-youtube-"), "official YouTube results follow focused cards")
     }
 
     static func checkYouTubeEmbedPageIncludesOriginAndFallback() throws {
