@@ -1,7 +1,11 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 public struct AppManagementView: View {
     @EnvironmentObject private var appState: AppState
+    @State private var isImporterPresented = false
+    @State private var pendingTrustPackage: VerifiedPortableApp?
+    @State private var installError: String?
 
     public init() {}
 
@@ -16,7 +20,7 @@ public struct AppManagementView: View {
                     TVOS18SettingsSidebar(
                         symbolName: "square.grid.2x2.fill",
                         title: "App 管理",
-                        subtitle: "上下選擇，OK 顯示或隱藏，左右調整首頁順序。",
+                        subtitle: "Menu 安裝 .tvshellapp；長按 OK 移除第三方 App。上下選擇，OK 顯示或隱藏，左右調整順序。",
                         metrics: metrics
                     )
                 } content: {
@@ -52,6 +56,56 @@ public struct AppManagementView: View {
             }
         }
         .foregroundStyle(.white)
+        .onReceive(NotificationCenter.default.publisher(for: .tvShellRequestPortableAppImporter)) { _ in
+            isImporterPresented = true
+        }
+        .fileImporter(
+            isPresented: $isImporterPresented,
+            allowedContentTypes: [.package],
+            allowsMultipleSelection: false
+        ) { result in
+            do {
+                guard let url = try result.get().first else { return }
+                let accessed = url.startAccessingSecurityScopedResource()
+                defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+                let package = try appState.inspectPortableApp(at: url)
+                do {
+                    try appState.installPortableApp(package, trustingNewDeveloper: false)
+                } catch PortableAppPackageError.untrustedDeveloper {
+                    pendingTrustPackage = package
+                }
+            } catch {
+                installError = error.localizedDescription
+            }
+        }
+        .alert(
+            "信任並安裝第三方 App？",
+            isPresented: Binding(
+                get: { pendingTrustPackage != nil },
+                set: { if $0 == false { pendingTrustPackage = nil } }
+            ),
+            presenting: pendingTrustPackage
+        ) { package in
+            Button("信任並安裝") {
+                do { try appState.installPortableApp(package, trustingNewDeveloper: true) }
+                catch { installError = error.localizedDescription }
+                pendingTrustPackage = nil
+            }
+            Button("取消", role: .cancel) { pendingTrustPackage = nil }
+        } message: { package in
+            Text("\(package.manifest.name) \(package.manifest.version)\n開發者指紋：\(package.developerFingerprint)")
+        }
+        .alert(
+            "無法安裝 App",
+            isPresented: Binding(
+                get: { installError != nil },
+                set: { if $0 == false { installError = nil } }
+            )
+        ) {
+            Button("好") { installError = nil }
+        } message: {
+            Text(installError ?? "未知錯誤")
+        }
     }
 }
 

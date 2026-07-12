@@ -1,5 +1,7 @@
 # TVShell
 
+第三方開發者可建立 Ed25519 簽署的沙盒 `.tvshellapp`；格式、簽署工具與安裝方式見 [Portable App SDK](docs/portable-app-sdk.md)。
+
 TVShell 是一個跑在 macOS 上、以 Apple TV / tvOS 大螢幕體驗為目標的 SwiftUI 應用殼。它提供可用遙控器操作的 App Launcher、內建瀏覽器、YouTube、Bilibili、影片播放器、動漫入口、設定、App 管理、動漫來源管理與遙控器學習頁。
 
 核心目標不是做普通桌面 App，而是做一個適合電視、投影機、外接螢幕、4K / 超大螢幕觀看的「TV Mode」介面：大卡片、大焦點框、液態玻璃質感、順滑轉場、方向鍵與遙控器優先。

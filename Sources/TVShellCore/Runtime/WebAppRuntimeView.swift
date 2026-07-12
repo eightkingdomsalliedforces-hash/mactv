@@ -13,7 +13,13 @@ public struct WebAppRuntimeView: NSViewRepresentable {
     }
 
     public func makeCoordinator() -> Coordinator {
-        Coordinator(initialMode: webRemoteMode)
+        let allowedHosts: Set<String>?
+        if case let .portableWeb(_, hosts) = app.target {
+            allowedHosts = Set(hosts.map { $0.lowercased() })
+        } else {
+            allowedHosts = nil
+        }
+        return Coordinator(initialMode: webRemoteMode, allowedHosts: allowedHosts)
     }
 
     public func makeNSView(context: Context) -> WKWebView {
@@ -35,6 +41,8 @@ public struct WebAppRuntimeView: NSViewRepresentable {
 
         if case let .web(url) = app.target {
             webView.load(URLRequest(url: url))
+        } else if case let .portableWeb(entrypoint, _) = app.target {
+            webView.load(URLRequest(url: entrypoint))
         }
 
         return webView
@@ -50,9 +58,11 @@ public struct WebAppRuntimeView: NSViewRepresentable {
         private weak var webView: WKWebView?
         private nonisolated(unsafe) var observer: NSObjectProtocol?
         private var currentMode: WebRemoteMode
+        private let allowedHosts: Set<String>?
 
-        init(initialMode: WebRemoteMode) {
+        init(initialMode: WebRemoteMode, allowedHosts: Set<String>?) {
             currentMode = initialMode
+            self.allowedHosts = allowedHosts
         }
 
         deinit {
@@ -63,6 +73,22 @@ public struct WebAppRuntimeView: NSViewRepresentable {
 
         public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             applyMode(currentMode)
+        }
+
+        public func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
+        ) {
+            guard let allowedHosts else {
+                decisionHandler(.allow)
+                return
+            }
+            let url = navigationAction.request.url
+            let isLocalDocument = url?.scheme == "about" || url?.scheme == "data"
+            let isAllowedHTTPS = url?.scheme?.lowercased() == "https"
+                && url?.host.map { allowedHosts.contains($0.lowercased()) } == true
+            decisionHandler((isLocalDocument || isAllowedHTTPS) ? .allow : .cancel)
         }
 
         func attach(to webView: WKWebView) {

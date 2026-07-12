@@ -1,4 +1,5 @@
 import CoreGraphics
+import CryptoKit
 import Foundation
 import TVShellCore
 
@@ -168,6 +169,7 @@ struct TVShellChecks {
         try checkTVOS18PlayerHUD()
         try checkTVOS18MigrationComplete()
         try checkAppCatalogVisibilityAndOrdering()
+        try checkPortableAppPackageInstallation()
         try checkSettingsPersistAcrossRelaunch()
         try checkTVShellStorageMigration()
         try checkCredentialsPersistAndLoadFromFile()
@@ -249,6 +251,51 @@ struct TVShellChecks {
         for path in managementPaths {
             let source = try String(contentsOf: root.appending(path: path))
             try expect(source.contains("liquidGlassCard") == false, "tvOS 18 settings screen removes Liquid Glass: \(path)")
+        }
+    }
+
+    static func checkPortableAppPackageInstallation() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("TVShellChecks-PortableApp-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let packageURL = root.appendingPathComponent("Sample.tvshellapp", isDirectory: true)
+        let installedURL = root.appendingPathComponent("Installed", isDirectory: true)
+        let trustURL = root.appendingPathComponent("trusted-apps.json")
+        try FileManager.default.createDirectory(at: packageURL, withIntermediateDirectories: true)
+
+        let manifest = PortableAppManifest(
+            identifier: "dev.example.sample",
+            name: "範例 App",
+            version: "1.0.0",
+            entrypoint: URL(string: "https://app.example.dev/tv")!,
+            allowedHosts: ["app.example.dev", "cdn.example.dev"]
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let manifestData = try encoder.encode(manifest)
+        let privateKey = Curve25519.Signing.PrivateKey()
+        try manifestData.write(to: packageURL.appendingPathComponent("manifest.json"))
+        try privateKey.publicKey.rawRepresentation.write(to: packageURL.appendingPathComponent("public-key.ed25519"))
+        try privateKey.signature(for: manifestData).write(to: packageURL.appendingPathComponent("signature.ed25519"))
+
+        let verified = try PortableAppPackage.inspect(at: packageURL)
+        try expect(verified.manifest.identifier == "dev.example.sample", "portable app package verifies its signed manifest")
+        try expect(verified.developerFingerprint.count == 64, "portable app package exposes a SHA-256 developer fingerprint")
+
+        let installer = PortableAppInstaller(installedAppsDirectory: installedURL, trustStoreURL: trustURL)
+        let profile = try installer.install(verified, trustingNewDeveloper: true)
+        try expect(profile.name == "範例 App" && profile.target == .portableWeb(entrypoint: URL(string: "https://app.example.dev/tv")!, allowedHosts: ["app.example.dev", "cdn.example.dev"]), "portable app installs as a sandboxed web runtime")
+        let installedNames = try installer.installedProfiles().map(\.name)
+        try expect(installedNames == ["範例 App"], "installed portable apps reload from disk")
+
+        var tampered = try String(contentsOf: packageURL.appendingPathComponent("manifest.json"))
+        tampered = tampered.replacingOccurrences(of: "範例 App", with: "遭竄改 App")
+        try Data(tampered.utf8).write(to: packageURL.appendingPathComponent("manifest.json"))
+        do {
+            _ = try PortableAppPackage.inspect(at: packageURL)
+            throw CheckFailure("tampered portable app should not verify")
+        } catch let error as PortableAppPackageError {
+            try expect(error == .invalidSignature, "portable app rejects a tampered manifest")
         }
     }
 

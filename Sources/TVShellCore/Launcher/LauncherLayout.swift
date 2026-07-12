@@ -36,7 +36,7 @@ public enum LauncherLayout {
             switch app.target {
             case let .web(url):
                 return url.scheme != "tv-shell"
-            case .nativeApp:
+            case .portableWeb, .nativeApp:
                 return true
             case .media, .anime, .youtube, .bilibili:
                 return false

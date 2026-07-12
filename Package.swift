@@ -9,7 +9,8 @@ let package = Package(
     ],
     products: [
         .executable(name: "TVShell", targets: ["TVShell"]),
-        .executable(name: "TVShellChecks", targets: ["TVShellChecks"])
+        .executable(name: "TVShellChecks", targets: ["TVShellChecks"]),
+        .executable(name: "TVShellAppSigner", targets: ["TVShellAppSigner"])
     ],
     targets: [
         .target(
@@ -25,6 +26,10 @@ let package = Package(
             name: "TVShellChecks",
             dependencies: ["TVShellCore"],
             path: "Sources/TVShellChecks"
+        ),
+        .executableTarget(
+            name: "TVShellAppSigner",
+            path: "Sources/TVShellAppSigner"
         )
     ]
 )

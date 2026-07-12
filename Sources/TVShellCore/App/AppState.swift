@@ -97,6 +97,7 @@ public final class AppState: ObservableObject {
     private let networkRemoteServer = NetworkRemoteControlServer.shared
     private let settingsStore: AppSettingsStore?
     private let credentialsStore: AppCredentialsStore?
+    private let portableAppInstaller: PortableAppInstaller
     private nonisolated(unsafe) var exitObserver: NSObjectProtocol?
     private nonisolated(unsafe) var historyObserver: NSObjectProtocol?
     private nonisolated(unsafe) var animeStreamPreferenceObserver: NSObjectProtocol?
@@ -106,10 +107,12 @@ public final class AppState: ObservableObject {
         apps: [TVAppProfile] = SeedApps.defaultApps,
         settingsStore: AppSettingsStore? = nil,
         credentialsStore: AppCredentialsStore? = nil,
+        portableAppInstaller: PortableAppInstaller = .applicationSupport(),
         startNetworkRemote: Bool = false
     ) {
         self.settingsStore = settingsStore
         self.credentialsStore = credentialsStore
+        self.portableAppInstaller = portableAppInstaller
         let loadedSnapshot: AppSettingsSnapshot?
         if let settingsStore {
             loadedSnapshot = try? settingsStore.load()
@@ -124,7 +127,9 @@ public final class AppState: ObservableObject {
             loadedCredentials = nil
         }
         let restoredApps = loadedSnapshot?.apps.isEmpty == false ? loadedSnapshot?.apps : apps
-        self.apps = SeedApps.includingMissingDefaults(in: restoredApps ?? apps, defaults: apps)
+        let builtInAndSaved = SeedApps.includingMissingDefaults(in: restoredApps ?? apps, defaults: apps)
+        let installedPortableApps = (try? portableAppInstaller.installedProfiles()) ?? []
+        self.apps = Self.mergingPortableApps(installedPortableApps, into: builtInAndSaved)
         animeSourceCatalog = (loadedSnapshot?.animeSourceCatalog ?? AnimeSourceCatalogState(definitions: AnimeSourceCatalog.defaultSources))
             .includingDefaultSources()
             .removingUnusableSources()
@@ -245,6 +250,43 @@ public final class AppState: ObservableObject {
         launcherFocus = .apps
         saveSettings()
         statusMessage = "已清除最近觀看"
+    }
+
+    public func inspectPortableApp(at url: URL) throws -> VerifiedPortableApp {
+        try PortableAppPackage.inspect(at: url)
+    }
+
+    public func installPortableApp(_ package: VerifiedPortableApp, trustingNewDeveloper: Bool) throws {
+        let profile = try portableAppInstaller.install(package, trustingNewDeveloper: trustingNewDeveloper)
+        if let index = apps.firstIndex(where: { $0.id == profile.id }) {
+            var updated = profile
+            updated.isVisibleOnHome = apps[index].isVisibleOnHome
+            apps[index] = updated
+        } else {
+            apps.append(profile)
+        }
+        focusedManagementAppID = profile.id
+        saveSettings()
+        statusMessage = "已安裝 \(profile.name) \(package.manifest.version)"
+    }
+
+    public func uninstallPortableApp(_ app: TVAppProfile) throws {
+        guard case .portableWeb = app.target,
+              let package = try? portableAppInstaller.installedProfiles().first(where: { $0.id == app.id }),
+              case let .portableWeb(entrypoint, _) = package.target
+        else { return }
+        let installedDirectories = try FileManager.default.contentsOfDirectory(
+            at: portableAppInstaller.installedAppsDirectory,
+            includingPropertiesForKeys: nil
+        )
+        guard let directory = installedDirectories.first(where: { url in
+            (try? PortableAppPackage.inspect(at: url).manifest.entrypoint) == entrypoint
+        }), let identifier = try? PortableAppPackage.inspect(at: directory).manifest.identifier else { return }
+        try portableAppInstaller.uninstall(identifier: identifier)
+        apps.removeAll { $0.id == app.id }
+        focusedManagementAppID = apps.first?.id
+        saveSettings()
+        statusMessage = "已移除 \(app.name)"
     }
 
     public func startNetworkRemoteServer() {
@@ -760,7 +802,7 @@ public final class AppState: ObservableObject {
             statusMessage = "正在開啟動漫來源"
             focusedAnimeSourceID = animeSourceCatalog.focusedID ?? animeSourceCatalog.instances.first?.id
             setRuntime(.animeSourceManagement)
-        case .web:
+        case .web, .portableWeb:
             statusMessage = "正在開啟 \(app.name)"
             setRuntime(.web(app))
         case .media:
@@ -820,12 +862,38 @@ public final class AppState: ObservableObject {
                 apps = catalog.apps
                 saveSettings()
             }
+        case .menu:
+            NotificationCenter.default.post(name: .tvShellRequestPortableAppImporter, object: nil)
+            statusMessage = "選擇要安裝的 .tvshellapp"
+        case .longPress(.select):
+            if let app = apps.first(where: { $0.id == focusedManagementAppID }), case .portableWeb = app.target {
+                do { try uninstallPortableApp(app) }
+                catch { statusMessage = "移除 App 失敗：\(error.localizedDescription)" }
+            }
         case .home, .back:
             activeRuntime = .launcher
             focusedAppID = LauncherLayout.sections(for: apps).flatMap(\.apps).first?.id
         default:
             break
         }
+    }
+
+    private static func mergingPortableApps(_ installed: [TVAppProfile], into saved: [TVAppProfile]) -> [TVAppProfile] {
+        let installedIDs = Set(installed.map(\.id))
+        var result = saved.filter { app in
+            if case .portableWeb = app.target { return installedIDs.contains(app.id) }
+            return true
+        }
+        for profile in installed {
+            if let index = result.firstIndex(where: { $0.id == profile.id }) {
+                var updated = profile
+                updated.isVisibleOnHome = result[index].isVisibleOnHome
+                result[index] = updated
+            } else {
+                result.append(profile)
+            }
+        }
+        return result
     }
 
     private func moveManagedFocus(by offset: Int) {

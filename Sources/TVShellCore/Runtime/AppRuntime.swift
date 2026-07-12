@@ -9,6 +9,7 @@ public enum RuntimeKind: String, Codable, Equatable, Sendable {
 
 public enum LaunchTarget: Equatable, Codable, Sendable {
     case web(URL)
+    case portableWeb(entrypoint: URL, allowedHosts: [String])
     case media(URL)
     case anime
     case youtube
@@ -21,6 +22,8 @@ public extension LaunchTarget {
         switch self {
         case .web(let url):
             "web:\(url.absoluteString)"
+        case let .portableWeb(entrypoint, _):
+            "portable-web:\(entrypoint.absoluteString)"
         case .media(let url):
             "media:\(url.absoluteString)"
         case .anime:
@@ -84,6 +87,7 @@ public extension Notification.Name {
     static let tvShellRecordWatch = Notification.Name("TVShellRecordWatch")
     static let tvShellRememberAnimeStream = Notification.Name("TVShellRememberAnimeStream")
     static let tvShellSetStatusClockHidden = Notification.Name("TVShellSetStatusClockHidden")
+    static let tvShellRequestPortableAppImporter = Notification.Name("TVShellRequestPortableAppImporter")
 }
 
 public enum RuntimeCommandNotification {
