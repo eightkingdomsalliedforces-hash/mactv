@@ -64,8 +64,12 @@ jobs:
           java-version: "21"
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-      - name: Test and package Windows MSI
-        run: ./gradlew.bat :shared-ui:desktopTest :shared-ui:packageMsi :anime-desktop:packageMsi
+      - name: Test Windows shared UI
+        run: ./gradlew.bat :shared-ui:desktopTest --stacktrace
+      - name: Package TVShell Windows MSI
+        run: ./gradlew.bat :shared-ui:packageMsi --stacktrace
+      - name: Package Anime Windows MSI
+        run: ./gradlew.bat :anime-desktop:packageMsi --stacktrace
       - name: Upload Windows package
         uses: actions/upload-artifact@v4
         with:
