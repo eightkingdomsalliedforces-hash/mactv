@@ -4,6 +4,7 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <application
         android:banner="@drawable/anime_banner"
+        android:icon="@mipmap/ic_launcher"
         android:label="TVShell 動畫"
         android:theme="@style/Theme.TVShellAnime">
         <activity android:name=".AnimeActivity" android:exported="true">

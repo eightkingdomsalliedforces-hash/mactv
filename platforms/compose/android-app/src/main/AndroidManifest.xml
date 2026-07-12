@@ -12,6 +12,7 @@
     <application
         android:allowBackup="true"
         android:banner="@drawable/tvshell_banner"
+        android:icon="@mipmap/ic_launcher"
         android:label="TVShell"
         android:theme="@style/Theme.TVShell">
         <activity

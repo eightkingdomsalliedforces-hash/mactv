@@ -21,6 +21,7 @@ compose.desktop {
             description = "TVShell Anime for Windows"
             vendor = "TVShell"
             windows {
+                iconFile.set(project.file("../../assets/icons/TVShell-Anime.ico"))
                 menuGroup = "TVShell"
                 upgradeUuid = "0475a205-1fbd-51f3-979b-b3be88f4491a"
             }

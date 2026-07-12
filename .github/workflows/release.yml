@@ -164,6 +164,7 @@ jobs:
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources"
           cp .build/release/TVShell "$APP/Contents/MacOS/TVShell"
           chmod +x "$APP/Contents/MacOS/TVShell"
+          cp assets/icons/TVShell.icns "$APP/Contents/Resources/TVShell.icns"
           cp -R "$VLCKIT_FRAMEWORK" "$APP/Contents/Frameworks/VLCKit.framework"
           xattr -cr "$APP/Contents/Frameworks/VLCKit.framework" || true
           cat > "$APP/Contents/Info.plist" <<'PLIST'
@@ -181,6 +182,8 @@ jobs:
             <string>6.0</string>
             <key>CFBundleName</key>
             <string>TVShell</string>
+            <key>CFBundleIconFile</key>
+            <string>TVShell.icns</string>
             <key>CFBundlePackageType</key>
             <string>APPL</string>
             <key>CFBundleShortVersionString</key>

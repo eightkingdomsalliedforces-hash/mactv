@@ -252,6 +252,21 @@ struct TVShellChecks {
         try expect((launcher?["appTileWidth"] as? NSNumber)?.doubleValue == metrics.appTileWidth, "Swift app tile width matches the shared contract")
         try expect((launcher?["appTileAspectRatio"] as? NSNumber)?.doubleValue == 1.55, "shared app cards retain the tvOS 18 rectangular ratio")
         try expect(remoteCommands == ["up", "down", "left", "right", "select", "back", "home", "menu", "playPause", "rewind", "fastForward", "volumeUp", "volumeDown", "mute"], "all platform shells share one remote command order")
+
+        let repository = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        for path in ["assets/icons/TVShell.icns", "assets/icons/TVShell.ico", "assets/icons/TVShell-Anime.ico"] {
+            try expect(FileManager.default.fileExists(atPath: repository.appending(path: path).path), "release icon exists: \(path)")
+        }
+        let androidManifest = try String(contentsOf: repository.appending(path: "platforms/compose/android-app/src/main/AndroidManifest.xml"))
+        let animeManifest = try String(contentsOf: repository.appending(path: "platforms/compose/anime-android-app/src/main/AndroidManifest.xml"))
+        try expect(androidManifest.contains("android:icon=\"@mipmap/ic_launcher\""), "Android TV shell declares a launcher icon")
+        try expect(animeManifest.contains("android:icon=\"@mipmap/ic_launcher\""), "Android TV anime app declares a launcher icon")
+        let workflow = try String(contentsOf: repository.appending(path: ".github/workflows/release.yml"))
+        try expect(workflow.contains("CFBundleIconFile") && workflow.contains("TVShell.icns"), "macOS release bundle installs its icon")
+        let desktopGradle = try String(contentsOf: repository.appending(path: "platforms/compose/shared-ui/build.gradle.kts"))
+        let animeDesktopGradle = try String(contentsOf: repository.appending(path: "platforms/compose/anime-desktop/build.gradle.kts"))
+        try expect(desktopGradle.contains("TVShell.ico"), "Windows TVShell package installs its icon")
+        try expect(animeDesktopGradle.contains("TVShell-Anime.ico"), "Windows anime package installs its icon")
     }
 
     static func checkTVOS18SettingsLayout() throws {
