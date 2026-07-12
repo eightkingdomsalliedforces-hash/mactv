@@ -153,6 +153,7 @@ struct TVShellChecks {
         try checkKeyCodeMapper()
         try checkVirtualKeyboardState()
         try checkRemoteMappingStore()
+        try await checkRemoteMappingCenter()
         try checkNetworkRemoteControlServer()
         try checkFocusEngine()
         try checkNativeLaunchRequest()
@@ -589,6 +590,26 @@ struct TVShellChecks {
         let data = try JSONEncoder().encode(store)
         let decoded = try JSONDecoder().decode(RemoteMappingStore.self, from: data)
         try expect(decoded.command(for: hid) == .back, "mappings round-trip through JSON")
+    }
+
+    static func checkRemoteMappingCenter() async throws {
+        let fileURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("TVShellChecks-RemoteMappings-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let raw = RawInputEvent.keyboard(keyCode: 110, characters: nil, modifiers: [])
+
+        try await MainActor.run {
+            let center = RemoteMappingCenter(fileURL: fileURL)
+            center.armCapture(for: .select)
+            try expect(center.command(for: raw) == nil, "captured custom remote event is consumed instead of triggering its old action")
+            try expect(center.learnedMappingCount == 1, "remote mapping center records the armed custom command")
+            try expect(center.lastCapturedCommand == .select, "remote mapping center reports the command that was learned")
+
+            let reloaded = RemoteMappingCenter(fileURL: fileURL)
+            try expect(reloaded.command(for: raw) == .select, "custom remote mappings persist across relaunch")
+            reloaded.reset()
+            try expect(reloaded.command(for: raw) == nil, "reset removes custom remote mappings")
+        }
     }
 
     static func checkFocusEngine() throws {

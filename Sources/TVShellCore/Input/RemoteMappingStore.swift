@@ -29,6 +29,14 @@ public struct RemoteMappingStore: Codable, Equatable, Sendable {
         learnedMappings[event] = command
     }
 
+    public mutating func reset() {
+        learnedMappings.removeAll()
+    }
+
+    public var learnedMappingCount: Int {
+        learnedMappings.count
+    }
+
     public func command(for event: RawInputEvent) -> RemoteCommand? {
         learnedMappings[event] ?? fallbackMapper.command(for: event)
     }

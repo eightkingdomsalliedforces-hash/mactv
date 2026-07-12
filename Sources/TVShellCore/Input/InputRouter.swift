@@ -24,7 +24,7 @@ public struct InputRouterView<Content: View>: NSViewRepresentable {
 
 public final class HostingKeyView<Content: View>: NSHostingView<Content> {
     public var onCommand: ((RemoteCommand) -> Void)?
-    private let mapper = KeyCodeMapper.default
+    private let mappingCenter = RemoteMappingCenter.shared
     private var localMonitor: Any?
     private var globalMonitor: Any?
     private var longPressDispatchedKeys = Set<UInt16>()
@@ -57,10 +57,12 @@ public final class HostingKeyView<Content: View>: NSHostingView<Content> {
 
     @discardableResult
     private func handle(_ event: NSEvent) -> Bool {
-        guard let raw = AppKitRemoteEventTranslator.rawInput(from: event),
-              let command = mapper.command(for: raw)
-        else {
+        guard let raw = AppKitRemoteEventTranslator.rawInput(from: event) else {
             return false
+        }
+        let wasCapturing = mappingCenter.captureTarget != nil
+        guard let command = mappingCenter.command(for: raw) else {
+            return wasCapturing
         }
 
         if command == .menu {
@@ -131,7 +133,7 @@ public final class HostingKeyView<Content: View>: NSHostingView<Content> {
 
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .systemDefined]) { [weak self] event in
             guard let raw = AppKitRemoteEventTranslator.rawInput(from: event),
-                  let command = KeyCodeMapper.default.command(for: raw)
+                  let command = self?.mappingCenter.command(for: raw)
             else {
                 return
             }
