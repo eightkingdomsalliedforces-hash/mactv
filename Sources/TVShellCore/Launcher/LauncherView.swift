@@ -16,6 +16,9 @@ public struct LauncherView: View {
             case let .web(app):
                 WebAppRuntimeView(app: app, webZoom: appState.webZoom, webRemoteMode: appState.webRemoteMode)
                     .transition(.opacity.combined(with: .scale(scale: 1.015)))
+            case let .declarative(app):
+                PortableDeclarativeRuntimeView(app: app)
+                    .transition(.opacity.combined(with: .scale(scale: 1.015)))
             case let .media(app):
                 MediaRuntimeView(app: app)
                     .transition(.opacity.combined(with: .scale(scale: 1.015)))

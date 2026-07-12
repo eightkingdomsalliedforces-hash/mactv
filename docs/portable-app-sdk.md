@@ -1,6 +1,6 @@
 # TVShell Portable App SDK
 
-TVShell 可以安裝第三方的 `.tvshellapp` 套件。這類 App 在 TVShell 的 WebKit 沙盒中執行，只能瀏覽 manifest 明確允許的 HTTPS 主機；套件不能攜帶或執行原生二進位檔。
+TVShell 可以安裝第三方的 `.tvshellapp` 套件。開發者可選擇原生「宣告 UI」或相容舊版的 WebKit runtime；套件不能攜帶或執行未簽章的原生二進位檔。
 
 ## Manifest
 
@@ -30,6 +30,35 @@ swift run TVShellAppSigner sign manifest.json developer.ed25519 MyTVApp.tvshella
 ```
 
 請妥善備份私鑰。相同 App 的更新必須沿用原本的開發者金鑰；TVShell 會拒絕由不同金鑰簽署的更新。
+
+## 原生宣告 UI（建議）
+
+`schemaVersion: 2` 可讓 TVShell 用 SwiftUI 原生繪製卡片和遙控器焦點，全程不載入網站：
+
+```json
+{
+  "schemaVersion": 2,
+  "identifier": "dev.example.native-tv-app",
+  "name": "Native TV App",
+  "version": "1.0.0",
+  "runtime": "declarative",
+  "page": {
+    "title": "我的原生 App",
+    "sections": [{
+      "id": "main",
+      "title": "精選",
+      "cards": [{
+        "id": "hello",
+        "title": "Hello TV",
+        "subtitle": "由 TVShell 原生繪製",
+        "action": { "kind": "status", "value": "動作已完成" }
+      }]
+    }]
+  }
+}
+```
+
+卡片動作目前支援 `status` 與 `openURL`。`openURL` 只允許 HTTPS，且主機必須列在 manifest 的 `allowedHosts`；整份 page 會和 manifest 一起接受 Ed25519 簽章驗證。
 
 ## 安裝與遙控器
 

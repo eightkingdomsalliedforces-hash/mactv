@@ -324,6 +324,49 @@ struct TVShellChecks {
         let installedNames = try installer.installedProfiles().map(\.name)
         try expect(installedNames == ["範例 App"], "installed portable apps reload from disk")
 
+        let declarativePage = PortableDeclarativePage(
+            title: "原生範例",
+            sections: [
+                PortableDeclarativeSection(
+                    id: "main",
+                    title: "內容",
+                    cards: [
+                        PortableDeclarativeCard(
+                            id: "hello",
+                            title: "Hello TV",
+                            subtitle: "不是網站",
+                            action: .init(kind: .status, value: "已執行")
+                        )
+                    ]
+                )
+            ]
+        )
+        let declarativeManifest = PortableAppManifest(
+            identifier: "dev.example.native-card",
+            name: "原生卡片 App",
+            version: "1.0.0",
+            page: declarativePage
+        )
+        try declarativeManifest.validate()
+        try expect(declarativeManifest.runtime == .declarative, "portable app manifest supports a signed non-WebKit runtime")
+        let declarativePackageURL = root.appendingPathComponent("NativeCard.tvshellapp", isDirectory: true)
+        try FileManager.default.createDirectory(at: declarativePackageURL, withIntermediateDirectories: true)
+        let declarativeData = try encoder.encode(declarativeManifest)
+        try declarativeData.write(to: declarativePackageURL.appendingPathComponent("manifest.json"))
+        try privateKey.publicKey.rawRepresentation.write(to: declarativePackageURL.appendingPathComponent("public-key.ed25519"))
+        try privateKey.signature(for: declarativeData).write(to: declarativePackageURL.appendingPathComponent("signature.ed25519"))
+        let verifiedDeclarative = try PortableAppPackage.inspect(at: declarativePackageURL)
+        let declarativeProfile = try installer.install(verifiedDeclarative, trustingNewDeveloper: true)
+        guard case let .portableDeclarative(installedPage, _) = declarativeProfile.target else {
+            throw CheckFailure("declarative portable app did not install into its native runtime")
+        }
+        try expect(installedPage == declarativePage, "signed declarative app installs and reloads its native page")
+        var declarativeState = PortableDeclarativeRuntimeState(page: declarativePage)
+        declarativeState.apply(.select)
+        try expect(declarativeState.statusText == "已執行", "declarative app card executes its signed status action")
+        let launcherSource = try String(contentsOfFile: "Sources/TVShellCore/Launcher/LauncherView.swift")
+        try expect(launcherSource.contains("PortableDeclarativeRuntimeView"), "launcher renders third-party declarative apps natively")
+
         var tampered = try String(contentsOf: packageURL.appendingPathComponent("manifest.json"))
         tampered = tampered.replacingOccurrences(of: "範例 App", with: "遭竄改 App")
         try Data(tampered.utf8).write(to: packageURL.appendingPathComponent("manifest.json"))

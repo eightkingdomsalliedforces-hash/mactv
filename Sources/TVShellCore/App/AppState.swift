@@ -271,17 +271,9 @@ public final class AppState: ObservableObject {
     }
 
     public func uninstallPortableApp(_ app: TVAppProfile) throws {
-        guard case .portableWeb = app.target,
-              let package = try? portableAppInstaller.installedProfiles().first(where: { $0.id == app.id }),
-              case let .portableWeb(entrypoint, _) = package.target
+        guard app.target.isPortableApp,
+              let identifier = try portableAppInstaller.identifier(forInstalledAppID: app.id)
         else { return }
-        let installedDirectories = try FileManager.default.contentsOfDirectory(
-            at: portableAppInstaller.installedAppsDirectory,
-            includingPropertiesForKeys: nil
-        )
-        guard let directory = installedDirectories.first(where: { url in
-            (try? PortableAppPackage.inspect(at: url).manifest.entrypoint) == entrypoint
-        }), let identifier = try? PortableAppPackage.inspect(at: directory).manifest.identifier else { return }
         try portableAppInstaller.uninstall(identifier: identifier)
         apps.removeAll { $0.id == app.id }
         focusedManagementAppID = apps.first?.id
@@ -401,7 +393,7 @@ public final class AppState: ObservableObject {
             handleAppManagement(command)
         case .animeSourceManagement:
             handleAnimeSourceManagement(command)
-        case .web, .media, .anime, .youtube, .bilibili, .native, .remoteLearning:
+        case .web, .declarative, .media, .anime, .youtube, .bilibili, .native, .remoteLearning:
             handleRuntimeCommand(command)
         }
     }
@@ -800,6 +792,9 @@ public final class AppState: ObservableObject {
         case .web, .portableWeb:
             statusMessage = "正在開啟 \(app.name)"
             setRuntime(.web(app))
+        case .portableDeclarative:
+            statusMessage = "正在開啟 \(app.name)"
+            setRuntime(.declarative(app))
         case .media:
             statusMessage = "正在開啟 \(app.name)"
             setRuntime(.media(app))
@@ -861,7 +856,7 @@ public final class AppState: ObservableObject {
             NotificationCenter.default.post(name: .tvShellRequestPortableAppImporter, object: nil)
             statusMessage = "選擇要安裝的 .tvshellapp"
         case .longPress(.select):
-            if let app = apps.first(where: { $0.id == focusedManagementAppID }), case .portableWeb = app.target {
+            if let app = apps.first(where: { $0.id == focusedManagementAppID }), app.target.isPortableApp {
                 do { try uninstallPortableApp(app) }
                 catch { statusMessage = "移除 App 失敗：\(error.localizedDescription)" }
             }
@@ -876,7 +871,7 @@ public final class AppState: ObservableObject {
     private static func mergingPortableApps(_ installed: [TVAppProfile], into saved: [TVAppProfile]) -> [TVAppProfile] {
         let installedIDs = Set(installed.map(\.id))
         var result = saved.filter { app in
-            if case .portableWeb = app.target { return installedIDs.contains(app.id) }
+            if app.target.isPortableApp { return installedIDs.contains(app.id) }
             return true
         }
         for profile in installed {

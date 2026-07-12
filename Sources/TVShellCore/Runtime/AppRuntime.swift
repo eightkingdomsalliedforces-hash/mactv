@@ -10,6 +10,7 @@ public enum RuntimeKind: String, Codable, Equatable, Sendable {
 public enum LaunchTarget: Equatable, Codable, Sendable {
     case web(URL)
     case portableWeb(entrypoint: URL, allowedHosts: [String])
+    case portableDeclarative(page: PortableDeclarativePage, allowedHosts: [String])
     case media(URL)
     case anime
     case youtube
@@ -18,12 +19,21 @@ public enum LaunchTarget: Equatable, Codable, Sendable {
 }
 
 public extension LaunchTarget {
+    var isPortableApp: Bool {
+        switch self {
+        case .portableWeb, .portableDeclarative: true
+        default: false
+        }
+    }
+
     var stableIdentity: String {
         switch self {
         case .web(let url):
             "web:\(url.absoluteString)"
         case let .portableWeb(entrypoint, _):
             "portable-web:\(entrypoint.absoluteString)"
+        case let .portableDeclarative(page, _):
+            "portable-declarative:\(page.title)"
         case .media(let url):
             "media:\(url.absoluteString)"
         case .anime:
@@ -70,6 +80,7 @@ public enum ControlMode: String, Codable, Equatable, Sendable {
 public enum ActiveRuntime: Equatable, Sendable {
     case launcher
     case web(TVAppProfile)
+    case declarative(TVAppProfile)
     case media(TVAppProfile)
     case anime(TVAppProfile)
     case youtube(TVAppProfile)

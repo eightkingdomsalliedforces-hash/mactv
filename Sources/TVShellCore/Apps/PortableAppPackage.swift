@@ -28,6 +28,8 @@ public struct PortableAppManifest: Codable, Equatable, Sendable {
     public var version: String
     public var entrypoint: URL
     public var allowedHosts: [String]
+    public var runtime: PortableAppRuntimeKind?
+    public var page: PortableDeclarativePage?
 
     public init(
         schemaVersion: Int = 1,
@@ -43,10 +45,30 @@ public struct PortableAppManifest: Codable, Equatable, Sendable {
         self.version = version
         self.entrypoint = entrypoint
         self.allowedHosts = allowedHosts
+        runtime = .web
+        page = nil
+    }
+
+    public init(
+        schemaVersion: Int = 2,
+        identifier: String,
+        name: String,
+        version: String,
+        page: PortableDeclarativePage,
+        allowedHosts: [String] = []
+    ) {
+        self.schemaVersion = schemaVersion
+        self.identifier = identifier
+        self.name = name
+        self.version = version
+        entrypoint = URL(string: "https://declarative.invalid/")!
+        self.allowedHosts = allowedHosts
+        runtime = .declarative
+        self.page = page
     }
 
     public func validate() throws {
-        guard schemaVersion == 1 else {
+        guard schemaVersion == 1 || schemaVersion == 2 else {
             throw PortableAppPackageError.invalidManifest("不支援 schemaVersion \(schemaVersion)")
         }
         guard identifier.range(of: #"^[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)+$"#, options: .regularExpression) != nil else {
@@ -56,16 +78,58 @@ public struct PortableAppManifest: Codable, Equatable, Sendable {
               version.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
             throw PortableAppPackageError.invalidManifest("name 與 version 不可留空")
         }
-        guard entrypoint.scheme?.lowercased() == "https", let entryHost = entrypoint.host?.lowercased() else {
-            throw PortableAppPackageError.invalidManifest("entrypoint 必須使用 HTTPS")
-        }
         let normalizedHosts = allowedHosts.map { $0.lowercased() }
-        guard normalizedHosts.isEmpty == false,
-              normalizedHosts.contains(entryHost),
-              normalizedHosts.allSatisfy(Self.isValidHost)
-        else {
-            throw PortableAppPackageError.invalidManifest("allowedHosts 必須包含 entrypoint 主機，且不可使用萬用字元")
+        guard normalizedHosts.allSatisfy(Self.isValidHost) else {
+            throw PortableAppPackageError.invalidManifest("allowedHosts 不可使用萬用字元")
         }
+        switch runtime ?? .web {
+        case .web:
+            guard entrypoint.scheme?.lowercased() == "https",
+                  let entryHost = entrypoint.host?.lowercased(),
+                  normalizedHosts.isEmpty == false,
+                  normalizedHosts.contains(entryHost)
+            else {
+                throw PortableAppPackageError.invalidManifest("web runtime 的 entrypoint 必須是 allowedHosts 內的 HTTPS 網址")
+            }
+        case .declarative:
+            guard schemaVersion >= 2, let page else {
+                throw PortableAppPackageError.invalidManifest("declarative runtime 需要 schemaVersion 2 與 page")
+            }
+            try page.validate(allowedHosts: normalizedHosts)
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion, identifier, name, version, entrypoint, allowedHosts, runtime, page
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        identifier = try container.decode(String.self, forKey: .identifier)
+        name = try container.decode(String.self, forKey: .name)
+        version = try container.decode(String.self, forKey: .version)
+        runtime = try container.decodeIfPresent(PortableAppRuntimeKind.self, forKey: .runtime)
+        page = try container.decodeIfPresent(PortableDeclarativePage.self, forKey: .page)
+        entrypoint = try container.decodeIfPresent(URL.self, forKey: .entrypoint)
+            ?? URL(string: "https://declarative.invalid/")!
+        allowedHosts = try container.decodeIfPresent([String].self, forKey: .allowedHosts) ?? []
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(identifier, forKey: .identifier)
+        try container.encode(name, forKey: .name)
+        try container.encode(version, forKey: .version)
+        try container.encode(runtime ?? .web, forKey: .runtime)
+        if (runtime ?? .web) == .web {
+            try container.encode(entrypoint, forKey: .entrypoint)
+        }
+        if allowedHosts.isEmpty == false {
+            try container.encode(allowedHosts, forKey: .allowedHosts)
+        }
+        try container.encodeIfPresent(page, forKey: .page)
     }
 
     private static func isValidHost(_ host: String) -> Bool {
@@ -193,6 +257,18 @@ public struct PortableAppInstaller: Sendable {
         try saveTrust(trust)
     }
 
+    public func identifier(forInstalledAppID appID: UUID) throws -> String? {
+        guard FileManager.default.fileExists(atPath: installedAppsDirectory.path) else { return nil }
+        return try FileManager.default.contentsOfDirectory(
+            at: installedAppsDirectory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )
+        .compactMap { try? PortableAppPackage.inspect(at: $0).manifest }
+        .first { Self.profile(for: $0).id == appID }?
+        .identifier
+    }
+
     private func loadTrust() throws -> [String: String] {
         guard FileManager.default.fileExists(atPath: trustStoreURL.path) else { return [:] }
         return try JSONDecoder().decode([String: String].self, from: Data(contentsOf: trustStoreURL))
@@ -206,11 +282,20 @@ public struct PortableAppInstaller: Sendable {
     }
 
     private static func profile(for manifest: PortableAppManifest) -> TVAppProfile {
-        TVAppProfile(
+        let target: LaunchTarget
+        let controlMode: ControlMode
+        if (manifest.runtime ?? .web) == .declarative, let page = manifest.page {
+            target = .portableDeclarative(page: page, allowedHosts: manifest.allowedHosts)
+            controlMode = .nativeKeyboard
+        } else {
+            target = .portableWeb(entrypoint: manifest.entrypoint, allowedHosts: manifest.allowedHosts)
+            controlMode = .web
+        }
+        return TVAppProfile(
             id: stableUUID(for: manifest.identifier),
             name: manifest.name,
-            target: .portableWeb(entrypoint: manifest.entrypoint, allowedHosts: manifest.allowedHosts),
-            controlMode: .web
+            target: target,
+            controlMode: controlMode
         )
     }
 
