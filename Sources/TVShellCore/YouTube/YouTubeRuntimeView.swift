@@ -472,7 +472,7 @@ private struct YouTubeVideoCard: View {
     }
 }
 
-private struct MacTVYouTubeControls: View {
+private struct TVShellYouTubeControls: View {
     let metrics: TVMetrics
 
     var body: some View {

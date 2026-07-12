@@ -84,7 +84,7 @@ public struct LauncherView: View {
 
                             Spacer(minLength: max(380 * metrics.scale, proxy.size.height * 0.48))
 
-                            Text(focusedApp?.name ?? "MacTV")
+                            Text(focusedApp?.name ?? "TVShell")
                                 .font(.system(size: 30 * metrics.scale, weight: .semibold))
                                 .foregroundStyle(.white)
                                 .padding(.leading, 30 * metrics.scale)

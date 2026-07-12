@@ -7,7 +7,7 @@ public struct YouTubeEmbedPage: Equatable, Sendable {
 
     public init(
         videoID: String,
-        origin: URL = URL(string: "https://mactv.local")!,
+        origin: URL = URL(string: "https://tvshell.local")!,
         startSeconds: Double = 0
     ) {
         self.videoID = videoID

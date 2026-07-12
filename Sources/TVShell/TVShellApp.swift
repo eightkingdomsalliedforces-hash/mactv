@@ -27,7 +27,7 @@ struct TVShellApp: App {
                 .frame(minWidth: 960, minHeight: 540)
         }
         .commands {
-            CommandMenu("MacTV") {
+            CommandMenu("TVShell") {
                 Button("切換全螢幕") {
                     ShellWindowConfigurator.toggleFocusedWindowFullScreen()
                 }

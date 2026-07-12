@@ -488,12 +488,12 @@ struct TVShellChecks {
         try expect(RemoteCommand.networkRemoteCommand(named: "play") == .playPause, "network remote maps play to play/pause")
         try expect(RemoteCommand.networkRemoteCommand(named: "volumeup") == .volumeUp, "network remote maps Android volume up")
 
-        let request = "POST /command/ok HTTP/1.1\r\nHost: mactv\r\n\r\n"
+        let request = "POST /command/ok HTTP/1.1\r\nHost: tvshell\r\n\r\n"
         try expect(NetworkRemoteControlServer.command(fromHTTPRequest: request) == .select, "network remote parses command paths")
-        let queryRequest = "GET /command?name=home HTTP/1.1\r\nHost: mactv\r\n\r\n"
+        let queryRequest = "GET /command?name=home HTTP/1.1\r\nHost: tvshell\r\n\r\n"
         try expect(NetworkRemoteControlServer.command(fromHTTPRequest: queryRequest) == .home, "network remote parses command query")
         try expect(NetworkRemoteControlServer.remotePageHTML.contains("/command/up"), "network remote page includes up button")
-        try expect(NetworkRemoteControlServer.remotePageHTML.contains("MacTV Remote"), "network remote page identifies itself")
+        try expect(NetworkRemoteControlServer.remotePageHTML.contains("TVShell Remote"), "network remote page identifies itself")
     }
 
     static func checkRemoteMappingStore() throws {
@@ -1732,15 +1732,15 @@ struct TVShellChecks {
 
     static func checkYouTubeEmbedPageIncludesOriginAndFallback() throws {
         let page = YouTubeEmbedPage(videoID: "abcXYZ", startSeconds: 65)
-        try expect(page.origin.absoluteString == "https://mactv.local", "youtube embed uses stable origin")
+        try expect(page.origin.absoluteString == "https://tvshell.local", "youtube embed uses TVShell origin")
         try expect(page.watchURL.absoluteString == "https://www.youtube.com/watch?v=abcXYZ", "youtube embed exposes watch fallback url")
 
         let html = page.html
-        try expect(html.contains("origin=https%3A%2F%2Fmactv.local"), "youtube iframe includes encoded origin")
+        try expect(html.contains("origin=https%3A%2F%2Ftvshell.local"), "youtube iframe includes encoded origin")
         try expect(html.contains(#"referrerpolicy="strict-origin-when-cross-origin""#), "youtube iframe sends strict origin referrer")
         try expect(html.contains("onError"), "youtube iframe handles player errors")
         try expect(html.contains("前往 YouTube 觀看影片"), "youtube iframe includes user-facing fallback link")
-        try expect(html.contains("controls=0"), "youtube player hides youtube web controls behind MacTV controls")
+        try expect(html.contains("controls=0"), "youtube player hides youtube web controls behind TVShell controls")
         try expect(html.contains("cc_load_policy=1"), "youtube player requests captions by default")
         try expect(html.contains("cc_lang_pref=zh-Hant"), "youtube player prefers Traditional Chinese captions")
         try expect(html.contains("getDuration"), "youtube player exposes duration to custom shell")
@@ -1754,7 +1754,7 @@ struct TVShellChecks {
         let youtubeRuntime = try String(contentsOf: root.appending(path: "Sources/TVShellCore/YouTube/YouTubeRuntimeView.swift"))
         try expect(youtubeRuntime.contains("let cardWidth = 360 * metrics.scale"), "youtube cards use stable card width")
         try expect(youtubeRuntime.contains("let thumbnailHeight = 202 * metrics.scale"), "youtube cards use stable thumbnail height")
-        try expect(youtubeRuntime.contains("MacTVYouTubeControls"), "youtube runtime renders custom player controls")
+        try expect(youtubeRuntime.contains("TVShellYouTubeControls"), "youtube runtime renders custom player controls")
         try expect(youtubeRuntime.contains("startSeconds: controller.resumeTime(for: video)"), "youtube runtime resumes from saved history")
         try expect(youtubeRuntime.contains("recordPlaybackTime"), "youtube runtime records playback progress")
         try expect(youtubeRuntime.contains("restartOnSelect: controller.canRestartFromBeginningWithSelect"), "youtube OK restarts only from the initial playback HUD")
@@ -3311,7 +3311,9 @@ struct TVShellChecks {
         try expect(windowManager.contains("applicationDidFinishLaunching"), "app delegate retries full screen after launch when a real window exists")
 
         let workflow = try String(contentsOf: root.appending(path: ".github/workflows/release.yml"))
-        try expect(workflow.contains("MacTV.app"), "release workflow packages a real macOS app bundle")
+        try expect(workflow.contains("TVShell.app"), "release workflow packages the TVShell macOS app bundle")
+        try expect(workflow.contains("<string>TVShell</string>"), "release workflow brands the bundle as TVShell")
+        try expect(workflow.contains("MacTV") == false, "release workflow removes the legacy product brand")
         try expect(workflow.contains("CFBundlePackageType") && workflow.contains("APPL"), "release app bundle declares itself as a macOS app")
     }
 

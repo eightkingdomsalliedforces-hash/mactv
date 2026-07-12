@@ -35,7 +35,7 @@ public struct ControlCenterView: View {
                             item: .home,
                             icon: "house.fill",
                             title: "主畫面",
-                            value: "MacTV"
+                            value: "TVShell"
                         )
                         ControlCenterTile(
                             item: .focusMode,

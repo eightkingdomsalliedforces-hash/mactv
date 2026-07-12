@@ -18,7 +18,7 @@ public final class NetworkRemoteControlServer: @unchecked Sendable {
     public static let shared = NetworkRemoteControlServer()
     public static let defaultPort: UInt16 = 8787
 
-    private let queue = DispatchQueue(label: "com.mactv.network-remote")
+    private let queue = DispatchQueue(label: "com.tvshell.network-remote")
     private var listener: NWListener?
     private var onCommand: (@Sendable (RemoteCommand) -> Void)?
     private var currentStatus = NetworkRemoteControlStatus(
@@ -89,7 +89,7 @@ public final class NetworkRemoteControlServer: @unchecked Sendable {
         }
 
         if target.hasPrefix("/command?"),
-           let components = URLComponents(string: "http://mactv.local\(target)") {
+           let components = URLComponents(string: "http://tvshell.local\(target)") {
             let name = components.queryItems?.first { item in
                 item.name == "name" || item.name == "command"
             }?.value
@@ -106,7 +106,7 @@ public final class NetworkRemoteControlServer: @unchecked Sendable {
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-          <title>MacTV Remote</title>
+          <title>TVShell Remote</title>
           <style>
             :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif; }
             body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top, #27364f, #060912 62%); color: white; display: grid; place-items: center; }
@@ -125,8 +125,8 @@ public final class NetworkRemoteControlServer: @unchecked Sendable {
         </head>
         <body>
           <main>
-            <h1>MacTV Remote</h1>
-            <p>Android TV 遙控器藍牙無法配對時，用同一 Wi-Fi 的手機打開這頁即可操作 MacTV。</p>
+            <h1>TVShell Remote</h1>
+            <p>Android TV 遙控器藍牙無法配對時，用同一 Wi-Fi 的手機打開這頁即可操作 TVShell。</p>
             <section class="pad">
               <span></span><button data-path="/command/up" onclick="send('up')">↑</button><span></span>
               <button onclick="send('left')">←</button><button onclick="send('ok')">OK</button><button onclick="send('right')">→</button>

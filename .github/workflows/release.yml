@@ -99,7 +99,7 @@ jobs:
       - name: Package App Bundle
         run: |
           set -euo pipefail
-          APP="dist/MacTV.app"
+          APP="dist/TVShell.app"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources"
           cp .build/release/TVShell "$APP/Contents/MacOS/TVShell"
           chmod +x "$APP/Contents/MacOS/TVShell"
@@ -115,11 +115,11 @@ jobs:
             <key>CFBundleExecutable</key>
             <string>TVShell</string>
             <key>CFBundleIdentifier</key>
-            <string>com.mactv.tvshell</string>
+            <string>com.tvshell.app</string>
             <key>CFBundleInfoDictionaryVersion</key>
             <string>6.0</string>
             <key>CFBundleName</key>
-            <string>MacTV</string>
+            <string>TVShell</string>
             <key>CFBundlePackageType</key>
             <string>APPL</string>
             <key>CFBundleShortVersionString</key>
@@ -136,7 +136,7 @@ jobs:
           </plist>
           PLIST
           cat > "$APP/Contents/Resources/ThirdPartyNotices.txt" <<NOTICE
-          MacTV embeds VideoLAN VLCKit for broad local and streaming media playback.
+          TVShell embeds VideoLAN VLCKit for broad local and streaming media playback.
 
           VLCKit is distributed by VideoLAN under LGPL-2.1-or-later.
           Source and license information: https://code.videolan.org/videolan/VLCKit
@@ -144,7 +144,7 @@ jobs:
           Download used by this build: ${VLCKIT_URL}
           NOTICE
           codesign --force --deep --sign - "$APP"
-          (cd dist && zip -9 -r TVShell-macOS-${{ github.sha }}.zip MacTV.app)
+          (cd dist && zip -9 -r TVShell-macOS-${{ github.sha }}.zip TVShell.app)
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -158,12 +158,12 @@ jobs:
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-            echo "title=MacTV ${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "title=TVShell ${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
             echo "notes=Automated macOS release for ${GITHUB_REF_NAME}." >> "$GITHUB_OUTPUT"
             echo "mode=versioned" >> "$GITHUB_OUTPUT"
           else
             echo "tag=latest" >> "$GITHUB_OUTPUT"
-            echo "title=MacTV latest" >> "$GITHUB_OUTPUT"
+            echo "title=TVShell latest" >> "$GITHUB_OUTPUT"
             echo "notes=Automated macOS release from main at ${GITHUB_SHA}." >> "$GITHUB_OUTPUT"
             echo "mode=rolling" >> "$GITHUB_OUTPUT"
           fi

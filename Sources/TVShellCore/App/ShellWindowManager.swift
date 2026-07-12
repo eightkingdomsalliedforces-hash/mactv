@@ -46,7 +46,7 @@ public struct ShellWindowConfigurator: NSViewRepresentable {
         guard isBorderlessTVFullScreen(window) == false else {
             return
         }
-        window.title = "MacTV"
+        window.title = "TVShell"
         window.titleVisibility = .visible
         window.titlebarAppearsTransparent = false
         window.styleMask.insert([.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView])
