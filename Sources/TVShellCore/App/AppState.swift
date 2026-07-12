@@ -611,11 +611,6 @@ public final class AppState: ObservableObject {
             return
         }
 
-        if activeRuntime == .remoteLearning, command == .select {
-            AccessibilityScanner.requestTrustPrompt()
-            return
-        }
-
         NotificationCenter.default.post(
             name: .tvShellRuntimeCommand,
             object: nil,

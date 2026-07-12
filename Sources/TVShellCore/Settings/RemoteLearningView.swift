@@ -53,6 +53,14 @@ public struct RemoteLearningView: View {
                                     )
                                 }
 
+                                TVOS18SettingsRow(
+                                    symbolName: "lock.shield.fill",
+                                    title: "macOS 輔助使用權限",
+                                    value: AccessibilityScanner.isTrusted ? "已允許" : "按 OK 開啟系統提示",
+                                    isFocused: focusedCommandIndex == learnableCommands.count,
+                                    metrics: metrics
+                                )
+
                                 Text("最近原始輸入：\(mappingCenter.lastRawEventDescription) · 已學習 \(mappingCenter.learnedMappingCount) 個。Menu 清除全部。")
                                     .font(.system(size: 18 * metrics.scale, weight: .medium))
                                     .foregroundStyle(.white.opacity(0.52))
@@ -96,9 +104,14 @@ public struct RemoteLearningView: View {
             case .up:
                 focusedCommandIndex = max(0, focusedCommandIndex - 1)
             case .down:
-                focusedCommandIndex = min(learnableCommands.count - 1, focusedCommandIndex + 1)
+                focusedCommandIndex = min(learnableCommands.count, focusedCommandIndex + 1)
             case .select:
-                mappingCenter.armCapture(for: learnableCommands[focusedCommandIndex])
+                if focusedCommandIndex == learnableCommands.count {
+                    mappingCenter.cancelCapture()
+                    AccessibilityScanner.requestTrustPrompt()
+                } else {
+                    mappingCenter.armCapture(for: learnableCommands[focusedCommandIndex])
+                }
             case .menu:
                 mappingCenter.reset()
             default:

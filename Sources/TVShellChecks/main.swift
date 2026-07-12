@@ -590,6 +590,19 @@ struct TVShellChecks {
         let data = try JSONEncoder().encode(store)
         let decoded = try JSONDecoder().decode(RemoteMappingStore.self, from: data)
         try expect(decoded.command(for: hid) == .back, "mappings round-trip through JSON")
+
+        try expect(KeyCodeMapper.default.command(for: GameControllerRemoteInput.rawInput(for: .primary)) == .select, "macOS game-controller OK maps to Select")
+        try expect(KeyCodeMapper.default.command(for: GameControllerRemoteInput.rawInput(for: .back)) == .back, "macOS game-controller Back maps to Back")
+        try expect(KeyCodeMapper.default.command(for: GameControllerRemoteInput.rawInput(for: .home)) == .home, "macOS game-controller Home maps to Home")
+
+        let inputRouterSource = try String(contentsOfFile: "Sources/TVShellCore/Input/InputRouter.swift")
+        try expect(inputRouterSource.contains("GCController.startWirelessControllerDiscovery"), "macOS discovers paired remotes through GameController")
+        try expect(inputRouterSource.contains("NSApplication.didBecomeActiveNotification"), "macOS rebuilds global input monitoring after returning from Privacy settings")
+
+        let appStateSource = try String(contentsOfFile: "Sources/TVShellCore/App/AppState.swift")
+        try expect(appStateSource.contains("activeRuntime == .remoteLearning, command == .select") == false, "remote learning Select is not stolen by the accessibility prompt")
+        let learningSource = try String(contentsOfFile: "Sources/TVShellCore/Settings/RemoteLearningView.swift")
+        try expect(learningSource.contains("requestTrustPrompt") && learningSource.contains("focusedCommandIndex == learnableCommands.count"), "accessibility permission has a separate selectable row")
     }
 
     static func checkRemoteMappingCenter() async throws {

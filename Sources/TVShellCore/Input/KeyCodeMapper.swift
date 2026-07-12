@@ -49,6 +49,16 @@ public struct KeyCodeMapper: Equatable, Sendable {
     }
 
     private func commandForHID(usagePage: Int, usage: Int) -> RemoteCommand? {
+        if usagePage == 0x01 {
+            switch usage {
+            case 0x90: return .up
+            case 0x91: return .down
+            case 0x92: return .right
+            case 0x93: return .left
+            default: return nil
+            }
+        }
+
         if usagePage == 0x0C {
             switch usage {
             case 0x40: return .menu
