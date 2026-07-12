@@ -67,7 +67,17 @@ jobs:
       - name: Test Windows shared UI
         run: ./gradlew.bat :shared-ui:desktopTest --stacktrace
       - name: Package TVShell Windows MSI
-        run: ./gradlew.bat :shared-ui:packageMsi --stacktrace
+        shell: pwsh
+        run: |
+          $output = & ./gradlew.bat :shared-ui:packageMsi --stacktrace 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | ForEach-Object { Write-Output $_ }
+          if ($exitCode -ne 0) {
+            $tail = ($output | Select-Object -Last 40) -join "`n"
+            $escaped = $tail.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=TVShell MSI packaging failed::$escaped"
+            exit $exitCode
+          }
       - name: Package Anime Windows MSI
         run: ./gradlew.bat :anime-desktop:packageMsi --stacktrace
       - name: Upload Windows package
