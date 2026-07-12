@@ -73,8 +73,11 @@ jobs:
           $exitCode = $LASTEXITCODE
           $output | ForEach-Object { Write-Output $_ }
           if ($exitCode -ne 0) {
-            $tail = ($output | Select-Object -Last 40) -join "`n"
-            $escaped = $tail.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            $diagnostic = $output | Where-Object {
+              $_ -match 'FAILURE|What went wrong|Execution failed|Caused by|Exception|Error|icon|jpackage|light.exe|candle.exe|WiX'
+            } | Select-Object -First 60
+            $message = ($diagnostic + ($output | Select-Object -Last 8)) -join "`n"
+            $escaped = $message.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
             Write-Output "::error title=TVShell MSI packaging failed::$escaped"
             exit $exitCode
           }
