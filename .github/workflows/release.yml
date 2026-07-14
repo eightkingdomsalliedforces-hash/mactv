@@ -242,6 +242,8 @@ jobs:
       - build
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout release repository
+        uses: actions/checkout@v4
       - name: Download macOS package
         uses: actions/download-artifact@v4
         with:

@@ -3832,6 +3832,8 @@ struct TVShellChecks {
         try expect(workflow.contains("publish-release:"), "release workflow has one final job that publishes all platform artifacts together")
         try expect(workflow.contains("actions/download-artifact@v4"), "release workflow collects macOS, Windows, and Android outputs before publishing")
         try expect(workflow.contains("TVShell-Android-TV") && workflow.contains("TVShell-Windows") && workflow.contains("TVShell-macOS"), "release workflow includes Android TV, Windows, and macOS assets")
+        let publishRelease = workflow.components(separatedBy: "  publish-release:").last ?? ""
+        try expect(publishRelease.contains("actions/checkout@v4"), "release publishing checks out the repository before GitHub CLI resolves its repository")
 
         let readme = try String(contentsOf: root.appending(path: "README.md"))
         try expect(readme.contains("LGPL-2.1"), "readme documents VLCKit LGPL license")
