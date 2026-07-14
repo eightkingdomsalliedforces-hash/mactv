@@ -57,6 +57,30 @@ data class NativeMediaState(
 }
 
 object NativeMediaParser {
+    fun bilibiliBangumi(payload: String): List<NativeMediaCard> {
+        val blocks = Regex("\\\"season_id\\\"\\s*:").findAll(payload).map { match ->
+            val badgeStart = payload.lastIndexOf("{\"badge\"", match.range.first)
+            val coverStart = payload.lastIndexOf("{\"cover\"", match.range.first)
+            val start = badgeStart.takeIf { it >= 0 } ?: coverStart.takeIf { it >= 0 } ?: match.range.first
+            payload.substring(start, (start + 6_000).coerceAtMost(payload.length))
+        }
+        return blocks.mapNotNull { block ->
+            val seasonID = numberField(block, "season_id") ?: return@mapNotNull null
+            val title = field(block.substringAfter("\"season_id\":"), "title") ?: return@mapNotNull null
+            val cover = normalizeImage(field(block, "cover").orEmpty())
+            val rating = field(block, "rating").orEmpty()
+            val progress = field(block.substringAfter("\"new_ep\":"), "index_show").orEmpty()
+            val subtitle = listOf(rating, progress).filter(String::isNotBlank).joinToString(" · ").ifBlank { "Bilibili 番劇" }
+            NativeMediaCard(
+                id = "bilibili-season-$seasonID",
+                title = clean(title),
+                subtitle = clean(subtitle),
+                thumbnailURL = cover,
+                playbackURL = "https://www.bilibili.com/bangumi/play/ss$seasonID",
+            )
+        }.distinctBy { it.id }.take(24).toList()
+    }
+
     fun bilibili(payload: String): List<NativeMediaCard> {
         val blocks = Regex("\"bvid\"\\s*:").findAll(payload).map { match ->
             val starts = listOf("{\"aid\"", "{\"type\"").map { payload.lastIndexOf(it, match.range.first) }
@@ -88,6 +112,9 @@ object NativeMediaParser {
 
     private fun field(value: String, name: String): String? =
         Regex("\"${Regex.escape(name)}\"\\s*:\\s*\"([^\"]*)\"").find(value)?.groupValues?.get(1)
+
+    private fun numberField(value: String, name: String): String? =
+        Regex("\"${Regex.escape(name)}\"\\s*:\\s*(\\d+)").find(value)?.groupValues?.get(1)
 
     private fun normalizeImage(value: String): String = when {
         value.startsWith("//") -> "https:$value"

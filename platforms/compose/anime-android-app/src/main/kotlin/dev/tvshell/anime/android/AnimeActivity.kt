@@ -61,16 +61,21 @@ private class AnimePlatformAdapter(private val activity: ComponentActivity) : Pl
     override fun fetchMediaFeed(service: NativeMediaService): Result<List<NativeMediaCard>> = runCatching {
         val endpoint = when (service) {
             NativeMediaService.YouTube -> "https://www.youtube.com/results?search_query=%E5%AE%98%E6%96%B9%E5%8B%95%E7%95%AB&hl=zh-TW&gl=TW"
-            NativeMediaService.Bilibili -> "https://api.bilibili.com/x/web-interface/search/type?search_type=video&keyword=%E5%8B%95%E7%95%AB&page=1"
+            NativeMediaService.Bilibili -> "https://api.bilibili.com/pgc/web/rank/list?season_type=1&day=3"
         }
         val connection = URL(endpoint).openConnection() as HttpURLConnection
         connection.connectTimeout = 8_000
         connection.readTimeout = 8_000
-        connection.setRequestProperty("User-Agent", "Mozilla/5.0 TVShell/1.0")
+        connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android TV) AppleWebKit/537.36 Chrome/125 Safari/537.36")
+        connection.setRequestProperty("Accept", "application/json,text/plain,*/*")
+        connection.setRequestProperty("Accept-Language", "zh-TW,zh;q=0.9,en;q=0.7")
+        if (endpoint.contains("bilibili.com")) {
+            connection.setRequestProperty("Referer", "https://search.bilibili.com/")
+        }
         val body = connection.inputStream.bufferedReader().use { it.readText() }
         when (service) {
             NativeMediaService.YouTube -> NativeMediaParser.youtube(body)
-            NativeMediaService.Bilibili -> NativeMediaParser.bilibili(body)
+            NativeMediaService.Bilibili -> NativeMediaParser.bilibiliBangumi(body)
         }.ifEmpty { error("來源沒有回傳可播放內容") }
     }
     override fun playMedia(card: NativeMediaCard): Result<Unit> = runCatching {

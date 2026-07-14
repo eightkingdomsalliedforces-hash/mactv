@@ -28,7 +28,7 @@ actual fun NetworkThumbnail(
 ) {
     var bitmap by remember(request.url) { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(request.url) {
-        bitmap = if (request.isLoadable) withContext(Dispatchers.IO) { loadAndroidThumbnail(request.url) } else null
+        bitmap = if (request.isLoadable) withContext(Dispatchers.IO) { loadAndroidThumbnail(request) } else null
     }
     val image = bitmap
     if (image == null) Box(modifier) else Image(
@@ -39,11 +39,12 @@ actual fun NetworkThumbnail(
     )
 }
 
-private fun loadAndroidThumbnail(url: String): Bitmap? = runCatching {
-    val connection = URL(url).openConnection() as HttpURLConnection
+private fun loadAndroidThumbnail(request: NetworkThumbnailRequest): Bitmap? = runCatching {
+    val connection = URL(request.url).openConnection() as HttpURLConnection
     connection.connectTimeout = 8_000
     connection.readTimeout = 8_000
     connection.setRequestProperty("User-Agent", "Mozilla/5.0 TVShell/1.0")
+    request.headers.forEach(connection::setRequestProperty)
     try {
         require(connection.responseCode in 200..299)
         connection.inputStream.use(BitmapFactory::decodeStream)

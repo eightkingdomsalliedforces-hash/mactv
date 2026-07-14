@@ -15,6 +15,44 @@ import kotlin.test.assertTrue
 
 class CrossPlatformAnimeTest {
     @Test
+    fun animeSourceCatalogMatchesTheNativeMacTabs() {
+        assertEquals(
+            listOf(AnimeSourceKind.Bilibili, AnimeSourceKind.YouTube),
+            animeSourcesFor(AnimeTopTab.Recommended).map(AnimeSourceDefinition::kind),
+        )
+        assertEquals(
+            listOf(AnimeSourceKind.AniGamer, AnimeSourceKind.YouTube),
+            animeSourcesFor(AnimeTopTab.OfficialSources).map(AnimeSourceDefinition::kind),
+        )
+        assertEquals(
+            listOf(AnimeSourceKind.CSS1, AnimeSourceKind.AniSubsBT, AnimeSourceKind.Mikan, AnimeSourceKind.DMHY),
+            animeSourcesFor(AnimeTopTab.Subscriptions).map(AnimeSourceDefinition::kind),
+        )
+    }
+
+    @Test
+    fun changingAnimeTabsResetsContentAndUsesThatTabsSourceCount() {
+        var state = CrossPlatformAnimeBrowserState().loaded(cardCount = 8)
+        state = state.copy(isTopNavigationFocused = true).reduce(RemoteCommand.Right)
+        assertEquals(AnimeTopTab.OfficialSources, state.focusedTopTab)
+        assertEquals(CrossPlatformAnimePhase.Sources, state.phase)
+        assertEquals(2, state.sourceCount)
+        assertEquals(0, state.focusedSource)
+
+        state = state.reduce(RemoteCommand.Right)
+        assertEquals(AnimeTopTab.Subscriptions, state.focusedTopTab)
+        assertEquals(4, state.sourceCount)
+    }
+
+    @Test
+    fun standaloneAnimeHomeStartsWithTheRecommendedFeed() {
+        val state = CrossPlatformAnimeBrowserState().loadingFirstSource()
+        assertEquals(AnimeTopTab.Recommended, state.focusedTopTab)
+        assertEquals(CrossPlatformAnimePhase.Loading, state.phase)
+        assertEquals("load:0", state.pendingAction)
+    }
+
+    @Test
     fun animeTopNavigationMatchesTheFiveMacTabs() {
         var state = CrossPlatformAnimeBrowserState(sourceCount = 2)
         state = state.reduce(RemoteCommand.Right).reduce(RemoteCommand.Right).reduce(RemoteCommand.Right).reduce(RemoteCommand.Right)
@@ -32,7 +70,7 @@ class CrossPlatformAnimeTest {
         assertEquals(CrossPlatformAnimePhase.Loading, state.phase)
         state = state.loaded(cardCount = 3)
         assertEquals(CrossPlatformAnimePhase.Titles, state.phase)
-        state = state.reduce(RemoteCommand.Right).reduce(RemoteCommand.Select)
+        state = state.reduce(RemoteCommand.Down).reduce(RemoteCommand.Right).reduce(RemoteCommand.Select)
         assertEquals("play:1", state.pendingAction)
     }
 
@@ -50,6 +88,7 @@ class CrossPlatformAnimeTest {
     @Test
     fun animeTitleGridMovesLikeTheMacBrowser() {
         var state = CrossPlatformAnimeBrowserState(sourceCount = 2, gridColumns = 4).loaded(cardCount = 9)
+            .copy(isTopNavigationFocused = false)
         state = state.reduce(RemoteCommand.Down)
         assertEquals(4, state.focusedCard)
         state = state.reduce(RemoteCommand.Right).reduce(RemoteCommand.Up)

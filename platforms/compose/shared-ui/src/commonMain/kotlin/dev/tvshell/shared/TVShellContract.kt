@@ -34,6 +34,25 @@ interface PlatformAdapter {
     fun openSystemSettings(): Result<Unit>
     fun fetchMediaFeed(service: NativeMediaService): Result<List<NativeMediaCard>> =
         Result.failure(UnsupportedOperationException("此平台尚未連接媒體服務"))
+    fun fetchAnimeFeed(source: AnimeSourceKind): Result<List<NativeMediaCard>> = when (source) {
+        AnimeSourceKind.YouTube -> fetchMediaFeed(NativeMediaService.YouTube)
+        AnimeSourceKind.Bilibili -> fetchMediaFeed(NativeMediaService.Bilibili)
+        AnimeSourceKind.AniGamer -> Result.success(
+            listOf(
+                NativeMediaCard(
+                    id = "anigamer-official",
+                    title = "動畫瘋",
+                    subtitle = "官方網站 · 保留廣告、登入與地區限制",
+                    thumbnailURL = "",
+                    playbackURL = "https://ani.gamer.com.tw/",
+                ),
+            ),
+        )
+        AnimeSourceKind.CSS1 -> Result.failure(IllegalStateException("尚未設定 CSS1 訂閱網址"))
+        AnimeSourceKind.AniSubsBT -> Result.failure(IllegalStateException("尚未設定 ani-subs BT 訂閱網址"))
+        AnimeSourceKind.Mikan -> Result.failure(IllegalStateException("尚未設定 Mikan RSS"))
+        AnimeSourceKind.DMHY -> Result.failure(IllegalStateException("尚未設定動漫花園 RSS"))
+    }
     fun playMedia(card: NativeMediaCard): Result<Unit> =
         Result.failure(UnsupportedOperationException("此平台尚未連接播放器"))
     fun fetchWallpaperURL(): Result<String> =

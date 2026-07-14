@@ -5,6 +5,11 @@ import androidx.compose.ui.Modifier
 
 data class NetworkThumbnailRequest(val url: String) {
     val isLoadable: Boolean get() = url.startsWith("https://") || url.startsWith("http://")
+    val headers: Map<String, String> get() = if (url.contains("hdslb.com")) {
+        mapOf("Referer" to "https://www.bilibili.com/")
+    } else {
+        emptyMap()
+    }
 }
 
 object BingWallpaperMetadata {

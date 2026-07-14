@@ -6,8 +6,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -67,9 +69,9 @@ fun TVShellApp(
     val builtIns = remember(animeOnly) { defaultShellApps(animeOnly) }
     var state by remember(discovered) { mutableStateOf(LauncherState((builtIns + discovered).distinctBy { it.id })) }
     var screen by remember { mutableStateOf(if (animeOnly) ShellScreen.Anime else ShellScreen.Launcher) }
-    var animeState by remember { mutableStateOf(CrossPlatformAnimeBrowserState(sourceCount = 2)) }
+    var animeState by remember { mutableStateOf(CrossPlatformAnimeBrowserState().loadingFirstSource()) }
     var animeCards by remember { mutableStateOf(emptyList<NativeMediaCard>()) }
-    var animeStatus by remember { mutableStateOf("選擇正版動畫來源後按 OK 載入。") }
+    var animeStatus by remember { mutableStateOf("正在載入推薦動畫…") }
     var mediaState by remember { mutableStateOf(NativeMediaState(0)) }
     var mediaCards by remember { mutableStateOf(emptyList<NativeMediaCard>()) }
     var mediaStatus by remember { mutableStateOf("正在載入…") }
@@ -142,7 +144,19 @@ fun TVShellApp(
             return
         }
         if (screen == ShellScreen.Anime) {
-            val next = animeState.reduce(command)
+            var next = animeState.reduce(command)
+            val tabChanged = next.focusedTopTab != animeState.focusedTopTab
+            if (tabChanged) {
+                next = when (next.focusedTopTab) {
+                    AnimeTopTab.Recommended -> next.loadingFirstSource()
+                    AnimeTopTab.History -> next.copy(
+                        phase = CrossPlatformAnimePhase.Titles,
+                        cardCount = watchHistory.entries.size,
+                        isTopNavigationFocused = true,
+                    )
+                    else -> next
+                }
+            }
             val action = next.pendingAction
             when {
                 action == "exit" -> {
@@ -151,7 +165,8 @@ fun TVShellApp(
                 }
                 action?.startsWith("play:") == true -> {
                     val index = action.substringAfter(':').toIntOrNull() ?: 0
-                    animeCards.getOrNull(index)?.let { card ->
+                    val visibleCards = if (next.focusedTopTab == AnimeTopTab.History) watchHistory.entries else animeCards
+                    visibleCards.getOrNull(index)?.let { card ->
                         animeStatus = adapter.playMedia(card).fold(
                             { recordWatch(card); "正在播放 ${card.title}" },
                             { "播放失敗：${it.message}" },
@@ -240,25 +255,35 @@ fun TVShellApp(
             },
         )
     }
-    LaunchedEffect(screen, animeState.phase, animeState.focusedSource) {
+    LaunchedEffect(screen, animeState.phase, animeState.focusedTopTab, animeState.focusedSource) {
         if (screen != ShellScreen.Anime || animeState.phase != CrossPlatformAnimePhase.Loading) return@LaunchedEffect
-        val service = if (animeState.focusedSource == 0) NativeMediaService.YouTube else NativeMediaService.Bilibili
-        animeStatus = "正在載入${if (service == NativeMediaService.YouTube) "官方 YouTube 動畫" else "Bilibili 動畫"}…"
-        withContext(Dispatchers.Default) { adapter.fetchMediaFeed(service) }.fold(
+        val source = animeSourcesFor(animeState.focusedTopTab).getOrNull(animeState.focusedSource)
+        if (source == null) {
+            animeCards = emptyList()
+            animeState = animeState.failed()
+            animeStatus = when (animeState.focusedTopTab) {
+                AnimeTopTab.History -> "目前沒有動畫觀看記錄。"
+                AnimeTopTab.Search -> "按 Menu 開啟搜尋。"
+                else -> "這個分頁目前沒有來源。"
+            }
+            return@LaunchedEffect
+        }
+        animeStatus = "正在載入${source.title}…"
+        withContext(Dispatchers.Default) { adapter.fetchAnimeFeed(source.kind) }.fold(
             onSuccess = { cards ->
                 animeCards = cards
                 animeState = animeState.loaded(cards.size)
-                animeStatus = "已載入 ${cards.size} 部可播放內容，按 OK 播放。"
+                animeStatus = "${source.title} · 已載入 ${cards.size} 部內容"
             },
             onFailure = {
                 animeCards = emptyList()
                 animeState = animeState.failed()
-                animeStatus = "動畫來源載入失敗：${it.message}"
+                animeStatus = "${source.title} 載入失敗：${it.message ?: "未知原因"}"
             },
         )
     }
 
-    TVShellBackdrop(wallpaperURL) {
+    TVShellBackdrop(if (animeOnly) null else wallpaperURL) {
         Box(
             Modifier.fillMaxSize()
             .onPreviewKeyEvent { event ->
@@ -270,12 +295,12 @@ fun TVShellApp(
         ) {
         when (screen) {
             ShellScreen.Launcher -> Launcher(state, watchHistory.entries)
-            ShellScreen.Anime -> AnimeBrowser(animeState, animeCards, animeStatus)
+            ShellScreen.Anime -> AnimeBrowser(animeState, animeCards, watchHistory.entries, animeStatus)
             ShellScreen.YouTube -> NativeMediaRoute("YouTube", listOf("推薦", "熱門", "訂閱", "搜尋"), mediaState, mediaCards, mediaStatus)
             ShellScreen.Bilibili -> NativeMediaRoute("Bilibili", listOf("推薦", "熱門", "排行榜", "動態"), mediaState, mediaCards, mediaStatus)
             ShellScreen.Settings -> SettingsScreen(settingsState)
         }
-        if (screen == ShellScreen.Launcher) {
+        if (screen == ShellScreen.Launcher || (animeOnly && screen == ShellScreen.Anime)) {
             Text(
                 clockLabel,
                 color = Color.White,
@@ -426,11 +451,10 @@ private fun NativeMediaPlayer(
 @Composable
 private fun MediaTile(card: NativeMediaCard, focused: Boolean) {
     val scale by animateFloatAsState(if (focused) 1.06f else 1f, tween(TVShellDesign.FocusAnimationMilliseconds))
-    val shape = RoundedCornerShape(16.dp)
     val thumbnail = NetworkThumbnailRequest(card.thumbnailURL)
-    Column(Modifier.width(390.dp).scale(scale), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.fillMaxWidth().scale(scale), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(
-            Modifier.size(width = 390.dp, height = 219.dp)
+            Modifier.fillMaxWidth().aspectRatio(16f / 9f)
                 .tvShellSurface(TVSurfaceRole.Content, isFocused = focused, cornerRadius = 16f),
             contentAlignment = Alignment.Center,
         ) {
@@ -690,12 +714,18 @@ private fun settingsGlyph(item: SettingsItem): String = when (item) {
 }
 
 @Composable
-private fun AnimeBrowser(state: CrossPlatformAnimeBrowserState, cards: List<NativeMediaCard>, status: String) {
-    val sources = listOf("官方 YouTube 動畫", "Bilibili 動畫")
+private fun AnimeBrowser(
+    state: CrossPlatformAnimeBrowserState,
+    cards: List<NativeMediaCard>,
+    history: List<NativeMediaCard>,
+    status: String,
+) {
+    val sources = animeSourcesFor(state.focusedTopTab)
+    val visibleCards = if (state.focusedTopTab == AnimeTopTab.History) history else cards
     val sourceListState = rememberLazyListState()
     val titleGridState = rememberLazyGridState()
     LaunchedEffect(state.focusedSource, state.focusedCard, state.phase) {
-        if (state.phase == CrossPlatformAnimePhase.Titles && cards.isNotEmpty()) {
+        if (state.phase == CrossPlatformAnimePhase.Titles && visibleCards.isNotEmpty()) {
             titleGridState.animateScrollToItem(state.focusedCard)
         } else if (sources.isNotEmpty()) {
             sourceListState.animateScrollToItem(state.focusedSource)
@@ -730,7 +760,7 @@ private fun AnimeBrowser(state: CrossPlatformAnimeBrowserState, cards: List<Nati
             Text("動畫", color = Color.White, fontSize = 48.sp, fontWeight = FontWeight.Bold)
             Text(status, color = Color.White.copy(alpha = .58f), fontSize = 21.sp, maxLines = 1)
         }
-        if (state.phase == CrossPlatformAnimePhase.Titles) {
+        if (state.phase == CrossPlatformAnimePhase.Titles && visibleCards.isNotEmpty()) {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(state.gridColumns),
                 state = titleGridState,
@@ -738,19 +768,31 @@ private fun AnimeBrowser(state: CrossPlatformAnimeBrowserState, cards: List<Nati
                 verticalArrangement = Arrangement.spacedBy(32.dp),
                 modifier = Modifier.fillMaxWidth().weight(1f),
             ) {
-                gridItemsIndexed(cards, key = { _, card -> card.id }) { index, card ->
+                gridItemsIndexed(visibleCards, key = { _, card -> card.id }) { index, card ->
                     MediaTile(card, !state.isTopNavigationFocused && index == state.focusedCard)
                 }
             }
+        } else if (state.phase == CrossPlatformAnimePhase.Titles) {
+            AnimeEmptyState(
+                if (state.focusedTopTab == AnimeTopTab.History) "沒有觀看記錄" else "沒有動畫",
+                if (state.focusedTopTab == AnimeTopTab.History) "播放過的動畫會顯示在這裡。" else status,
+            )
+        } else if (state.phase == CrossPlatformAnimePhase.Loading) {
+            AnimeEmptyState("正在載入", status)
+        } else if (sources.isEmpty()) {
+            AnimeEmptyState(
+                if (state.focusedTopTab == AnimeTopTab.History) "沒有觀看記錄" else "搜尋動畫",
+                if (state.focusedTopTab == AnimeTopTab.History) "播放過的動畫會顯示在這裡。" else "按 Menu 開啟虛擬鍵盤搜尋動漫。",
+            )
         } else {
             LazyRow(
                 state = sourceListState,
-                horizontalArrangement = Arrangement.spacedBy(42.dp),
+                horizontalArrangement = Arrangement.spacedBy(28.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().weight(1f),
             ) {
-                itemsIndexed(sources, key = { _, title -> title }) { index, title ->
-                    AppTile(ShellApp("anime-source:$title", title, "可播放正版內容"), !state.isTopNavigationFocused && index == state.focusedSource)
+                itemsIndexed(sources, key = { _, source -> "${source.tab}:${source.kind}" }) { index, source ->
+                    AnimeSourceTile(source, !state.isTopNavigationFocused && index == state.focusedSource)
                 }
             }
         }
@@ -760,6 +802,51 @@ private fun AnimeBrowser(state: CrossPlatformAnimeBrowserState, cards: List<Nati
             fontSize = 22.sp,
         )
     }
+}
+
+@Composable
+private fun ColumnScope.AnimeEmptyState(title: String, message: String) {
+    Box(
+        Modifier.fillMaxWidth().weight(1f).tvShellSurface(TVSurfaceRole.Content, cornerRadius = 24f),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text(title, color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Bold)
+            Text(message, color = Color.White.copy(alpha = .58f), fontSize = 21.sp)
+        }
+    }
+}
+
+@Composable
+private fun AnimeSourceTile(source: AnimeSourceDefinition, focused: Boolean) {
+    val scale by animateFloatAsState(if (focused) 1.06f else 1f, tween(TVShellDesign.FocusAnimationMilliseconds))
+    Column(
+        Modifier.width(330.dp).scale(scale),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            Modifier.fillMaxWidth().height(186.dp)
+                .tvShellSurface(TVSurfaceRole.Content, isFocused = focused, cornerRadius = 18f)
+                .padding(24.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(animeSourceGlyph(source.kind), color = if (focused) Color.Black else Color.White, fontSize = 38.sp, fontWeight = FontWeight.Bold)
+                Text(source.title, color = if (focused) Color.Black else Color.White, fontSize = 27.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(source.subtitle, color = if (focused) Color.Black.copy(alpha = .62f) else Color.White.copy(alpha = .58f), fontSize = 18.sp, maxLines = 1)
+            }
+        }
+    }
+}
+
+private fun animeSourceGlyph(kind: AnimeSourceKind): String = when (kind) {
+    AnimeSourceKind.Bilibili -> "Bi"
+    AnimeSourceKind.AniGamer -> "15+"
+    AnimeSourceKind.YouTube -> "▶"
+    AnimeSourceKind.CSS1 -> "CSS"
+    AnimeSourceKind.AniSubsBT -> "BT"
+    AnimeSourceKind.Mikan -> "蜜"
+    AnimeSourceKind.DMHY -> "花"
 }
 
 @Composable

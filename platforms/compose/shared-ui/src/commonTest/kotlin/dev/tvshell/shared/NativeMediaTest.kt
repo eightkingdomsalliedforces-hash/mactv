@@ -36,6 +36,23 @@ class NativeMediaTest {
     }
 
     @Test
+    fun bilibiliBangumiRankingBecomesAnimeCards() {
+        val json = """{"result":{"list":[{"cover":"https://i0.hdslb.com/bangumi.jpg","new_ep":{"index_show":"更新至第12話"},"rating":"9.7分","season_id":12345,"title":"葬送的芙莉蓮"}]}}"""
+        val card = NativeMediaParser.bilibiliBangumi(json).single()
+        assertEquals("葬送的芙莉蓮", card.title)
+        assertEquals("9.7分 · 更新至第12話", card.subtitle)
+        assertEquals("https://www.bilibili.com/bangumi/play/ss12345", card.playbackURL)
+    }
+
+    @Test
+    fun bilibiliBangumiMetadataDoesNotLeakBetweenRankingItems() {
+        val json = """{"result":{"list":[{"badge":"","cover":"https://i0/one.jpg","new_ep":{"cover":"https://i0/one-ep.jpg","index_show":"更新至第43話"},"rating":"9.7分","season_id":1,"title":"第一部"},{"badge":"","cover":"https://i0/two.jpg","new_ep":{"cover":"https://i0/two-ep.jpg","index_show":"全1266話"},"rating":"9.8分","season_id":2,"title":"第二部"}]}}"""
+        val cards = NativeMediaParser.bilibiliBangumi(json)
+        assertEquals(listOf("9.7分 · 更新至第43話", "9.8分 · 全1266話"), cards.map(NativeMediaCard::subtitle))
+        assertEquals(listOf("https://i0/one.jpg", "https://i0/two.jpg"), cards.map(NativeMediaCard::thumbnailURL))
+    }
+
+    @Test
     fun youtubeInitialDataBecomesNativeCardsWithoutOpeningAWebList() {
         val html = """{"videoRenderer":{"videoId":"abc123","thumbnail":{"thumbnails":[{"url":"https://i.ytimg.com/vi/abc123/hqdefault.jpg"}]},"title":{"runs":[{"text":"官方動畫"}]},"ownerText":{"runs":[{"text":"官方頻道"}]}}}"""
         val cards = NativeMediaParser.youtube(html)
@@ -49,6 +66,12 @@ class NativeMediaTest {
         assertTrue(NetworkThumbnailRequest("http://i.example/card.jpg").isLoadable)
         assertFalse(NetworkThumbnailRequest("").isLoadable)
         assertFalse(NetworkThumbnailRequest("file:///tmp/private.jpg").isLoadable)
+    }
+
+    @Test
+    fun bilibiliThumbnailsCarryTheRequiredReferer() {
+        val request = NetworkThumbnailRequest("https://i0.hdslb.com/bfs/bangumi/cover.jpg")
+        assertEquals("https://www.bilibili.com/", request.headers["Referer"])
     }
 
     @Test
