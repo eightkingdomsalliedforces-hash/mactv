@@ -12,6 +12,7 @@ import android.net.Uri
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -25,9 +26,15 @@ import dev.tvshell.shared.NativeMediaParser
 import dev.tvshell.shared.NativeMediaService
 import dev.tvshell.shared.TVShellApp
 import dev.tvshell.shared.BingWallpaperMetadata
+import dev.tvshell.shared.AnimeSourceKind
+import dev.tvshell.shared.BilibiliSection
 import dev.tvshell.shared.ShellPreferences
 import dev.tvshell.shared.ShellPreferencesCodec
 import dev.tvshell.shared.anime.ServiceCredentialsParser
+import dev.tvshell.shared.anime.AndroidAnimeService
+import dev.tvshell.shared.anime.AnimeEpisode
+import dev.tvshell.shared.anime.AnimeStreamCandidate
+import dev.tvshell.shared.anime.DanmakuComment
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -35,7 +42,6 @@ import java.net.URL
 class MainActivity : ComponentActivity() {
     private var appsRevision by mutableIntStateOf(0)
     private val remoteDispatcher = RemoteCommandDispatcher()
-    private var longBackDispatched = false
     private lateinit var platformAdapter: AndroidTVPlatformAdapter
     private val credentialsPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null && ::platformAdapter.isInitialized) platformAdapter.importCredentials(uri)
@@ -54,6 +60,9 @@ class MainActivity : ComponentActivity() {
             packageName,
             ::startActivity,
         ) { credentialsPicker.launch(arrayOf("application/json", "text/plain", "text/*")) }
+        onBackPressedDispatcher.addCallback(this) {
+            remoteDispatcher.dispatch(dev.tvshell.shared.RemoteCommand.Back)
+        }
         setContent {
             TVShellApp(
                 platformAdapter,
@@ -63,31 +72,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.keyCode == KeyEvent.KEYCODE_BACK) {
-            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount > 0 && event.isLongPress) {
-                longBackDispatched = true
-                AndroidTVKeyMapper.command(event.keyCode, isLongPress = true)?.let(remoteDispatcher::dispatch)
-                return true
-            }
-            if (event.action == KeyEvent.ACTION_DOWN) return true
-            if (event.action == KeyEvent.ACTION_UP) {
-                if (longBackDispatched) {
-                    longBackDispatched = false
-                } else {
-                    AndroidTVKeyMapper.command(event.keyCode, isLongPress = false)?.let(remoteDispatcher::dispatch)
-                }
-                return true
-            }
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        val command = AndroidTVKeyMapper.command(keyCode, event.isLongPress)
+        if (command != null) {
+            remoteDispatcher.dispatch(command)
+            return true
         }
-        if (event.action == KeyEvent.ACTION_DOWN) {
-            val command = AndroidTVKeyMapper.command(event.keyCode, event.isLongPress)
-            if (command != null) {
-                remoteDispatcher.dispatch(command)
-                return true
-            }
-        }
-        return super.dispatchKeyEvent(event)
+        return super.onKeyDown(keyCode, event)
     }
 
     override fun onStart() {
@@ -119,6 +110,9 @@ private class AndroidTVPlatformAdapter(
     private val startActivity: (Intent) -> Unit,
     private val chooseCredentials: () -> Unit,
 ) : PlatformAdapter {
+    private val animeServices = AndroidAnimeService(context) {
+        preferencesFile().takeIf(File::isFile)?.let { ShellPreferencesCodec.decode(it.readText()) } ?: ShellPreferences()
+    }
     override fun installedApps(): List<ShellApp> {
         val query = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
         return packageManager.queryIntentActivities(query, PackageManager.MATCH_ALL)
@@ -189,9 +183,50 @@ private class AndroidTVPlatformAdapter(
         }.ifEmpty { error("服務沒有回傳可顯示的影片") }
     }
 
-    override fun playMedia(card: NativeMediaCard): Result<Unit> = runCatching {
-        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(card.playbackURL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    override fun fetchAnimeFeed(source: AnimeSourceKind): Result<List<NativeMediaCard>> = animeServices.feed(source)
+    override fun fetchAnimeEpisodes(source: AnimeSourceKind, card: NativeMediaCard): Result<List<AnimeEpisode>> = animeServices.episodes(source, card)
+    override fun resolveAnimeStreams(source: AnimeSourceKind, episode: AnimeEpisode): Result<List<AnimeStreamCandidate>> = animeServices.streams(source, episode)
+    override fun loadAnimeStream(candidate: AnimeStreamCandidate): Result<Unit> = animeServices.load(candidate)
+    override fun playAnime(): Result<Unit> = animeServices.play()
+    override fun pauseAnime(): Result<Unit> = animeServices.pause()
+    override fun seekAnimeBy(seconds: Int): Result<Unit> = animeServices.seekBy(seconds)
+    override fun adjustAnimeVolume(direction: Int): Result<Unit> = animeServices.volume(direction)
+    override fun stopAnime(): Result<Unit> = animeServices.stop()
+    override fun fetchAnimeDanmaku(
+        source: AnimeSourceKind,
+        card: NativeMediaCard,
+        episode: AnimeEpisode,
+    ): Result<List<DanmakuComment>> = animeServices.danmaku(source, card, episode)
+
+    override fun fetchBilibiliSection(section: BilibiliSection): Result<List<NativeMediaCard>> = runCatching {
+        val credentials = credentialsFile().takeIf(File::isFile)?.let {
+            runCatching { ServiceCredentialsParser.decode(it.readText()) }.getOrNull()
+        }
+        val cookie = credentials?.bilibiliCookie.orEmpty()
+        val authenticated = cookie.contains("SESSDATA=") && cookie.contains("bili_jct=") && cookie.contains("DedeUserID=")
+        val endpoint = when (section) {
+            BilibiliSection.Recommended -> "https://api.bilibili.com/x/web-interface/index/top/feed/rcmd?fresh_type=3&ps=30"
+            BilibiliSection.Popular -> "https://api.bilibili.com/x/web-interface/popular?ps=30&pn=1"
+            BilibiliSection.Ranking -> "https://api.bilibili.com/x/web-interface/ranking/v2?rid=0&type=all"
+            BilibiliSection.Dynamic -> {
+                require(authenticated) { "Cookie 缺少 SESSDATA、bili_jct 或 DedeUserID；請在設定匯入完整 bilibili.com Cookie" }
+                "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all"
+            }
+            BilibiliSection.Profile -> {
+                require(authenticated) { "Cookie 缺少 SESSDATA、bili_jct 或 DedeUserID；請在設定匯入完整 bilibili.com Cookie" }
+                "https://api.bilibili.com/x/web-interface/nav"
+            }
+        }
+        val body = fetchText(endpoint, if (cookie.isBlank()) emptyMap() else mapOf("Cookie" to cookie))
+        NativeMediaParser.bilibiliFailureReason(body)?.let(::error)
+        when (section) {
+            BilibiliSection.Dynamic -> NativeMediaParser.bilibiliDynamic(body)
+            BilibiliSection.Profile -> NativeMediaParser.bilibiliProfile(body)
+            else -> NativeMediaParser.bilibili(body)
+        }.ifEmpty { error("Bilibili ${section.title}沒有回傳可顯示內容") }
     }
+
+    override fun playMedia(card: NativeMediaCard): Result<Unit> = Result.success(Unit)
 
     override fun fetchWallpaperURL(): Result<String> = runCatching {
         val connection = URL("https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt=zh-TW").openConnection() as HttpURLConnection
@@ -203,4 +238,22 @@ private class AndroidTVPlatformAdapter(
 
     private fun credentialsFile(): File = File(context.filesDir, "credentials.json")
     private fun preferencesFile(): File = File(context.filesDir, "preferences.json")
+
+    private fun fetchText(url: String, headers: Map<String, String>): String {
+        val connection = URL(url).openConnection() as HttpURLConnection
+        return try {
+            connection.connectTimeout = 8_000
+            connection.readTimeout = 8_000
+            connection.instanceFollowRedirects = true
+            connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android TV) TVShell/1.0")
+            connection.setRequestProperty("Referer", "https://www.bilibili.com/")
+            for ((name, value) in headers) connection.setRequestProperty(name, value)
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            require(status in 200..299 && stream != null) { "HTTP $status" }
+            stream.bufferedReader().use { it.readText() }
+        } finally {
+            connection.disconnect()
+        }
+    }
 }

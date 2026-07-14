@@ -53,6 +53,10 @@ object ShellPreferencesCodec {
                     put("thumbnailURL", card.thumbnailURL)
                     put("playbackURL", card.playbackURL)
                     card.animeSource?.let { put("animeSource", it.name) }
+                    if (card.alternateTitles.isNotEmpty()) put("alternateTitles", buildJsonArray {
+                        card.alternateTitles.forEach { add(JsonPrimitive(it)) }
+                    })
+                    card.episodeCount?.let { put("episodeCount", it) }
                 })
             }
         })
@@ -91,6 +95,8 @@ object ShellPreferencesCodec {
                 thumbnailURL = item.string("thumbnailURL").orEmpty(),
                 playbackURL = playbackURL,
                 animeSource = item.string("animeSource")?.let { runCatching { AnimeSourceKind.valueOf(it) }.getOrNull() },
+                alternateTitles = (item["alternateTitles"] as? JsonArray).orEmpty().mapNotNull { it.jsonPrimitive.contentOrNull },
+                episodeCount = item.int("episodeCount"),
             )
         }
         val controls = root["controlCenter"] as? JsonObject

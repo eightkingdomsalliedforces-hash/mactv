@@ -1,5 +1,38 @@
 package dev.tvshell.shared
 
+data class NavigationListState(
+    val rowCount: Int,
+    val focusedIndex: Int = 0,
+    val pendingAction: String? = null,
+) {
+    fun reduce(command: RemoteCommand): NavigationListState = when (command) {
+        RemoteCommand.Up -> copy(focusedIndex = (focusedIndex - 1).coerceAtLeast(0), pendingAction = null)
+        RemoteCommand.Down -> copy(focusedIndex = (focusedIndex + 1).coerceAtMost((rowCount - 1).coerceAtLeast(0)), pendingAction = null)
+        RemoteCommand.Select -> copy(pendingAction = "select:$focusedIndex")
+        RemoteCommand.Back, RemoteCommand.Home -> copy(pendingAction = "exit")
+        else -> this
+    }
+
+    fun clearAction(): NavigationListState = copy(pendingAction = null)
+}
+
+data class AnimeSourceManagementState(
+    val focusedIndex: Int = 0,
+    val rowCount: Int = 7,
+    val pendingAction: String? = null,
+) {
+    fun reduce(command: RemoteCommand): AnimeSourceManagementState = when (command) {
+        RemoteCommand.Up -> copy(focusedIndex = (focusedIndex - 1).coerceAtLeast(0), pendingAction = null)
+        RemoteCommand.Down -> copy(focusedIndex = (focusedIndex + 1).coerceAtMost((rowCount - 1).coerceAtLeast(0)), pendingAction = null)
+        RemoteCommand.Select -> if (focusedIndex == 0) copy(pendingAction = "toggle-css1") else this
+        RemoteCommand.Menu -> copy(pendingAction = "reset-css1")
+        RemoteCommand.Back, RemoteCommand.Home -> copy(pendingAction = "exit")
+        else -> this
+    }
+
+    fun clearAction(): AnimeSourceManagementState = copy(pendingAction = null)
+}
+
 enum class SettingsItem {
     Scale,
     Wallpaper,

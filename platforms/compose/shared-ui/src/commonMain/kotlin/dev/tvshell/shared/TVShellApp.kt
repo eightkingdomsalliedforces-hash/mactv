@@ -47,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -93,6 +94,7 @@ fun TVShellApp(
     var animeDanmaku by remember { mutableStateOf(emptyList<DanmakuComment>()) }
     var animeDanmakuStatus by remember { mutableStateOf("彈幕尚未載入") }
     var animePlaybackSeconds by remember { mutableStateOf(0.0) }
+    var animeWebState by remember { mutableStateOf(WebRuntimeState("about:blank")) }
     var mediaState by remember { mutableStateOf(NativeMediaState(0)) }
     var mediaCards by remember { mutableStateOf(emptyList<NativeMediaCard>()) }
     var mediaStatus by remember { mutableStateOf("正在載入…") }
@@ -102,6 +104,9 @@ fun TVShellApp(
     var controlCenterVisible by remember { mutableStateOf(false) }
     var controlCenterState by remember { mutableStateOf(restoredPreferences.controlCenter) }
     var animeSourceSettings by remember { mutableStateOf(restoredPreferences.animeSources) }
+    var animeSourceManagementState by remember { mutableStateOf(AnimeSourceManagementState()) }
+    var remoteSettingsState by remember { mutableStateOf(NavigationListState(rowCount = 8)) }
+    var appManagementState by remember(state.apps.size) { mutableStateOf(NavigationListState(rowCount = state.apps.size)) }
     var settingsState by remember {
         mutableStateOf(
             SettingsState(
@@ -133,7 +138,10 @@ fun TVShellApp(
                 }
                 "settings" -> {
                     controlCenterVisible = false
-                    settingsState = SettingsState(preferences = controlCenterState)
+                    settingsState = SettingsState(
+                        preferences = controlCenterState,
+                        credentialsLocation = adapter.credentialsLocation(),
+                    )
                     screen = ShellRoute.Settings
                 }
             }
@@ -152,7 +160,10 @@ fun TVShellApp(
             val next = settingsState.reduce(command)
             when (next.pendingAction) {
                 "exit" -> screen = if (animeOnly) ShellRoute.Anime else ShellRoute.Launcher
-                "video-source" -> adapter.openSystemSettings()
+                "video-source" -> {
+                    mediaWebState = WebRuntimeState("https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4")
+                    screen = ShellRoute.Media
+                }
                 "credentials" -> adapter.openCredentialsImporter()
             }
             controlCenterState = next.preferences
@@ -174,12 +185,45 @@ fun TVShellApp(
             mediaWebState = next.clearAction()
             return
         }
-        if (screen == ShellRoute.RemoteSettings || screen == ShellRoute.AnimeSources ||
-            screen == ShellRoute.AppManagement
-        ) {
-            if (command == RemoteCommand.Back || command == RemoteCommand.Home) {
-                screen = if (animeOnly) ShellRoute.Anime else ShellRoute.Launcher
+        if (screen == ShellRoute.AnimeSources) {
+            val next = animeSourceManagementState.reduce(command)
+            when (next.pendingAction) {
+                "toggle-css1" -> animeSourceSettings = animeSourceSettings.copy(css1Enabled = !animeSourceSettings.css1Enabled)
+                "reset-css1" -> animeSourceSettings = animeSourceSettings.resetCSS1()
+                "exit" -> screen = if (animeOnly) ShellRoute.Anime else ShellRoute.Launcher
             }
+            animeSourceManagementState = next.clearAction()
+            adapter.savePreferences(ShellPreferences(animeSourceSettings, watchHistory, controlCenterState))
+            return
+        }
+        if (screen == ShellRoute.RemoteSettings) {
+            val next = remoteSettingsState.reduce(command)
+            if (next.pendingAction == "exit") screen = if (animeOnly) ShellRoute.Anime else ShellRoute.Launcher
+            remoteSettingsState = next.clearAction()
+            return
+        }
+        if (screen == ShellRoute.AppManagement) {
+            val next = appManagementState.reduce(command)
+            when {
+                next.pendingAction == "exit" -> screen = if (animeOnly) ShellRoute.Anime else ShellRoute.Launcher
+                next.pendingAction?.startsWith("select:") == true -> {
+                    val index = next.pendingAction.substringAfter(':').toIntOrNull() ?: 0
+                    state.apps.getOrNull(index)?.let { app ->
+                        val route = BuiltInAppRoute.routeFor(app)
+                        if (route != null) {
+                            screen = route
+                            if (route is ShellRoute.Browser) browserState = WebRuntimeState(route.url)
+                            if (route == ShellRoute.Media) mediaWebState = WebRuntimeState("https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4")
+                        } else {
+                            state = state.copy(status = adapter.launch(app).fold(
+                                { "正在開啟 ${app.name}" },
+                                { "無法開啟 ${app.name}：${it.message}" },
+                            ))
+                        }
+                    }
+                }
+            }
+            appManagementState = next.clearAction()
             return
         }
         if (screen == ShellRoute.YouTube || screen == ShellRoute.Bilibili) {
@@ -227,10 +271,12 @@ fun TVShellApp(
                 }
                 action == "play" -> {
                     animeStatus = adapter.playAnime().fold({ "繼續播放" }, { "播放控制失敗：${it.message}" })
+                    animeWebState = animeWebState.reduce(RemoteCommand.PlayPause).clearAction()
                     animeState = next.clearAction()
                 }
                 action == "pause" -> {
                     animeStatus = adapter.pauseAnime().fold({ "已暫停" }, { "播放控制失敗：${it.message}" })
+                    animeWebState = animeWebState.reduce(RemoteCommand.PlayPause).clearAction()
                     animeState = next.clearAction()
                 }
                 action?.startsWith("seek:") == true -> {
@@ -240,6 +286,7 @@ fun TVShellApp(
                         { if (seconds >= 0) "快轉 ${seconds} 秒" else "倒轉 ${-seconds} 秒" },
                         { "快轉失敗：${it.message}" },
                     )
+                    animeWebState = animeWebState.reduce(if (seconds >= 0) RemoteCommand.FastForward else RemoteCommand.Rewind).clearAction()
                     animeState = next.clearAction()
                 }
                 action == "volume:up" || action == "volume:down" -> {
@@ -248,6 +295,7 @@ fun TVShellApp(
                         { if (direction > 0) "音量提高" else "音量降低" },
                         { "音量調整失敗：${it.message}" },
                     )
+                    animeWebState = animeWebState.reduce(if (direction > 0) RemoteCommand.VolumeUp else RemoteCommand.VolumeDown).clearAction()
                     animeState = next.clearAction()
                 }
                 action == "stop" -> {
@@ -266,10 +314,9 @@ fun TVShellApp(
         when (command) {
             RemoteCommand.Select -> when (state.focus) {
                 LauncherFocus.History -> watchHistory.entries.getOrNull(state.focusedHistoryIndex)?.let { card ->
-                    state = state.copy(status = adapter.playMedia(card).fold(
-                        { "正在續播 ${card.title}" },
-                        { "播放失敗：${it.message}" },
-                    ))
+                    mediaWebState = WebRuntimeState(card.playbackURL)
+                    state = state.copy(status = "正在 TVShell 內建播放器續播 ${card.title}")
+                    screen = ShellRoute.Media
                 }
                 LauncherFocus.Apps -> state.focusedApp?.let { app ->
                     BuiltInAppRoute.routeFor(app)?.let { route ->
@@ -451,6 +498,7 @@ fun TVShellApp(
         val action = animeState.pendingAction ?: return@LaunchedEffect
         if (!action.startsWith("load:")) return@LaunchedEffect
         val candidate = animeState.streamCandidates.getOrNull(animeState.selectedStreamIndex) ?: return@LaunchedEffect
+        animeWebState = WebRuntimeState(candidate.url)
         adapter.loadAnimeStream(candidate).fold(
             onSuccess = {
                 val cards = if (animeState.focusedTopTab == AnimeTopTab.History) watchHistory.entries else animeCards
@@ -500,8 +548,12 @@ fun TVShellApp(
     }
 
     TVShellBackdrop(if (animeOnly) null else wallpaperURL) {
-        Box(
-            Modifier.fillMaxSize()
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val canvasScale = referenceCanvasScale(maxWidth.value, maxHeight.value)
+            Box(
+                Modifier.width(1920.dp).height(1080.dp)
+                    .align(Alignment.Center)
+                    .graphicsLayer(scaleX = canvasScale, scaleY = canvasScale)
             .onPreviewKeyEvent { event ->
                 if (!handleRootKeyEvents) return@onPreviewKeyEvent false
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
@@ -545,6 +597,7 @@ fun TVShellApp(
                         animeDanmakuStatus,
                         animePlaybackSeconds,
                         controlCenterState.danmaku,
+                        animeWebState,
                     )
                 }
                 ShellRoute.YouTube -> NativeMediaRoute("YouTube", listOf("推薦", "熱門", "訂閱", "搜尋"), mediaState, mediaCards, mediaStatus, mediaWebState) {
@@ -554,9 +607,9 @@ fun TVShellApp(
                     mediaState = mediaState.copy(phase = NativeMediaPhase.Browser)
                 }
                 ShellRoute.Settings -> SettingsScreen(settingsState)
-                ShellRoute.RemoteSettings -> RemoteSettingsScreen()
-                ShellRoute.AnimeSources -> AnimeSourceManagementScreen(animeSourceSettings)
-                ShellRoute.AppManagement -> AppManagementScreen(state.apps)
+                ShellRoute.RemoteSettings -> RemoteSettingsScreen(remoteSettingsState.focusedIndex)
+                ShellRoute.AnimeSources -> AnimeSourceManagementScreen(animeSourceSettings, animeSourceManagementState.focusedIndex)
+                ShellRoute.AppManagement -> AppManagementScreen(state.apps, appManagementState.focusedIndex)
                 ShellRoute.Media -> MediaLibraryScreen(mediaWebState) {
                     screen = if (animeOnly) ShellRoute.Anime else ShellRoute.Launcher
                 }
@@ -578,6 +631,7 @@ fun TVShellApp(
             )
         }
         if (controlCenterVisible) ControlCenter(controlCenterState)
+            }
         }
     }
 }
@@ -885,7 +939,7 @@ private fun appAccent(app: ShellApp): Color = when (app.id) {
 }
 
 @Composable
-private fun RemoteSettingsScreen() {
+private fun RemoteSettingsScreen(focusedIndex: Int) {
     ReferenceSplitPage(
         glyph = "⌁",
         title = "遙控器設定",
@@ -901,11 +955,12 @@ private fun RemoteSettingsScreen() {
             "音量" to "系統音量鍵",
         ),
         hint = "Windows 與 Android TV 使用固定、可預期的遙控器映射；Back 返回主畫面。",
+        focusedIndex = focusedIndex,
     )
 }
 
 @Composable
-private fun AnimeSourceManagementScreen(settings: AnimeSourceSettings) {
+private fun AnimeSourceManagementScreen(settings: AnimeSourceSettings, focusedIndex: Int) {
     ReferenceSplitPage(
         glyph = "◆",
         title = "動漫來源",
@@ -919,18 +974,20 @@ private fun AnimeSourceManagementScreen(settings: AnimeSourceSettings) {
             "Mikan" to "需要 RSS 設定",
             "動漫花園" to "需要 RSS 設定",
         ),
-        hint = "CSS1 使用與 macOS 相同的內建網址；OK 管理，Menu 切換詳細模式。",
+        hint = "CSS1 使用與 macOS 相同的內建網址；OK 啟用或停用，Menu 重設內建網址。",
+        focusedIndex = focusedIndex,
     )
 }
 
 @Composable
-private fun AppManagementScreen(apps: List<ShellApp>) {
+private fun AppManagementScreen(apps: List<ShellApp>, focusedIndex: Int) {
     ReferenceSplitPage(
         glyph = "☷",
         title = "管理應用程式",
         subtitle = "查看內建與平台應用程式",
         rows = apps.map { it.name to it.subtitle },
-        hint = "平台應用程式由 Windows 開始功能表或 Android TV Launcher 自動發現。",
+        hint = "OK 開啟應用程式；平台應用程式由 Windows 開始功能表或 Android TV Launcher 自動發現。",
+        focusedIndex = focusedIndex,
     )
 }
 
@@ -974,7 +1031,12 @@ private fun ReferenceSplitPage(
     subtitle: String,
     rows: List<Pair<String, String>>,
     hint: String,
+    focusedIndex: Int = 0,
 ) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(focusedIndex, rows.size) {
+        if (rows.isNotEmpty()) listState.animateScrollToItem(focusedIndex.coerceIn(rows.indices))
+    }
     Row(
         Modifier.fillMaxSize().padding(horizontal = 86.dp, vertical = 60.dp),
         horizontalArrangement = Arrangement.spacedBy(64.dp),
@@ -986,19 +1048,25 @@ private fun ReferenceSplitPage(
             Spacer(Modifier.height(16.dp))
             Text(subtitle, color = Color.White.copy(alpha = .58f), fontSize = 24.sp)
         }
-        Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            rows.take(10).forEachIndexed { index, row ->
+        Column(Modifier.weight(1f).fillMaxHeight()) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                itemsIndexed(rows) { index, row ->
                 Row(
-                    Modifier.fillMaxWidth().tvShellSurface(TVSurfaceRole.Panel, isFocused = index == 0, cornerRadius = 10f)
+                    Modifier.fillMaxWidth().tvShellSurface(TVSurfaceRole.Panel, isFocused = index == focusedIndex, cornerRadius = 10f)
                         .padding(horizontal = 24.dp, vertical = 19.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(row.first, color = if (index == 0) Color.Black else Color.White, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
-                    Text(row.second, color = if (index == 0) Color.Black.copy(alpha = .62f) else Color.White.copy(alpha = .58f), fontSize = 20.sp, maxLines = 1)
+                    Text(row.first, color = if (index == focusedIndex) Color.Black else Color.White, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+                    Text(row.second, color = if (index == focusedIndex) Color.Black.copy(alpha = .62f) else Color.White.copy(alpha = .58f), fontSize = 20.sp, maxLines = 1)
                 }
             }
-            Spacer(Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(18.dp))
             Text(hint, color = Color.White.copy(alpha = .58f), fontSize = 20.sp)
         }
     }
@@ -1144,6 +1212,7 @@ private fun AnimeBrowser(
     danmakuStatus: String,
     playbackSeconds: Double,
     danmakuSettings: DanmakuSettings,
+    webState: WebRuntimeState,
 ) {
     val sources = animeSourcesFor(state.focusedTopTab)
     val visibleCards = if (state.focusedTopTab == AnimeTopTab.History) history else cards
@@ -1177,6 +1246,7 @@ private fun AnimeBrowser(
                 danmakuStatus,
                 playbackSeconds,
                 danmakuSettings,
+                webState,
             )
             if (state.isStreamPickerVisible) AnimeStreamPicker(state, episodes.getOrNull(state.focusedEpisode))
         }
@@ -1357,9 +1427,25 @@ private fun AnimePlayerScreen(
     danmakuStatus: String,
     playbackSeconds: Double,
     danmakuSettings: DanmakuSettings,
+    webState: WebRuntimeState,
 ) {
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        PlatformAnimeVideoSurface(Modifier.fillMaxSize())
+        val candidate = state.streamCandidates.getOrNull(state.selectedStreamIndex)
+        if (candidate?.headers?.get("resolver") == "official") {
+            PlatformWebSurface(
+                url = candidate.url,
+                signal = webState.signal,
+                onExitRequested = {},
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            PlatformAnimeVideoSurface(
+                candidate = candidate,
+                signal = webState.signal,
+                onExitRequested = {},
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
         if (danmakuSettings.isVisible && danmaku.isNotEmpty()) {
             DanmakuOverlay(danmaku, playbackSeconds, danmakuSettings)
         }
@@ -1509,6 +1595,7 @@ private fun AnimeSourceTile(source: AnimeSourceDefinition, focused: Boolean) {
 
 private fun animeSourceGlyph(kind: AnimeSourceKind): String = when (kind) {
     AnimeSourceKind.Bilibili -> "Bi"
+    AnimeSourceKind.BangumiYouTube -> "BG"
     AnimeSourceKind.AniGamer -> "15+"
     AnimeSourceKind.YouTube -> "▶"
     AnimeSourceKind.CSS1 -> "CSS"

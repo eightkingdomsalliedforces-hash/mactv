@@ -49,6 +49,7 @@ interface PlatformAdapter {
     }
     fun fetchAnimeFeed(source: AnimeSourceKind): Result<List<NativeMediaCard>> = when (source) {
         AnimeSourceKind.YouTube -> fetchMediaFeed(NativeMediaService.YouTube)
+        AnimeSourceKind.BangumiYouTube -> Result.failure(IllegalStateException("此平台尚未連接 Bangumi"))
         AnimeSourceKind.Bilibili -> fetchMediaFeed(NativeMediaService.Bilibili)
         AnimeSourceKind.AniGamer -> Result.success(
             listOf(
@@ -75,7 +76,7 @@ interface PlatformAdapter {
         val headers = when (source) {
             AnimeSourceKind.Bilibili -> mapOf("Referer" to "https://www.bilibili.com/")
             AnimeSourceKind.CSS1 -> mapOf("Referer" to episode.pageURL)
-            AnimeSourceKind.AniGamer, AnimeSourceKind.YouTube -> mapOf("resolver" to "official")
+            AnimeSourceKind.AniGamer, AnimeSourceKind.YouTube, AnimeSourceKind.BangumiYouTube -> mapOf("resolver" to "official")
             AnimeSourceKind.AniSubsBT, AnimeSourceKind.Mikan, AnimeSourceKind.DMHY -> mapOf("resolver" to "torrent")
         }
         listOf(AnimeStreamCandidate(episode.pageURL, officialSourceQuality(source), headers))
@@ -109,6 +110,7 @@ interface PlatformAdapter {
 private fun officialSourceQuality(source: AnimeSourceKind): String = when (source) {
     AnimeSourceKind.AniGamer -> "動畫瘋官方播放器"
     AnimeSourceKind.YouTube -> "YouTube 官方播放器"
+    AnimeSourceKind.BangumiYouTube -> "Bangumi + YouTube"
     AnimeSourceKind.AniSubsBT, AnimeSourceKind.Mikan, AnimeSourceKind.DMHY -> "BT / RSS"
     AnimeSourceKind.Bilibili -> "Bilibili 官方來源"
     AnimeSourceKind.CSS1 -> "自動"

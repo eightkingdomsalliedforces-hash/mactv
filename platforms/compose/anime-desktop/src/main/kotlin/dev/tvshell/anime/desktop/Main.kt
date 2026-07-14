@@ -63,9 +63,9 @@ fun main() = application {
 }
 
 private object AnimeDesktopAdapter : PlatformAdapter {
-    private val animePlayer = DesktopVLCPlayerAdapter()
-    private val css1Resolver = CSS1Resolver(PlatformCSS1ContentClient())
-    private val dandanplay = DandanplayService(PlatformCSS1ContentClient(), ::platformSHA256Base64)
+    private val animeServices = dev.tvshell.shared.anime.DesktopAnimeService {
+        loadPreferences().getOrDefault(ShellPreferences())
+    }
     override fun installedApps(): List<ShellApp> = emptyList()
     override fun launch(app: ShellApp): Result<Unit> = Result.failure(IllegalStateException("請先在動畫 App 內設定來源"))
     override fun openSystemSettings(): Result<Unit> = Result.success(Unit)
@@ -84,73 +84,21 @@ private object AnimeDesktopAdapter : PlatformAdapter {
             NativeMediaService.Bilibili -> NativeMediaParser.bilibiliBangumi(body)
         }.ifEmpty { error("來源沒有回傳可播放內容") }
     }
-    override fun fetchAnimeFeed(source: AnimeSourceKind): Result<List<NativeMediaCard>> {
-        val result = when (source) {
-            AnimeSourceKind.YouTube -> fetchMediaFeed(NativeMediaService.YouTube)
-            AnimeSourceKind.Bilibili -> fetchMediaFeed(NativeMediaService.Bilibili)
-            AnimeSourceKind.AniGamer -> super<PlatformAdapter>.fetchAnimeFeed(source)
-            AnimeSourceKind.CSS1 -> fetchMediaFeed(NativeMediaService.Bilibili)
-            AnimeSourceKind.AniSubsBT -> rssFeed("TVSHELL_ANISUBS_BT_URL", "ani-subs BT")
-            AnimeSourceKind.Mikan -> rssFeed("TVSHELL_MIKAN_RSS_URL", "Mikan")
-            AnimeSourceKind.DMHY -> rssFeed("TVSHELL_DMHY_RSS_URL", "動漫花園")
-        }
-        return result.map { cards -> cards.map { it.copy(animeSource = source) } }
-    }
-    override fun fetchAnimeEpisodes(source: AnimeSourceKind, card: NativeMediaCard): Result<List<AnimeEpisode>> = when (source) {
-        AnimeSourceKind.Bilibili -> runCatching {
-            val seasonID = card.id.substringAfter("bilibili-season-", "").takeIf(String::isNotBlank)
-                ?: card.playbackURL.substringAfter("/ss", "").substringBefore('?').takeIf(String::isNotBlank)
-                ?: error("缺少 Bilibili season_id")
-            BilibiliAnimeParser.episodes(fetchText("https://api.bilibili.com/pgc/web/season/section?season_id=$seasonID"))
-                .ifEmpty { error("Bilibili 沒有回傳選集") }
-        }
-        AnimeSourceKind.CSS1 -> runCatching { runBlocking {
-            css1Resolver.episodes(card.title).ifEmpty { error("CSS1 搜不到：${card.title}") }
-        } }
-        else -> super<PlatformAdapter>.fetchAnimeEpisodes(source, card)
-    }
-    override fun resolveAnimeStreams(source: AnimeSourceKind, episode: AnimeEpisode): Result<List<AnimeStreamCandidate>> = when (source) {
-        AnimeSourceKind.Bilibili -> runCatching {
-            val fields = episode.id.split(':')
-            require(fields.size >= 3) { "Bilibili 選集識別格式錯誤" }
-            val payload = fetchText("https://api.bilibili.com/pgc/player/web/playurl?ep_id=${fields[1]}&cid=${fields[2]}&qn=80&fnver=0&fnval=0&fourk=0")
-            BilibiliAnimeParser.failureReason(payload)?.let(::error)
-            BilibiliAnimeParser.streams(payload).ifEmpty { error("Bilibili 沒有可用播放網址，可能需要登入或會員權限") }
-        }
-        AnimeSourceKind.CSS1 -> runCatching { runBlocking {
-            css1Resolver.streams(episode).ifEmpty { error("CSS1 選集解析失敗：沒有可用播放源") }
-        } }
-        else -> super<PlatformAdapter>.resolveAnimeStreams(source, episode)
-    }
-    override fun loadAnimeStream(candidate: AnimeStreamCandidate): Result<Unit> = runCatching {
-        if (candidate.headers["resolver"] == "official") {
-            playMedia(NativeMediaCard(candidate.url, "官方播放器", candidate.quality, "", candidate.url)).getOrThrow()
-        } else {
-            require(candidate.url.startsWith("magnet:").not()) { "Windows BT 邊下邊播仍需完成 torrent 引擎連接" }
-            animePlayer.load(candidate)
-            animePlayer.play()
-        }
-    }
-    override fun playAnime(): Result<Unit> = runCatching { animePlayer.play() }
-    override fun pauseAnime(): Result<Unit> = runCatching { animePlayer.pause() }
-    override fun seekAnimeBy(seconds: Int): Result<Unit> = runCatching { animePlayer.seekBy(seconds) }
-    override fun stopAnime(): Result<Unit> = runCatching { animePlayer.release() }
+    override fun fetchAnimeFeed(source: AnimeSourceKind): Result<List<NativeMediaCard>> = animeServices.feed(source)
+    override fun fetchAnimeEpisodes(source: AnimeSourceKind, card: NativeMediaCard): Result<List<AnimeEpisode>> = animeServices.episodes(source, card)
+    override fun resolveAnimeStreams(source: AnimeSourceKind, episode: AnimeEpisode): Result<List<AnimeStreamCandidate>> = animeServices.streams(source, episode)
+    override fun loadAnimeStream(candidate: AnimeStreamCandidate): Result<Unit> = animeServices.load(candidate)
+    override fun playAnime(): Result<Unit> = animeServices.play()
+    override fun pauseAnime(): Result<Unit> = animeServices.pause()
+    override fun seekAnimeBy(seconds: Int): Result<Unit> = animeServices.seekBy(seconds)
+    override fun adjustAnimeVolume(direction: Int): Result<Unit> = animeServices.volume(direction)
+    override fun stopAnime(): Result<Unit> = animeServices.stop()
     override fun fetchAnimeDanmaku(
         source: AnimeSourceKind,
         card: NativeMediaCard,
         episode: AnimeEpisode,
-    ): Result<List<DanmakuComment>> = runCatching { runBlocking {
-        if (source == AnimeSourceKind.Bilibili) {
-            val cid = episode.id.split(':').getOrNull(2) ?: error("Bilibili 選集缺少 cid，無法讀取彈幕")
-            BilibiliAnimeParser.danmaku(fetchText("https://api.bilibili.com/x/v1/dm/list.so?oid=$cid"))
-        } else {
-            val credentials = loadCredentials().dandanplay
-            dandanplay.comments(card.title, episode.number, credentials, (System.currentTimeMillis() / 1_000).toInt())
-        }
-    } }
-    override fun playMedia(card: NativeMediaCard): Result<Unit> = runCatching {
-        ProcessBuilder("cmd", "/c", "start", "", card.playbackURL).start()
-    }
+    ): Result<List<DanmakuComment>> = animeServices.danmaku(source, card, episode)
+    override fun playMedia(card: NativeMediaCard): Result<Unit> = Result.success(Unit)
     override fun exitApp(): Result<Unit> = runCatching { exitProcess(0) }
     override fun fetchWallpaperURL(): Result<String> = runCatching {
         BingWallpaperMetadata.imageURL(fetchText("https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt=zh-TW"))

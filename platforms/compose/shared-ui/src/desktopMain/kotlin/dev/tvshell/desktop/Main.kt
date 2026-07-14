@@ -17,12 +17,17 @@ import dev.tvshell.shared.ShellApp
 import dev.tvshell.shared.TVShellApp
 import dev.tvshell.shared.BingWallpaperMetadata
 import dev.tvshell.shared.BilibiliSection
+import dev.tvshell.shared.AnimeSourceKind
 import dev.tvshell.shared.ShellPreferences
 import dev.tvshell.shared.platformLoadPreferences
 import dev.tvshell.shared.platformSavePreferences
 import dev.tvshell.shared.anime.ServiceCredentialsParser
 import dev.tvshell.shared.anime.platformChooseAndInstallCredentials
 import dev.tvshell.shared.anime.platformCredentialsFile
+import dev.tvshell.shared.anime.AnimeEpisode
+import dev.tvshell.shared.anime.AnimeStreamCandidate
+import dev.tvshell.shared.anime.DanmakuComment
+import dev.tvshell.shared.anime.DesktopAnimeService
 import dev.tvshell.shared.RemoteCommandDispatcher
 import dev.tvshell.shared.desktopKeyToRemoteCommand
 import java.io.File
@@ -50,6 +55,7 @@ fun main() = application {
 }
 
 private class WindowsPlatformAdapter : PlatformAdapter {
+    private val animeServices = DesktopAnimeService { platformLoadPreferences() }
     override fun installedApps(): List<ShellApp> {
         val roots = listOfNotNull(
             System.getenv("ProgramData")?.let { File(it, "Microsoft/Windows/Start Menu/Programs") },
@@ -118,6 +124,21 @@ private class WindowsPlatformAdapter : PlatformAdapter {
             else -> NativeMediaParser.bilibili(body)
         }.ifEmpty { error("Bilibili ${section.title}沒有回傳可顯示內容") }
     }
+
+    override fun fetchAnimeFeed(source: AnimeSourceKind): Result<List<NativeMediaCard>> = animeServices.feed(source)
+    override fun fetchAnimeEpisodes(source: AnimeSourceKind, card: NativeMediaCard): Result<List<AnimeEpisode>> = animeServices.episodes(source, card)
+    override fun resolveAnimeStreams(source: AnimeSourceKind, episode: AnimeEpisode): Result<List<AnimeStreamCandidate>> = animeServices.streams(source, episode)
+    override fun loadAnimeStream(candidate: AnimeStreamCandidate): Result<Unit> = animeServices.load(candidate)
+    override fun playAnime(): Result<Unit> = animeServices.play()
+    override fun pauseAnime(): Result<Unit> = animeServices.pause()
+    override fun seekAnimeBy(seconds: Int): Result<Unit> = animeServices.seekBy(seconds)
+    override fun adjustAnimeVolume(direction: Int): Result<Unit> = animeServices.volume(direction)
+    override fun stopAnime(): Result<Unit> = animeServices.stop()
+    override fun fetchAnimeDanmaku(
+        source: AnimeSourceKind,
+        card: NativeMediaCard,
+        episode: AnimeEpisode,
+    ): Result<List<DanmakuComment>> = animeServices.danmaku(source, card, episode)
 
     override fun playMedia(card: NativeMediaCard): Result<Unit> = runCatching {
         ProcessBuilder("cmd", "/c", "start", "", card.playbackURL).start()

@@ -5,6 +5,7 @@ import dev.tvshell.shared.anime.AnimePlayerState
 import dev.tvshell.shared.anime.AnimeStreamCandidate
 import dev.tvshell.shared.anime.BTRssParser
 import dev.tvshell.shared.anime.BilibiliAnimeParser
+import dev.tvshell.shared.anime.BangumiMetadataParser
 import dev.tvshell.shared.anime.CSS1HtmlParser
 import dev.tvshell.shared.anime.CSS1SubscriptionParser
 import dev.tvshell.shared.anime.CSS1Anchor
@@ -26,6 +27,23 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 
 class CrossPlatformAnimeTest {
+    @Test
+    fun bangumiMetadataKeepsChineseJapaneseAliasesAndEpisodeCount() {
+        val subjects = BangumiMetadataParser.subjects(
+            """{"data":[{"id":325285,"name":"Sousou no Frieren","name_cn":"葬送的芙莉蓮","eps":28,"summary":"勇者一行人的後日談","images":{"large":"https://lain.bgm.tv/pic/cover/l/test.jpg"}}]}""",
+        )
+
+        assertEquals(listOf("葬送的芙莉蓮", "Sousou no Frieren"), subjects.single().aliases)
+        assertEquals(28, subjects.single().episodeCount)
+        assertEquals("https://lain.bgm.tv/pic/cover/l/test.jpg", subjects.single().coverURL)
+
+        val calendar = BangumiMetadataParser.calendar(
+            """[{"weekday":{"id":1},"items":[{"id":456080,"name":"Test Anime","name_cn":"測試動畫","images":{"large":"http://lain.bgm.tv/test.jpg"}}]}]""",
+        )
+        assertEquals("測試動畫", calendar.single().title)
+        assertEquals("https://lain.bgm.tv/test.jpg", calendar.single().coverURL)
+    }
+
     @Test
     fun css1SubscriptionDecodesWebSelectorsInsteadOfTreatingJsonAsAnimeHtml() {
         val payload = """
@@ -169,7 +187,7 @@ class CrossPlatformAnimeTest {
     @Test
     fun animeSourceCatalogMatchesTheNativeMacTabs() {
         assertEquals(
-            listOf(AnimeSourceKind.Bilibili, AnimeSourceKind.YouTube),
+            listOf(AnimeSourceKind.Bilibili, AnimeSourceKind.BangumiYouTube, AnimeSourceKind.YouTube),
             animeSourcesFor(AnimeTopTab.Recommended).map(AnimeSourceDefinition::kind),
         )
         assertEquals(

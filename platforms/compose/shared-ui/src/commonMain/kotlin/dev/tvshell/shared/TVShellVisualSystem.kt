@@ -33,6 +33,11 @@ object TVShellVisual {
     val FocusSurface = Color(0xFFF0F1F3)
 }
 
+internal fun referenceCanvasScale(width: Float, height: Float): Float = minOf(
+    width / 1920f,
+    height / 1080f,
+).coerceAtLeast(.1f)
+
 enum class TVSurfaceRole { Dock, Panel, Content, Alert }
 
 @Composable

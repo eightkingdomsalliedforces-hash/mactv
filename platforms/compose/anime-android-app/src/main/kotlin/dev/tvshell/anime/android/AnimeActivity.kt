@@ -9,6 +9,7 @@ import android.content.Context
 import android.media.AudioManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import dev.tvshell.shared.PlatformAdapter
 import dev.tvshell.shared.AndroidTVKeyMapper
@@ -41,7 +42,6 @@ import kotlinx.coroutines.runBlocking
 
 class AnimeActivity : ComponentActivity() {
     private val remoteDispatcher = RemoteCommandDispatcher()
-    private var longBackDispatched = false
     private lateinit var platformAdapter: AnimePlatformAdapter
     private val credentialsPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null && ::platformAdapter.isInitialized) platformAdapter.importCredentials(uri)
@@ -52,30 +52,18 @@ class AnimeActivity : ComponentActivity() {
         platformAdapter = AnimePlatformAdapter(this) {
             credentialsPicker.launch(arrayOf("application/json", "text/plain", "text/*"))
         }
+        onBackPressedDispatcher.addCallback(this) {
+            remoteDispatcher.dispatch(dev.tvshell.shared.RemoteCommand.Back)
+        }
         setContent { TVShellApp(platformAdapter, animeOnly = true, dispatcher = remoteDispatcher) }
     }
 
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.keyCode == KeyEvent.KEYCODE_BACK) {
-            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount > 0 && event.isLongPress) {
-                longBackDispatched = true
-                remoteDispatcher.dispatch(dev.tvshell.shared.RemoteCommand.Home)
-                return true
-            }
-            if (event.action == KeyEvent.ACTION_DOWN) return true
-            if (event.action == KeyEvent.ACTION_UP) {
-                if (longBackDispatched) longBackDispatched = false
-                else remoteDispatcher.dispatch(dev.tvshell.shared.RemoteCommand.Back)
-                return true
-            }
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        AndroidTVKeyMapper.command(keyCode, event.isLongPress)?.let {
+            remoteDispatcher.dispatch(it)
+            return true
         }
-        if (event.action == KeyEvent.ACTION_DOWN) {
-            AndroidTVKeyMapper.command(event.keyCode, event.isLongPress)?.let {
-                remoteDispatcher.dispatch(it)
-                return true
-            }
-        }
-        return super.dispatchKeyEvent(event)
+        return super.onKeyDown(keyCode, event)
     }
 }
 
@@ -83,9 +71,9 @@ private class AnimePlatformAdapter(
     private val activity: ComponentActivity,
     private val chooseCredentials: () -> Unit,
 ) : PlatformAdapter {
-    private val animePlayer = AndroidMediaPlayerAdapter(activity)
-    private val css1Resolver = CSS1Resolver(PlatformCSS1ContentClient())
-    private val dandanplay = DandanplayService(PlatformCSS1ContentClient(), ::platformSHA256Base64)
+    private val animeServices = dev.tvshell.shared.anime.AndroidAnimeService(activity) {
+        loadPreferences().getOrDefault(ShellPreferences())
+    }
     override fun installedApps(): List<ShellApp> = emptyList()
     override fun launch(app: ShellApp): Result<Unit> = Result.failure(IllegalStateException("請先在動畫 App 內設定來源"))
     override fun openSystemSettings(): Result<Unit> = runCatching {
@@ -123,72 +111,21 @@ private class AnimePlatformAdapter(
             NativeMediaService.Bilibili -> NativeMediaParser.bilibiliBangumi(body)
         }.ifEmpty { error("來源沒有回傳可播放內容") }
     }
-    override fun fetchAnimeFeed(source: AnimeSourceKind): Result<List<NativeMediaCard>> =
-        (if (source == AnimeSourceKind.CSS1) fetchMediaFeed(NativeMediaService.Bilibili)
-        else super<PlatformAdapter>.fetchAnimeFeed(source))
-            .map { cards -> cards.map { it.copy(animeSource = source) } }
-    override fun fetchAnimeEpisodes(source: AnimeSourceKind, card: NativeMediaCard): Result<List<AnimeEpisode>> = when (source) {
-        AnimeSourceKind.Bilibili -> runCatching {
-            val seasonID = card.id.substringAfter("bilibili-season-", "").takeIf(String::isNotBlank)
-                ?: card.playbackURL.substringAfter("/ss", "").substringBefore('?').takeIf(String::isNotBlank)
-                ?: error("缺少 Bilibili season_id")
-            BilibiliAnimeParser.episodes(fetchText("https://api.bilibili.com/pgc/web/season/section?season_id=$seasonID"))
-                .ifEmpty { error("Bilibili 沒有回傳選集") }
-        }
-        AnimeSourceKind.CSS1 -> runCatching { runBlocking {
-            css1Resolver.episodes(card.title).ifEmpty { error("CSS1 搜不到：${card.title}") }
-        } }
-        else -> super<PlatformAdapter>.fetchAnimeEpisodes(source, card)
-    }
-    override fun resolveAnimeStreams(source: AnimeSourceKind, episode: AnimeEpisode): Result<List<AnimeStreamCandidate>> = when (source) {
-        AnimeSourceKind.Bilibili -> runCatching {
-            val fields = episode.id.split(':')
-            require(fields.size >= 3) { "Bilibili 選集識別格式錯誤" }
-            val payload = fetchText("https://api.bilibili.com/pgc/player/web/playurl?ep_id=${fields[1]}&cid=${fields[2]}&qn=80&fnver=0&fnval=0&fourk=0")
-            BilibiliAnimeParser.failureReason(payload)?.let(::error)
-            BilibiliAnimeParser.streams(payload).ifEmpty { error("Bilibili 沒有可用播放網址，可能需要登入或會員權限") }
-        }
-        AnimeSourceKind.CSS1 -> runCatching { runBlocking {
-            css1Resolver.streams(episode).ifEmpty { error("CSS1 選集解析失敗：沒有可用播放源") }
-        } }
-        else -> super<PlatformAdapter>.resolveAnimeStreams(source, episode)
-    }
-    override fun loadAnimeStream(candidate: AnimeStreamCandidate): Result<Unit> = runCatching {
-        if (candidate.headers["resolver"] == "official") {
-            activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(candidate.url)))
-        } else {
-            require(candidate.url.startsWith("magnet:").not()) { "Android TV BT 邊下邊播仍需完成 torrent 引擎連接" }
-            animePlayer.load(candidate)
-            animePlayer.play()
-        }
-    }
-    override fun playAnime(): Result<Unit> = runCatching { animePlayer.play() }
-    override fun pauseAnime(): Result<Unit> = runCatching { animePlayer.pause() }
-    override fun seekAnimeBy(seconds: Int): Result<Unit> = runCatching { animePlayer.seekBy(seconds) }
-    override fun adjustAnimeVolume(direction: Int): Result<Unit> = runCatching {
-        val manager = activity.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        manager.adjustStreamVolume(
-            AudioManager.STREAM_MUSIC,
-            if (direction >= 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER,
-            AudioManager.FLAG_SHOW_UI,
-        )
-    }
-    override fun stopAnime(): Result<Unit> = runCatching { animePlayer.release() }
+    override fun fetchAnimeFeed(source: AnimeSourceKind): Result<List<NativeMediaCard>> = animeServices.feed(source)
+    override fun fetchAnimeEpisodes(source: AnimeSourceKind, card: NativeMediaCard): Result<List<AnimeEpisode>> = animeServices.episodes(source, card)
+    override fun resolveAnimeStreams(source: AnimeSourceKind, episode: AnimeEpisode): Result<List<AnimeStreamCandidate>> = animeServices.streams(source, episode)
+    override fun loadAnimeStream(candidate: AnimeStreamCandidate): Result<Unit> = animeServices.load(candidate)
+    override fun playAnime(): Result<Unit> = animeServices.play()
+    override fun pauseAnime(): Result<Unit> = animeServices.pause()
+    override fun seekAnimeBy(seconds: Int): Result<Unit> = animeServices.seekBy(seconds)
+    override fun adjustAnimeVolume(direction: Int): Result<Unit> = animeServices.volume(direction)
+    override fun stopAnime(): Result<Unit> = animeServices.stop()
     override fun fetchAnimeDanmaku(
         source: AnimeSourceKind,
         card: NativeMediaCard,
         episode: AnimeEpisode,
-    ): Result<List<DanmakuComment>> = runCatching { runBlocking {
-        if (source == AnimeSourceKind.Bilibili) {
-            val cid = episode.id.split(':').getOrNull(2) ?: error("Bilibili 選集缺少 cid，無法讀取彈幕")
-            BilibiliAnimeParser.danmaku(fetchText("https://api.bilibili.com/x/v1/dm/list.so?oid=$cid"))
-        } else {
-            dandanplay.comments(card.title, episode.number, loadCredentials().dandanplay, (System.currentTimeMillis() / 1_000).toInt())
-        }
-    } }
-    override fun playMedia(card: NativeMediaCard): Result<Unit> = runCatching {
-        activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(card.playbackURL)))
-    }
+    ): Result<List<DanmakuComment>> = animeServices.danmaku(source, card, episode)
+    override fun playMedia(card: NativeMediaCard): Result<Unit> = Result.success(Unit)
     override fun exitApp(): Result<Unit> = runCatching { activity.finish() }
     override fun fetchWallpaperURL(): Result<String> = runCatching {
         val connection = URL("https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt=zh-TW").openConnection() as HttpURLConnection

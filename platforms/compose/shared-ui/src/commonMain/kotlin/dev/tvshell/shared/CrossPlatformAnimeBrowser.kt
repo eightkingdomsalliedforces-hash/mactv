@@ -23,6 +23,7 @@ enum class AnimeTopTab(val title: String) {
 
 enum class AnimeSourceKind {
     Bilibili,
+    BangumiYouTube,
     AniGamer,
     YouTube,
     CSS1,
@@ -40,6 +41,7 @@ data class AnimeSourceDefinition(
 
 private val defaultAnimeSources = listOf(
     AnimeSourceDefinition(AnimeSourceKind.Bilibili, "Bilibili 番劇", "推薦、排行與搜尋", AnimeTopTab.Recommended),
+    AnimeSourceDefinition(AnimeSourceKind.BangumiYouTube, "Bangumi + YouTube", "Bangumi 資料與別名 · YouTube 播放", AnimeTopTab.Recommended),
     AnimeSourceDefinition(AnimeSourceKind.YouTube, "官方 YouTube 動畫", "正版授權頻道", AnimeTopTab.Recommended),
     AnimeSourceDefinition(AnimeSourceKind.AniGamer, "動畫瘋", "官方網站 · 保留廣告與限制", AnimeTopTab.OfficialSources),
     AnimeSourceDefinition(AnimeSourceKind.YouTube, "官方 YouTube", "正版授權頻道", AnimeTopTab.OfficialSources),

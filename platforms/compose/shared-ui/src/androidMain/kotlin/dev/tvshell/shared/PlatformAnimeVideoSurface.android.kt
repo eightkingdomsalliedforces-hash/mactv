@@ -7,9 +7,15 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import dev.tvshell.shared.anime.AndroidAnimePlaybackRegistry
+import dev.tvshell.shared.anime.AnimeStreamCandidate
 
 @Composable
-actual fun PlatformAnimeVideoSurface(modifier: Modifier) {
+actual fun PlatformAnimeVideoSurface(
+    candidate: AnimeStreamCandidate?,
+    signal: WebRuntimeSignal,
+    onExitRequested: () -> Unit,
+    modifier: Modifier,
+) {
     val player = AndroidAnimePlaybackRegistry.player
     AndroidView(
         factory = { context ->

@@ -5,8 +5,35 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import java.io.File
 import kotlin.io.path.createTempDirectory
+import dev.tvshell.shared.AnimeSourceSettings
+import dev.tvshell.shared.ShellPreferences
 
 class PlatformCSS1ContentClientTest {
+    @Test
+    fun fullWindowsShellUsesThePersistedCss1SubscriptionInsteadOfTheEmptyDefaultAdapter() {
+        val service = DesktopAnimeService {
+            ShellPreferences(animeSources = AnimeSourceSettings("https://example.com/windows-css1.json"))
+        }
+
+        assertEquals("https://example.com/windows-css1.json", service.css1SubscriptionURL)
+        assertTrue(service.capabilities.css1)
+        assertTrue(service.capabilities.danmaku)
+        assertTrue(service.capabilities.internalPlayer)
+    }
+
+    @Test
+    fun windowsMediaProxyRewritesHlsSegmentsAndEncryptionKeysThroughTheHeaderAwareEndpoint() {
+        val rewritten = DesktopMediaPlaylistRewriter.rewrite(
+            """#EXTM3U
+#EXT-X-KEY:METHOD=AES-128,URI="keys/key.bin"
+segments/001.ts
+""",
+            "https://media.example/show/master.m3u8",
+        ) { "proxy://${it}" }
+
+        assertTrue(rewritten.contains("proxy://https://media.example/show/keys/key.bin"))
+        assertTrue(rewritten.contains("proxy://https://media.example/show/segments/001.ts"))
+    }
     @Test
     fun windowsCredentialImportPersistsAValidatedCookieFile() {
         val root = createTempDirectory("tvshell-credentials-").toFile()

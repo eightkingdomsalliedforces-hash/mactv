@@ -60,6 +60,9 @@ class LauncherStateTest {
         assertEquals(380, TVShellVisual.RuntimeAnimationMilliseconds)
         assertEquals(34f, TVShellVisual.DockInset)
         assertEquals(18f, TVShellVisual.AppIconCornerRadius)
+        assertEquals(1f, referenceCanvasScale(1920f, 1080f))
+        assertEquals(2f / 3f, referenceCanvasScale(1280f, 720f))
+        assertEquals(1f, referenceCanvasScale(2560f, 1080f))
     }
 
     @Test
@@ -220,6 +223,28 @@ class LauncherStateTest {
     fun credentialsPageShowsTheCanonicalPlatformFileLocation() {
         val state = SettingsState(credentialsLocation = "C:\\Users\\viewer\\AppData\\Roaming\\TVShell\\credentials.json")
         assertTrue(state.credentialsLocation.endsWith("TVShell\\credentials.json"))
+    }
+
+    @Test
+    fun animeSourceManagementCanToggleCss1AndResetItsBuiltInURL() {
+        var state = AnimeSourceManagementState()
+        state = state.reduce(RemoteCommand.Select)
+        assertEquals("toggle-css1", state.pendingAction)
+        state = state.clearAction().reduce(RemoteCommand.Menu)
+        assertEquals("reset-css1", state.pendingAction)
+        state = state.clearAction().reduce(RemoteCommand.Down)
+        assertEquals(1, state.focusedIndex)
+    }
+
+    @Test
+    fun secondaryPagesMoveFocusAndExposeSelectWithoutOpeningSettings() {
+        var state = NavigationListState(rowCount = 12)
+        repeat(11) { state = state.reduce(RemoteCommand.Down) }
+        assertEquals(11, state.focusedIndex)
+        state = state.reduce(RemoteCommand.Select)
+        assertEquals("select:11", state.pendingAction)
+        state = state.clearAction().reduce(RemoteCommand.Back)
+        assertEquals("exit", state.pendingAction)
     }
 
     @Test
