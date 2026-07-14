@@ -3832,6 +3832,11 @@ struct TVShellChecks {
         try expect(workflow.contains("publish-release:"), "release workflow has one final job that publishes all platform artifacts together")
         try expect(workflow.contains("actions/download-artifact@v4"), "release workflow collects macOS, Windows, and Android outputs before publishing")
         try expect(workflow.contains("TVShell-Android-TV") && workflow.contains("TVShell-Windows") && workflow.contains("TVShell-macOS"), "release workflow includes Android TV, Windows, and macOS assets")
+        try expect(workflow.contains(":shared-ui:createDistributable"), "release workflow builds the portable Windows TVShell app directory")
+        try expect(workflow.contains(":anime-desktop:createDistributable"), "release workflow builds the portable Windows Anime app directory")
+        try expect(workflow.contains("Compress-Archive"), "release workflow compresses portable Windows app directories into ZIPs")
+        try expect(workflow.contains("TVShell-Windows-Portable.zip"), "release workflow publishes the portable Windows TVShell ZIP with a stable name")
+        try expect(workflow.contains("TVShell-Anime-Windows-Portable.zip"), "release workflow publishes the portable Windows Anime ZIP with a stable name")
         let publishRelease = workflow.components(separatedBy: "  publish-release:").last ?? ""
         try expect(publishRelease.contains("actions/checkout@v4"), "release publishing checks out the repository before GitHub CLI resolves its repository")
 

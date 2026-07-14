@@ -23,17 +23,20 @@ The standalone TVShell Anime APK uses the exact same `AnimeBrowser` composable a
 
 ## Windows
 
-The desktop target discovers Start Menu `.lnk`/`.exe` entries and starts them as separate processes. Build and test on any JDK host; create the MSI on Windows:
+The desktop target discovers Start Menu `.lnk`/`.exe` entries and starts them as separate processes. Build and test on any JDK host; create an installer or a no-install portable ZIP on Windows:
 
 ```sh
 cd platforms/compose
 ./gradlew :shared-ui:desktopTest
 ./gradlew :shared-ui:packageMsi
 ./gradlew :anime-desktop:packageMsi
+./gradlew :shared-ui:createDistributable
+./gradlew :anime-desktop:createDistributable
 ```
 
 The MSI is written under `shared-ui/build/compose/binaries/main/msi/`.
 The standalone Anime MSI is written under `anime-desktop/build/compose/binaries/main/msi/`.
+`createDistributable` writes a self-contained app directory under each module's `build/compose/binaries/main/app/` directory. The release workflow compresses those folders as `TVShell-Windows-Portable.zip` and `TVShell-Anime-Windows-Portable.zip`; unzip either archive and run the bundled executable without installing it.
 
 ## 動畫播放核心
 

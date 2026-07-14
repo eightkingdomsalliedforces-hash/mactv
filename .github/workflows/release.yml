@@ -83,6 +83,22 @@ jobs:
           }
       - name: Package Anime Windows MSI
         run: ./gradlew.bat :anime-desktop:packageMsi --stacktrace
+      - name: Package TVShell Windows portable ZIP
+        shell: pwsh
+        run: |
+          ./gradlew.bat :shared-ui:createDistributable --stacktrace
+          $source = "shared-ui/build/compose/binaries/main/app"
+          $destination = "shared-ui/build/compose/binaries/main/portable/TVShell-Windows-Portable.zip"
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
+          Compress-Archive -Path (Join-Path $source '*') -DestinationPath $destination -Force
+      - name: Package Anime Windows portable ZIP
+        shell: pwsh
+        run: |
+          ./gradlew.bat :anime-desktop:createDistributable --stacktrace
+          $source = "anime-desktop/build/compose/binaries/main/app"
+          $destination = "anime-desktop/build/compose/binaries/main/portable/TVShell-Anime-Windows-Portable.zip"
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
+          Compress-Archive -Path (Join-Path $source '*') -DestinationPath $destination -Force
       - name: Upload Windows package
         uses: actions/upload-artifact@v4
         with:
@@ -90,6 +106,8 @@ jobs:
           path: |
             platforms/compose/shared-ui/build/compose/binaries/main/msi/*.msi
             platforms/compose/anime-desktop/build/compose/binaries/main/msi/*.msi
+            platforms/compose/shared-ui/build/compose/binaries/main/portable/*.zip
+            platforms/compose/anime-desktop/build/compose/binaries/main/portable/*.zip
 
   build:
     name: Build TVShell
@@ -265,6 +283,12 @@ jobs:
           mkdir -p release-assets
           cp "$(find artifacts/macos -name '*.zip' -print -quit)" release-assets/TVShell-macOS.zip
           find artifacts/windows -name '*.msi' -exec cp {} release-assets/ \;
+          TVSHELL_PORTABLE="$(find artifacts/windows -name 'TVShell-Windows-Portable.zip' -print -quit)"
+          ANIME_PORTABLE="$(find artifacts/windows -name 'TVShell-Anime-Windows-Portable.zip' -print -quit)"
+          test -n "$TVSHELL_PORTABLE"
+          test -n "$ANIME_PORTABLE"
+          cp "$TVSHELL_PORTABLE" release-assets/TVShell-Windows-Portable.zip
+          cp "$ANIME_PORTABLE" release-assets/TVShell-Anime-Windows-Portable.zip
           cp "$(find artifacts/android -path '*/android-app/build/outputs/apk/play/debug/*.apk' -print -quit)" release-assets/TVShell-Android-TV.apk
           cp "$(find artifacts/android -path '*/android-app/build/outputs/apk/launcher/debug/*.apk' -print -quit)" release-assets/TVShell-Android-TV-Launcher.apk
           cp "$(find artifacts/android -path '*/anime-android-app/build/outputs/apk/debug/*.apk' -print -quit)" release-assets/TVShell-Anime-Android-TV.apk
