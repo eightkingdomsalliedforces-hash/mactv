@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -20,6 +21,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
@@ -74,6 +79,7 @@ fun TVShellApp(
     var mediaStatus by remember { mutableStateOf("正在載入…") }
     var watchHistory by remember { mutableStateOf(WatchHistoryState()) }
     var controlCenterVisible by remember { mutableStateOf(false) }
+    var controlCenterState by remember { mutableStateOf(ControlCenterState()) }
     val activeDispatcher = remember(dispatcher) { dispatcher ?: RemoteCommandDispatcher() }
     val focusRequester = remember { FocusRequester() }
 
@@ -83,6 +89,26 @@ fun TVShellApp(
     }
 
     fun handle(command: RemoteCommand) {
+        if (controlCenterVisible) {
+            val next = controlCenterState.reduce(command)
+            when (next.pendingAction) {
+                "close" -> controlCenterVisible = false
+                "home" -> {
+                    controlCenterVisible = false
+                    screen = if (animeOnly) ShellScreen.Anime else ShellScreen.Launcher
+                }
+                "settings" -> {
+                    controlCenterVisible = false
+                    adapter.openSystemSettings()
+                }
+            }
+            controlCenterState = next.clearAction()
+            return
+        }
+        if (command == RemoteCommand.Menu) {
+            controlCenterVisible = true
+            return
+        }
         if (screen == ShellScreen.YouTube || screen == ShellScreen.Bilibili) {
             if ((command == RemoteCommand.Back || command == RemoteCommand.Home) && mediaState.phase == NativeMediaPhase.Browser) {
                 screen = ShellScreen.Launcher
@@ -153,7 +179,6 @@ fun TVShellApp(
                     state = state.copy(status = result.fold({ "正在開啟 ${app.name}" }, { "無法開啟 ${app.name}：${it.message}" }))
                 }
             }
-            RemoteCommand.Menu -> controlCenterVisible = !controlCenterVisible
             RemoteCommand.Home, RemoteCommand.Back -> controlCenterVisible = false
             else -> state = state.reduce(command)
         }
@@ -221,7 +246,7 @@ fun TVShellApp(
             ShellScreen.YouTube -> NativeMediaRoute("YouTube", listOf("推薦", "熱門", "訂閱", "搜尋"), mediaState, mediaCards, mediaStatus)
             ShellScreen.Bilibili -> NativeMediaRoute("Bilibili", listOf("推薦", "熱門", "排行榜", "動態"), mediaState, mediaCards, mediaStatus)
         }
-        if (controlCenterVisible) ControlCenter(onSettings = { adapter.openSystemSettings() })
+        if (controlCenterVisible) ControlCenter(controlCenterState)
         }
     }
 }
@@ -503,20 +528,108 @@ private fun AnimeBrowser(state: CrossPlatformAnimeBrowserState, cards: List<Nati
 }
 
 @Composable
-private fun ControlCenter(onSettings: () -> Unit) {
-    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .38f)), contentAlignment = Alignment.CenterEnd) {
+private fun ControlCenter(state: ControlCenterState) {
+    val gridState = rememberLazyGridState()
+    LaunchedEffect(state.focusedItem) {
+        gridState.animateScrollToItem(state.focusedItem.ordinal)
+    }
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .18f)), contentAlignment = Alignment.TopEnd) {
         Column(
-            Modifier.width(480.dp).fillMaxSize()
-                .tvShellSurface(TVSurfaceRole.Panel, cornerRadius = 0f)
-                .padding(42.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
+            Modifier.width(560.dp).fillMaxHeight().padding(top = 26.dp, end = 26.dp, bottom = 26.dp)
+                .tvShellSurface(TVSurfaceRole.Panel, cornerRadius = 24f)
+                .padding(28.dp),
+            verticalArrangement = Arrangement.spacedBy(22.dp),
         ) {
-            Text("控制中心", color = Color.White, fontSize = 38.sp, fontWeight = FontWeight.Bold)
-            Text("音量 70%", color = Color.White, fontSize = 25.sp)
-            Text("彈幕：開啟 · 100% · 速度 100%", color = Color.White.copy(alpha = .72f), fontSize = 21.sp)
-            Text("按 OK 開啟系統設定", color = Color.White.copy(alpha = .58f), fontSize = 19.sp)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("控制中心", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+                    Text("TVShell", color = Color.White.copy(alpha = .62f), fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Text("●", color = Color.White.copy(alpha = .9f), fontSize = 34.sp)
+            }
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                state = gridState,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            ) {
+                gridItemsIndexed(ControlCenterItem.entries) { _, item ->
+                    ControlCenterTile(item, state, item == state.focusedItem)
+                }
+            }
+            Text(
+                "方向鍵移動，OK 調整，左右可調整音量，Menu 或 Back 關閉",
+                color = Color.White.copy(alpha = .58f),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
     }
+}
+
+@Composable
+private fun ControlCenterTile(item: ControlCenterItem, state: ControlCenterState, focused: Boolean) {
+    Column(
+        Modifier.height(128.dp).tvShellFocus(focused)
+            .tvShellSurface(TVSurfaceRole.Content, isFocused = focused, cornerRadius = 12f)
+            .padding(18.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(controlCenterGlyph(item), color = if (focused) Color.Black else Color.White.copy(alpha = .92f), fontSize = 28.sp, fontWeight = FontWeight.Bold)
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(controlCenterTitle(item), color = if (focused) Color.Black else Color.White.copy(alpha = .92f), fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(controlCenterValue(item, state), color = if (focused) Color.Black.copy(alpha = .66f) else Color.White.copy(alpha = .68f), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        }
+    }
+}
+
+private fun controlCenterTitle(item: ControlCenterItem): String = when (item) {
+    ControlCenterItem.Home -> "主畫面"
+    ControlCenterItem.FocusMode -> "勿擾模式"
+    ControlCenterItem.Audio -> "音量"
+    ControlCenterItem.Display -> "顯示縮放"
+    ControlCenterItem.Wallpaper -> "壁紙"
+    ControlCenterItem.WebZoom -> "網頁放大"
+    ControlCenterItem.Remote -> "網路遙控器"
+    ControlCenterItem.Settings -> "設定"
+    ControlCenterItem.DanmakuVisibility -> "彈幕顯示"
+    ControlCenterItem.DanmakuSize -> "彈幕大小"
+    ControlCenterItem.DanmakuSpeed -> "彈幕速度"
+    ControlCenterItem.DanmakuOpacity -> "彈幕透明度"
+    ControlCenterItem.DanmakuDensity -> "彈幕密度"
+}
+
+private fun controlCenterValue(item: ControlCenterItem, state: ControlCenterState): String = when (item) {
+    ControlCenterItem.Home -> "TVShell"
+    ControlCenterItem.FocusMode -> if (state.isFocusModeEnabled) "開啟" else "關閉"
+    ControlCenterItem.Audio -> if (state.isMuted) "靜音" else "${(state.volume * 100).toInt()}%"
+    ControlCenterItem.Display -> state.displayScaleLabel
+    ControlCenterItem.Wallpaper -> state.wallpaperLabel
+    ControlCenterItem.WebZoom -> "${(state.webZoom * 100).toInt()}%"
+    ControlCenterItem.Remote -> if (state.isRemoteRunning) "已啟動" else "啟動"
+    ControlCenterItem.Settings -> "更多選項"
+    ControlCenterItem.DanmakuVisibility -> if (state.danmaku.isVisible) "顯示" else "隱藏"
+    ControlCenterItem.DanmakuSize -> state.danmaku.sizeLabel
+    ControlCenterItem.DanmakuSpeed -> state.danmaku.speedLabel
+    ControlCenterItem.DanmakuOpacity -> state.danmaku.opacityLabel
+    ControlCenterItem.DanmakuDensity -> state.danmaku.densityLabel
+}
+
+private fun controlCenterGlyph(item: ControlCenterItem): String = when (item) {
+    ControlCenterItem.Home -> "⌂"
+    ControlCenterItem.FocusMode -> "☾"
+    ControlCenterItem.Audio -> "◖"
+    ControlCenterItem.Display -> "▣"
+    ControlCenterItem.Wallpaper -> "▧"
+    ControlCenterItem.WebZoom -> "Aa"
+    ControlCenterItem.Remote -> "⌁"
+    ControlCenterItem.Settings -> "⚙"
+    ControlCenterItem.DanmakuVisibility -> "彈"
+    ControlCenterItem.DanmakuSize -> "A"
+    ControlCenterItem.DanmakuSpeed -> "»"
+    ControlCenterItem.DanmakuOpacity -> "◐"
+    ControlCenterItem.DanmakuDensity -> "≡"
 }
 
 private fun Key.toRemoteCommand(): RemoteCommand? = when (this) {

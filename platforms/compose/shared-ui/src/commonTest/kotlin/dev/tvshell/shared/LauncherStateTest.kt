@@ -2,6 +2,7 @@ package dev.tvshell.shared
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 class LauncherStateTest {
     private val apps = listOf(ShellApp("a", "A"), ShellApp("b", "B"), ShellApp("c", "C"))
@@ -70,5 +71,35 @@ class LauncherStateTest {
         assertEquals(RemoteCommand.Back, AndroidTVKeyMapper.command(4, isLongPress = false))
         assertEquals(RemoteCommand.Home, AndroidTVKeyMapper.command(4, isLongPress = true))
         assertEquals(RemoteCommand.Menu, AndroidTVKeyMapper.command(82, isLongPress = false))
+    }
+
+    @Test
+    fun controlCenterMatchesMacFocusAndImmediateAdjustments() {
+        var state = ControlCenterState()
+        state = state.reduce(RemoteCommand.Down)
+        assertEquals(ControlCenterItem.Audio, state.focusedItem)
+        state = state.reduce(RemoteCommand.Right)
+        assertEquals(0.75f, state.volume)
+        state = state.reduce(RemoteCommand.Select)
+        assertEquals(true, state.isMuted)
+
+        state = state.copy(focusedItem = ControlCenterItem.DanmakuOpacity)
+        state = state.reduce(RemoteCommand.Left)
+        assertEquals(0.82f, state.danmaku.opacity)
+        state = state.reduce(RemoteCommand.Menu)
+        assertEquals("close", state.pendingAction)
+    }
+
+    @Test
+    fun controlCenterClampsDanmakuLikeMacSettings() {
+        var state = ControlCenterState(
+            focusedItem = ControlCenterItem.DanmakuDensity,
+            danmaku = DanmakuSettings(density = 1),
+        )
+        state = state.reduce(RemoteCommand.Left)
+        assertEquals(1, state.danmaku.density)
+        state = state.copy(focusedItem = ControlCenterItem.DanmakuVisibility)
+            .reduce(RemoteCommand.Select)
+        assertFalse(state.danmaku.isVisible)
     }
 }
