@@ -14,6 +14,17 @@ import kotlin.test.assertTrue
 
 class CrossPlatformAnimeTest {
     @Test
+    fun animeTopNavigationMatchesTheFiveMacTabs() {
+        var state = CrossPlatformAnimeBrowserState(sourceCount = 2)
+        state = state.reduce(RemoteCommand.Right).reduce(RemoteCommand.Right).reduce(RemoteCommand.Right).reduce(RemoteCommand.Right)
+        assertEquals(AnimeTopTab.Search, state.focusedTopTab)
+        state = state.reduce(RemoteCommand.Down)
+        assertFalse(state.isTopNavigationFocused)
+        state = state.reduce(RemoteCommand.Up)
+        assertTrue(state.isTopNavigationFocused)
+    }
+
+    @Test
     fun animeBrowserOpensARealFeedAndSelectsPlayback() {
         var state = CrossPlatformAnimeBrowserState(sourceCount = 2)
         state = state.reduce(RemoteCommand.Down).reduce(RemoteCommand.Select)

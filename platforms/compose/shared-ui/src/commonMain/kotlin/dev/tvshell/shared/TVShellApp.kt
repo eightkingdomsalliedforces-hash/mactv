@@ -441,16 +441,17 @@ private fun AnimeBrowser(state: CrossPlatformAnimeBrowserState, cards: List<Nati
                 Modifier.clip(RoundedCornerShape(32.dp)).background(Color.Black.copy(alpha = .55f)).padding(6.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                listOf("正版來源", "觀看內容").forEachIndexed { index, title ->
-                    val selected = (state.phase == CrossPlatformAnimePhase.Titles) == (index == 1)
+                AnimeTopTab.entries.forEach { tab ->
+                    val selected = state.focusedTopTab == tab
+                    val focused = selected && state.isTopNavigationFocused
                     Text(
-                        title,
-                        color = if (selected && state.isTopNavigationFocused) Color.Black else Color.White.copy(alpha = if (selected) .92f else .58f),
+                        tab.title,
+                        color = if (focused) Color.Black else Color.White.copy(alpha = if (selected) .92f else .58f),
                         fontSize = 23.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier
                             .clip(RoundedCornerShape(26.dp))
-                            .background(if (selected && state.isTopNavigationFocused) Color(0xFFF0F1F3) else Color.Transparent)
+                            .background(if (focused) Color(0xFFF0F1F3) else Color.Transparent)
                             .padding(horizontal = 25.dp, vertical = 13.dp),
                     )
                 }

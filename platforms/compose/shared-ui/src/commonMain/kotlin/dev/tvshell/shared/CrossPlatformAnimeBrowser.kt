@@ -2,9 +2,18 @@ package dev.tvshell.shared
 
 enum class CrossPlatformAnimePhase { Sources, Loading, Titles }
 
+enum class AnimeTopTab(val title: String) {
+    Recommended("推薦"),
+    OfficialSources("正版來源"),
+    Subscriptions("我的訂閱"),
+    History("觀看記錄"),
+    Search("搜尋"),
+}
+
 data class CrossPlatformAnimeBrowserState(
     val sourceCount: Int,
     val phase: CrossPlatformAnimePhase = CrossPlatformAnimePhase.Sources,
+    val focusedTopTab: AnimeTopTab = AnimeTopTab.Recommended,
     val focusedSource: Int = 0,
     val focusedCard: Int = 0,
     val cardCount: Int = 0,
@@ -14,6 +23,8 @@ data class CrossPlatformAnimeBrowserState(
     fun reduce(command: RemoteCommand): CrossPlatformAnimeBrowserState = when (phase) {
         CrossPlatformAnimePhase.Sources -> when {
             command == RemoteCommand.Back || command == RemoteCommand.Home -> copy(pendingAction = "exit")
+            isTopNavigationFocused && command == RemoteCommand.Left -> copy(focusedTopTab = AnimeTopTab.entries[(focusedTopTab.ordinal - 1).coerceAtLeast(0)])
+            isTopNavigationFocused && command == RemoteCommand.Right -> copy(focusedTopTab = AnimeTopTab.entries[(focusedTopTab.ordinal + 1).coerceAtMost(AnimeTopTab.entries.lastIndex)])
             isTopNavigationFocused && command == RemoteCommand.Down -> copy(isTopNavigationFocused = false)
             !isTopNavigationFocused && command == RemoteCommand.Up -> copy(isTopNavigationFocused = true)
             !isTopNavigationFocused && command == RemoteCommand.Left -> copy(focusedSource = (focusedSource - 1).coerceAtLeast(0))
