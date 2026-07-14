@@ -384,13 +384,17 @@ private fun NativeMediaPlayer(
 private fun MediaTile(card: NativeMediaCard, focused: Boolean) {
     val scale by animateFloatAsState(if (focused) 1.06f else 1f, tween(TVShellDesign.FocusAnimationMilliseconds))
     val shape = RoundedCornerShape(16.dp)
+    val thumbnail = NetworkThumbnailRequest(card.thumbnailURL)
     Column(Modifier.width(390.dp).scale(scale), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(
             Modifier.size(width = 390.dp, height = 219.dp)
                 .tvShellSurface(TVSurfaceRole.Content, isFocused = focused, cornerRadius = 16f),
             contentAlignment = Alignment.Center,
         ) {
-            Text("▶", color = if (focused) Color.Black else Color.White, fontSize = 40.sp, fontWeight = FontWeight.Bold)
+            NetworkThumbnail(thumbnail, card.title, Modifier.fillMaxSize())
+            if (!thumbnail.isLoadable) {
+                Text("▶", color = if (focused) Color.Black else Color.White, fontSize = 40.sp, fontWeight = FontWeight.Bold)
+            }
         }
         Text(card.title, color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold, maxLines = 1)
         Text(card.subtitle, color = Color.White.copy(alpha = .55f), fontSize = 18.sp, maxLines = 1)

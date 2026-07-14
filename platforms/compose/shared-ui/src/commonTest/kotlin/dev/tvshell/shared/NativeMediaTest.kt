@@ -2,6 +2,8 @@ package dev.tvshell.shared
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class NativeMediaTest {
     @Test
@@ -39,6 +41,14 @@ class NativeMediaTest {
         val cards = NativeMediaParser.youtube(html)
         assertEquals("官方動畫", cards.single().title)
         assertEquals("https://www.youtube.com/watch?v=abc123", cards.single().playbackURL)
+    }
+
+    @Test
+    fun thumbnailRequestOnlyLoadsSafeHttpImages() {
+        assertTrue(NetworkThumbnailRequest("https://i.example/card.jpg").isLoadable)
+        assertTrue(NetworkThumbnailRequest("http://i.example/card.jpg").isLoadable)
+        assertFalse(NetworkThumbnailRequest("").isLoadable)
+        assertFalse(NetworkThumbnailRequest("file:///tmp/private.jpg").isLoadable)
     }
 
     @Test
