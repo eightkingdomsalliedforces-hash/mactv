@@ -102,4 +102,18 @@ class LauncherStateTest {
             .reduce(RemoteCommand.Select)
         assertFalse(state.danmaku.isVisible)
     }
+
+    @Test
+    fun settingsUsesMacRowOrderAndSharedPreferences() {
+        var state = SettingsState()
+        state = state.reduce(RemoteCommand.Down)
+        assertEquals(SettingsItem.Wallpaper, state.focusedItem)
+        state = state.reduce(RemoteCommand.Right)
+        assertEquals("暮色", state.preferences.wallpaperLabel)
+        state = state.copy(focusedItem = SettingsItem.DanmakuOpacity)
+            .reduce(RemoteCommand.Left)
+        assertEquals(0.82f, state.preferences.danmaku.opacity)
+        state = state.reduce(RemoteCommand.Back)
+        assertEquals("exit", state.pendingAction)
+    }
 }

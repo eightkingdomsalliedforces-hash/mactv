@@ -22,6 +22,7 @@ enum class NativeMediaPhase { Browser, Player }
 
 data class NativeMediaState(
     val cardCount: Int,
+    val gridColumns: Int = 4,
     val phase: NativeMediaPhase = NativeMediaPhase.Browser,
     val focusedTab: Int = 0,
     val focusedCard: Int = 0,
@@ -35,7 +36,9 @@ data class NativeMediaState(
             isTopNavigationFocused && command == RemoteCommand.Left -> copy(focusedTab = (focusedTab - 1).coerceAtLeast(0))
             isTopNavigationFocused && command == RemoteCommand.Right -> copy(focusedTab = (focusedTab + 1).coerceAtMost(3))
             isTopNavigationFocused && command == RemoteCommand.Down && cardCount > 0 -> copy(isTopNavigationFocused = false)
-            !isTopNavigationFocused && command == RemoteCommand.Up -> copy(isTopNavigationFocused = true)
+            !isTopNavigationFocused && command == RemoteCommand.Up && focusedCard < gridColumns -> copy(isTopNavigationFocused = true)
+            !isTopNavigationFocused && command == RemoteCommand.Up -> copy(focusedCard = (focusedCard - gridColumns).coerceAtLeast(0))
+            !isTopNavigationFocused && command == RemoteCommand.Down -> copy(focusedCard = (focusedCard + gridColumns).coerceAtMost((cardCount - 1).coerceAtLeast(0)))
             !isTopNavigationFocused && command == RemoteCommand.Left -> copy(focusedCard = (focusedCard - 1).coerceAtLeast(0))
             !isTopNavigationFocused && command == RemoteCommand.Right -> copy(focusedCard = (focusedCard + 1).coerceAtMost((cardCount - 1).coerceAtLeast(0)))
             !isTopNavigationFocused && command == RemoteCommand.Select -> copy(phase = NativeMediaPhase.Player, pendingAction = "play:$focusedCard", pendingSeekSeconds = 0, isPlaying = true)

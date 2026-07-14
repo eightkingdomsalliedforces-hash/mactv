@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -80,6 +81,7 @@ fun TVShellApp(
     var watchHistory by remember { mutableStateOf(WatchHistoryState()) }
     var controlCenterVisible by remember { mutableStateOf(false) }
     var controlCenterState by remember { mutableStateOf(ControlCenterState()) }
+    var settingsState by remember { mutableStateOf(SettingsState()) }
     val activeDispatcher = remember(dispatcher) { dispatcher ?: RemoteCommandDispatcher() }
     val focusRequester = remember { FocusRequester() }
 
@@ -99,7 +101,8 @@ fun TVShellApp(
                 }
                 "settings" -> {
                     controlCenterVisible = false
-                    adapter.openSystemSettings()
+                    settingsState = SettingsState(preferences = controlCenterState)
+                    screen = ShellScreen.Settings
                 }
             }
             controlCenterState = next.clearAction()
@@ -107,6 +110,17 @@ fun TVShellApp(
         }
         if (command == RemoteCommand.Menu) {
             controlCenterVisible = true
+            return
+        }
+        if (screen == ShellScreen.Settings) {
+            val next = settingsState.reduce(command)
+            when (next.pendingAction) {
+                "exit" -> screen = if (animeOnly) ShellScreen.Anime else ShellScreen.Launcher
+                "video-source" -> adapter.openSystemSettings()
+                "credentials" -> adapter.openSystemSettings()
+            }
+            controlCenterState = next.preferences
+            settingsState = next.clearAction()
             return
         }
         if (screen == ShellScreen.YouTube || screen == ShellScreen.Bilibili) {
@@ -245,13 +259,14 @@ fun TVShellApp(
             ShellScreen.Anime -> AnimeBrowser(animeState, animeCards, animeStatus)
             ShellScreen.YouTube -> NativeMediaRoute("YouTube", listOf("推薦", "熱門", "訂閱", "搜尋"), mediaState, mediaCards, mediaStatus)
             ShellScreen.Bilibili -> NativeMediaRoute("Bilibili", listOf("推薦", "熱門", "排行榜", "動態"), mediaState, mediaCards, mediaStatus)
+            ShellScreen.Settings -> SettingsScreen(settingsState)
         }
         if (controlCenterVisible) ControlCenter(controlCenterState)
         }
     }
 }
 
-private enum class ShellScreen { Launcher, Anime, YouTube, Bilibili }
+private enum class ShellScreen { Launcher, Anime, YouTube, Bilibili, Settings }
 
 @Composable
 private fun NativeMediaRoute(
@@ -276,16 +291,15 @@ private fun NativeMediaBrowser(
     cards: List<NativeMediaCard>,
     status: String,
 ) {
-    val listState = rememberLazyListState()
+    val listState = rememberLazyGridState()
     LaunchedEffect(state.focusedCard) {
         if (!state.isTopNavigationFocused && cards.isNotEmpty()) listState.animateScrollToItem(state.focusedCard)
     }
     Column(
         Modifier.fillMaxSize().padding(horizontal = 86.dp, vertical = 48.dp),
-        verticalArrangement = Arrangement.SpaceBetween,
+        verticalArrangement = Arrangement.spacedBy(28.dp),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-            Text(title, color = Color.White, fontSize = 58.sp, fontWeight = FontWeight.Bold)
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Row(
                 Modifier.clip(RoundedCornerShape(32.dp)).background(Color.Black.copy(alpha = .58f)).padding(6.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -304,16 +318,34 @@ private fun NativeMediaBrowser(
                 }
             }
         }
-        LazyRow(
-            state = listState,
-            horizontalArrangement = Arrangement.spacedBy(34.dp),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            itemsIndexed(cards, key = { _, card -> card.id }) { index, card ->
-                MediaTile(card, !state.isTopNavigationFocused && state.focusedCard == index)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(title, color = Color.White, fontSize = 48.sp, fontWeight = FontWeight.Bold)
+            Text(status, color = Color.White.copy(alpha = .58f), fontSize = 21.sp, maxLines = 1)
+        }
+        if (cards.isEmpty()) {
+            Box(
+                Modifier.fillMaxWidth().weight(1f).tvShellSurface(TVSurfaceRole.Content, cornerRadius = 24f),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text("沒有影片", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Bold)
+                    Text(status, color = Color.White.copy(alpha = .58f), fontSize = 21.sp)
+                }
+            }
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(state.gridColumns),
+                state = listState,
+                horizontalArrangement = Arrangement.spacedBy(28.dp),
+                verticalArrangement = Arrangement.spacedBy(32.dp),
+                modifier = Modifier.fillMaxWidth().weight(1f),
+            ) {
+                gridItemsIndexed(cards, key = { _, card -> card.id }) { index, card ->
+                    MediaTile(card, !state.isTopNavigationFocused && state.focusedCard == index)
+                }
             }
         }
-        Text(status, color = Color.White.copy(alpha = .62f), fontSize = 22.sp)
+        Text("方向鍵選影片，OK 播放，Menu 開啟控制中心，Back 或 Home 返回。", color = Color.White.copy(alpha = .62f), fontSize = 22.sp)
     }
 }
 
@@ -352,9 +384,9 @@ private fun NativeMediaPlayer(
 private fun MediaTile(card: NativeMediaCard, focused: Boolean) {
     val scale by animateFloatAsState(if (focused) 1.06f else 1f, tween(TVShellDesign.FocusAnimationMilliseconds))
     val shape = RoundedCornerShape(16.dp)
-    Column(Modifier.width(300.dp).scale(scale), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.width(390.dp).scale(scale), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(
-            Modifier.size(width = 300.dp, height = 169.dp)
+            Modifier.size(width = 390.dp, height = 219.dp)
                 .tvShellSurface(TVSurfaceRole.Content, isFocused = focused, cornerRadius = 16f),
             contentAlignment = Alignment.Center,
         ) {
@@ -468,6 +500,135 @@ private fun appAccent(app: ShellApp): Color = when (app.id) {
     "bilibili" -> Color(0xFFEE5486)
     "anime" -> Color(0xFF6A43B8)
     else -> Color(0xFF3A3E48)
+}
+
+@Composable
+private fun SettingsScreen(state: SettingsState) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(state.focusedItem) {
+        listState.animateScrollToItem(state.focusedItem.ordinal)
+    }
+    Row(
+        Modifier.fillMaxSize().padding(horizontal = 86.dp, vertical = 60.dp),
+        horizontalArrangement = Arrangement.spacedBy(64.dp),
+    ) {
+        Column(
+            Modifier.width(500.dp).fillMaxHeight(),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text("⚙", color = Color.White.copy(alpha = .62f), fontSize = 150.sp, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(28.dp))
+            Text("設定", color = Color.White, fontSize = 52.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(16.dp))
+            Text("系統、播放、彈幕與服務設定", color = Color.White.copy(alpha = .58f), fontSize = 24.sp)
+        }
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            itemsIndexed(SettingsItem.entries) { index, item ->
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    settingsSectionTitle(index)?.let { title ->
+                        Text(
+                            title,
+                            color = Color.White.copy(alpha = .64f),
+                            fontSize = 29.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(top = 14.dp),
+                        )
+                    }
+                    SettingsRow(item, state, item == state.focusedItem)
+                }
+            }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp, bottom = 48.dp)) {
+                    ServiceStatusRow("▶", "YouTube", configured = false)
+                    ServiceStatusRow("彈", "彈幕", configured = false)
+                    ServiceStatusRow("b", "Bilibili", configured = false)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsRow(item: SettingsItem, state: SettingsState, focused: Boolean) {
+    Row(
+        Modifier.fillMaxWidth().height(76.dp).tvShellFocus(focused)
+            .tvShellSurface(TVSurfaceRole.Content, isFocused = focused, cornerRadius = 10f)
+            .padding(horizontal = 20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        val foreground = if (focused) Color.Black else Color.White
+        Text(settingsGlyph(item), color = foreground, fontSize = 25.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(38.dp))
+        Text(settingsTitle(item), color = foreground, fontSize = 27.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.weight(1f))
+        Text(settingsValue(item, state), color = foreground.copy(alpha = if (focused) .66f else .54f), fontSize = 25.sp, maxLines = 1)
+        Text(if (item.isAdjustable) "‹  ›" else "›", color = foreground, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun ServiceStatusRow(glyph: String, title: String, configured: Boolean) {
+    Row(
+        Modifier.fillMaxWidth().height(72.dp)
+            .tvShellSurface(TVSurfaceRole.Content, cornerRadius = 20f)
+            .padding(horizontal = 28.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        Text(glyph, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(44.dp))
+        Text(title, color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.weight(1f))
+        Text("●", color = if (configured) Color(0xFF5DD879) else Color(0xFFFFA43A), fontSize = 14.sp)
+        Text(if (configured) "已連線" else "需要設定", color = Color.White.copy(alpha = .62f), fontSize = 22.sp)
+    }
+}
+
+private fun settingsSectionTitle(index: Int): String? = when (index) {
+    0 -> "外觀"
+    2 -> "播放與網頁"
+    4 -> "彈幕"
+    8 -> "服務與帳戶"
+    else -> null
+}
+
+private fun settingsTitle(item: SettingsItem): String = when (item) {
+    SettingsItem.Scale -> "介面縮放"
+    SettingsItem.Wallpaper -> "壁紙"
+    SettingsItem.WebZoom -> "網頁放大"
+    SettingsItem.VideoSource -> "影片位置"
+    SettingsItem.DanmakuSize -> "彈幕大小"
+    SettingsItem.DanmakuSpeed -> "彈幕速度"
+    SettingsItem.DanmakuOpacity -> "彈幕透明度"
+    SettingsItem.DanmakuDensity -> "彈幕密度"
+    SettingsItem.Credentials -> "憑證與服務"
+}
+
+private fun settingsValue(item: SettingsItem, state: SettingsState): String = when (item) {
+    SettingsItem.Scale -> state.preferences.displayScaleLabel
+    SettingsItem.Wallpaper -> state.preferences.wallpaperLabel
+    SettingsItem.WebZoom -> "${(state.preferences.webZoom * 100).toInt()}%"
+    SettingsItem.VideoSource -> state.videoSourceLabel
+    SettingsItem.DanmakuSize -> state.preferences.danmaku.sizeLabel
+    SettingsItem.DanmakuSpeed -> state.preferences.danmaku.speedLabel
+    SettingsItem.DanmakuOpacity -> state.preferences.danmaku.opacityLabel
+    SettingsItem.DanmakuDensity -> state.preferences.danmaku.densityLabel
+    SettingsItem.Credentials -> state.credentialsSummary
+}
+
+private fun settingsGlyph(item: SettingsItem): String = when (item) {
+    SettingsItem.Scale -> "▦"
+    SettingsItem.Wallpaper -> "▧"
+    SettingsItem.WebZoom -> "◎"
+    SettingsItem.VideoSource -> "▶"
+    SettingsItem.DanmakuSize -> "A"
+    SettingsItem.DanmakuSpeed -> "»"
+    SettingsItem.DanmakuOpacity -> "◐"
+    SettingsItem.DanmakuDensity -> "≡"
+    SettingsItem.Credentials -> "⚿"
 }
 
 @Composable

@@ -43,8 +43,12 @@ class NativeMediaTest {
 
     @Test
     fun mediaScreenFocusClampsAndReturnsToTabs() {
-        var state = NativeMediaState(cardCount = 3)
-        state = state.reduce(RemoteCommand.Down).reduce(RemoteCommand.Right)
+        var state = NativeMediaState(cardCount = 9, gridColumns = 4)
+        state = state.reduce(RemoteCommand.Down).reduce(RemoteCommand.Down)
+        assertEquals(4, state.focusedCard)
+        state = state.reduce(RemoteCommand.Right)
+        assertEquals(5, state.focusedCard)
+        state = state.reduce(RemoteCommand.Up)
         assertEquals(1, state.focusedCard)
         state = state.reduce(RemoteCommand.Up)
         assertEquals(true, state.isTopNavigationFocused)
