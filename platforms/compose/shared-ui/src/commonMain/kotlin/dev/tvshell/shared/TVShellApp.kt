@@ -77,7 +77,7 @@ fun TVShellApp(
     val discovered = remember(appsRevision) { adapter.installedApps() }
     val builtIns = remember(animeOnly) { defaultShellApps(animeOnly) }
     var state by remember(discovered) { mutableStateOf(LauncherState((builtIns + discovered).distinctBy { it.id })) }
-    var screen by remember { mutableStateOf(if (animeOnly) ShellScreen.Anime else ShellScreen.Launcher) }
+    var screen by remember { mutableStateOf<ShellRoute>(if (animeOnly) ShellRoute.Anime else ShellRoute.Launcher) }
     var animeState by remember { mutableStateOf(CrossPlatformAnimeBrowserState().loadingFirstSource()) }
     var animeCards by remember { mutableStateOf(emptyList<NativeMediaCard>()) }
     var animeEpisodes by remember { mutableStateOf(emptyList<AnimeEpisode>()) }
@@ -110,28 +110,28 @@ fun TVShellApp(
                 "close" -> controlCenterVisible = false
                 "home" -> {
                     controlCenterVisible = false
-                    screen = if (animeOnly) ShellScreen.Anime else ShellScreen.Launcher
+                    screen = if (animeOnly) ShellRoute.Anime else ShellRoute.Launcher
                 }
                 "settings" -> {
                     controlCenterVisible = false
                     settingsState = SettingsState(preferences = controlCenterState)
-                    screen = ShellScreen.Settings
+                    screen = ShellRoute.Settings
                 }
             }
             controlCenterState = next.clearAction()
             return
         }
         if (command == RemoteCommand.Menu && !(
-                screen == ShellScreen.Anime &&
+                screen == ShellRoute.Anime &&
                     (animeState.phase == CrossPlatformAnimePhase.Playing || animeState.isStreamPickerVisible)
                 )) {
             controlCenterVisible = true
             return
         }
-        if (screen == ShellScreen.Settings) {
+        if (screen == ShellRoute.Settings) {
             val next = settingsState.reduce(command)
             when (next.pendingAction) {
-                "exit" -> screen = if (animeOnly) ShellScreen.Anime else ShellScreen.Launcher
+                "exit" -> screen = if (animeOnly) ShellRoute.Anime else ShellRoute.Launcher
                 "video-source" -> adapter.openSystemSettings()
                 "credentials" -> adapter.openCredentialsImporter()
             }
@@ -139,9 +139,17 @@ fun TVShellApp(
             settingsState = next.clearAction()
             return
         }
-        if (screen == ShellScreen.YouTube || screen == ShellScreen.Bilibili) {
+        if (screen == ShellRoute.RemoteSettings || screen == ShellRoute.AnimeSources ||
+            screen == ShellRoute.AppManagement || screen == ShellRoute.Media || screen is ShellRoute.Browser
+        ) {
+            if (command == RemoteCommand.Back || command == RemoteCommand.Home) {
+                screen = if (animeOnly) ShellRoute.Anime else ShellRoute.Launcher
+            }
+            return
+        }
+        if (screen == ShellRoute.YouTube || screen == ShellRoute.Bilibili) {
             if ((command == RemoteCommand.Back || command == RemoteCommand.Home) && mediaState.phase == NativeMediaPhase.Browser) {
-                screen = ShellScreen.Launcher
+                screen = ShellRoute.Launcher
             } else {
                 val next = mediaState.reduce(command)
                 val action = next.pendingAction
@@ -160,7 +168,7 @@ fun TVShellApp(
             }
             return
         }
-        if (screen == ShellScreen.Anime) {
+        if (screen == ShellRoute.Anime) {
             var next = animeState.reduce(command)
             val tabChanged = next.focusedTopTab != animeState.focusedTopTab
             if (tabChanged) {
@@ -178,7 +186,7 @@ fun TVShellApp(
             when {
                 action == "exit" -> {
                     animeState = next.clearAction()
-                    if (animeOnly) adapter.exitApp() else screen = ShellScreen.Launcher
+                    if (animeOnly) adapter.exitApp() else screen = ShellRoute.Launcher
                 }
                 action == "play" -> {
                     animeStatus = adapter.playAnime().fold({ "繼續播放" }, { "播放控制失敗：${it.message}" })
@@ -227,31 +235,18 @@ fun TVShellApp(
                     ))
                 }
                 LauncherFocus.Apps -> state.focusedApp?.let { app ->
-                    if (app.id == "anime") {
-                        screen = ShellScreen.Anime
-                        return@let
-                    }
-                    if (app.id == "youtube") {
-                        screen = ShellScreen.YouTube
-                        return@let
-                    }
-                    if (app.id == "bilibili") {
-                        screen = ShellScreen.Bilibili
-                        return@let
-                    }
-                    if (app.id == "settings" || app.id == "remote" || app.id == "management") {
-                        screen = ShellScreen.Settings
-                        return@let
-                    }
-                    if (app.id == "anime-sources") {
-                        screen = ShellScreen.Anime
+                    BuiltInAppRoute.routeFor(app)?.let { route ->
+                        screen = route
                         return@let
                     }
                     val result = if (app.isSystemSettings) adapter.openSystemSettings() else adapter.launch(app)
                     state = state.copy(status = result.fold({ "正在開啟 ${app.name}" }, { "無法開啟 ${app.name}：${it.message}" }))
                 }
             }
-            RemoteCommand.Home, RemoteCommand.Back -> controlCenterVisible = false
+            RemoteCommand.Home, RemoteCommand.Back -> {
+                controlCenterVisible = false
+                screen = if (animeOnly) ShellRoute.Anime else ShellRoute.Launcher
+            }
             else -> state = state.reduce(command)
         }
     }
@@ -274,8 +269,8 @@ fun TVShellApp(
     }
     LaunchedEffect(screen, mediaState.focusedTab) {
         val service = when (screen) {
-            ShellScreen.YouTube -> NativeMediaService.YouTube
-            ShellScreen.Bilibili -> NativeMediaService.Bilibili
+            ShellRoute.YouTube -> NativeMediaService.YouTube
+            ShellRoute.Bilibili -> NativeMediaService.Bilibili
             else -> null
         } ?: return@LaunchedEffect
         val bilibiliSection = if (service == NativeMediaService.Bilibili) {
@@ -308,7 +303,7 @@ fun TVShellApp(
         )
     }
     LaunchedEffect(screen, animeState.phase, animeState.focusedTopTab, animeState.focusedSource) {
-        if (screen != ShellScreen.Anime || animeState.phase != CrossPlatformAnimePhase.Loading) return@LaunchedEffect
+        if (screen != ShellRoute.Anime || animeState.phase != CrossPlatformAnimePhase.Loading) return@LaunchedEffect
         val source = animeSourcesFor(animeState.focusedTopTab).getOrNull(animeState.focusedSource)
         if (source == null) {
             animeCards = emptyList()
@@ -335,7 +330,7 @@ fun TVShellApp(
         )
     }
     LaunchedEffect(screen, animeState.phase, animeState.selectedCardIndex) {
-        if (screen != ShellScreen.Anime || animeState.phase != CrossPlatformAnimePhase.EpisodeLoading) return@LaunchedEffect
+        if (screen != ShellRoute.Anime || animeState.phase != CrossPlatformAnimePhase.EpisodeLoading) return@LaunchedEffect
         val cards = if (animeState.focusedTopTab == AnimeTopTab.History) watchHistory.entries else animeCards
         val card = cards.getOrNull(animeState.selectedCardIndex)
         if (card == null) {
@@ -364,7 +359,7 @@ fun TVShellApp(
         )
     }
     LaunchedEffect(screen, animeState.phase, animeState.pendingAction) {
-        if (screen != ShellScreen.Anime || animeState.phase != CrossPlatformAnimePhase.Resolving) return@LaunchedEffect
+        if (screen != ShellRoute.Anime || animeState.phase != CrossPlatformAnimePhase.Resolving) return@LaunchedEffect
         val action = animeState.pendingAction ?: return@LaunchedEffect
         if (!action.startsWith("streams:")) return@LaunchedEffect
         val index = action.substringAfter(':').toIntOrNull() ?: animeState.focusedEpisode
@@ -399,7 +394,7 @@ fun TVShellApp(
         )
     }
     LaunchedEffect(screen, animeState.phase, animeState.pendingAction, animeState.selectedStreamIndex) {
-        if (screen != ShellScreen.Anime || animeState.phase != CrossPlatformAnimePhase.Playing) return@LaunchedEffect
+        if (screen != ShellRoute.Anime || animeState.phase != CrossPlatformAnimePhase.Playing) return@LaunchedEffect
         val action = animeState.pendingAction ?: return@LaunchedEffect
         if (!action.startsWith("load:")) return@LaunchedEffect
         val candidate = animeState.streamCandidates.getOrNull(animeState.selectedStreamIndex) ?: return@LaunchedEffect
@@ -418,7 +413,7 @@ fun TVShellApp(
         )
     }
     LaunchedEffect(screen, animeState.phase, animeState.selectedCardIndex, animeState.focusedEpisode) {
-        if (screen != ShellScreen.Anime || animeState.phase != CrossPlatformAnimePhase.Playing) return@LaunchedEffect
+        if (screen != ShellRoute.Anime || animeState.phase != CrossPlatformAnimePhase.Playing) return@LaunchedEffect
         val cards = if (animeState.focusedTopTab == AnimeTopTab.History) watchHistory.entries else animeCards
         val card = cards.getOrNull(animeState.selectedCardIndex) ?: return@LaunchedEffect
         val episode = animeEpisodes.getOrNull(animeState.focusedEpisode) ?: return@LaunchedEffect
@@ -478,8 +473,8 @@ fun TVShellApp(
             label = "TVShell screen transition",
         ) { visibleScreen ->
             when (visibleScreen) {
-                ShellScreen.Launcher -> Launcher(state, watchHistory.entries)
-                ShellScreen.Anime -> AnimatedContent(
+                ShellRoute.Launcher -> Launcher(state, watchHistory.entries)
+                ShellRoute.Anime -> AnimatedContent(
                     targetState = animeState.phase,
                     transitionSpec = {
                         fadeIn(tween(TVShellVisual.RuntimeAnimationMilliseconds))
@@ -499,12 +494,17 @@ fun TVShellApp(
                         controlCenterState.danmaku,
                     )
                 }
-                ShellScreen.YouTube -> NativeMediaRoute("YouTube", listOf("推薦", "熱門", "訂閱", "搜尋"), mediaState, mediaCards, mediaStatus)
-                ShellScreen.Bilibili -> NativeMediaRoute("Bilibili", BilibiliSection.entries.map(BilibiliSection::title), mediaState, mediaCards, mediaStatus)
-                ShellScreen.Settings -> SettingsScreen(settingsState)
+                ShellRoute.YouTube -> NativeMediaRoute("YouTube", listOf("推薦", "熱門", "訂閱", "搜尋"), mediaState, mediaCards, mediaStatus)
+                ShellRoute.Bilibili -> NativeMediaRoute("Bilibili", BilibiliSection.entries.map(BilibiliSection::title), mediaState, mediaCards, mediaStatus)
+                ShellRoute.Settings -> SettingsScreen(settingsState)
+                ShellRoute.RemoteSettings -> RemoteSettingsScreen()
+                ShellRoute.AnimeSources -> AnimeSourceManagementScreen()
+                ShellRoute.AppManagement -> AppManagementScreen(state.apps)
+                ShellRoute.Media -> MediaLibraryScreen()
+                is ShellRoute.Browser -> BrowserScreen(visibleScreen.url)
             }
         }
-        if (screen == ShellScreen.Launcher || (animeOnly && screen == ShellScreen.Anime && animeState.phase != CrossPlatformAnimePhase.Playing)) {
+        if (screen == ShellRoute.Launcher || (animeOnly && screen == ShellRoute.Anime && animeState.phase != CrossPlatformAnimePhase.Playing)) {
             Text(
                 clockLabel,
                 color = Color.White,
@@ -539,8 +539,6 @@ internal fun defaultShellApps(animeOnly: Boolean): List<ShellApp> = if (animeOnl
         ShellApp("management", "管理", "安裝與管理 App"),
     )
 }
-
-private enum class ShellScreen { Launcher, Anime, YouTube, Bilibili, Settings }
 
 @Composable
 private fun NativeMediaRoute(
@@ -782,6 +780,126 @@ private fun appAccent(app: ShellApp): Color = when (app.id) {
     "video" -> Color(0xFF1F75C9)
     "anime-sources" -> Color(0xFF168983)
     else -> Color(0xFF3A3E48)
+}
+
+@Composable
+private fun RemoteSettingsScreen() {
+    ReferenceSplitPage(
+        glyph = "⌁",
+        title = "遙控器設定",
+        subtitle = "按鍵辨識、鍵盤與 Android TV 遙控器對照",
+        rows = listOf(
+            "方向鍵" to "↑ ↓ ← →",
+            "OK／選擇" to "Enter／D-pad Center",
+            "返回" to "Esc／Android Back",
+            "Home" to "長按 Back／Home",
+            "Menu／控制中心" to "Menu／F10",
+            "播放／暫停" to "Space／Media Play Pause",
+            "倒退／快轉" to "J／L 或媒體鍵",
+            "音量" to "系統音量鍵",
+        ),
+        hint = "Windows 與 Android TV 使用固定、可預期的遙控器映射；Back 返回主畫面。",
+    )
+}
+
+@Composable
+private fun AnimeSourceManagementScreen() {
+    ReferenceSplitPage(
+        glyph = "◆",
+        title = "動漫來源",
+        subtitle = "管理解析來源、啟用狀態與訂閱網址",
+        rows = listOf(
+            "ani-subs CSS1" to "已啟用 · https://sub.creamycake.org/v1/css1.json",
+            "動畫瘋" to "官方網站 · 保留廣告與登入",
+            "YouTube" to "官方播放器",
+            "Bilibili 番劇" to "官方來源與彈幕",
+            "ani-subs BT" to "需要 RSS 設定",
+            "Mikan" to "需要 RSS 設定",
+            "動漫花園" to "需要 RSS 設定",
+        ),
+        hint = "CSS1 使用與 macOS 相同的內建網址；OK 管理，Menu 切換詳細模式。",
+    )
+}
+
+@Composable
+private fun AppManagementScreen(apps: List<ShellApp>) {
+    ReferenceSplitPage(
+        glyph = "☷",
+        title = "管理應用程式",
+        subtitle = "查看內建與平台應用程式",
+        rows = apps.map { it.name to it.subtitle },
+        hint = "平台應用程式由 Windows 開始功能表或 Android TV Launcher 自動發現。",
+    )
+}
+
+@Composable
+private fun MediaLibraryScreen() {
+    ReferenceSplitPage(
+        glyph = "▤",
+        title = "影片",
+        subtitle = "TVShell 內建播放器",
+        rows = listOf(
+            "示範影片" to "Big Buck Bunny · 內建播放器",
+            "開啟網路影片" to "HTTP、HTTPS、HLS",
+            "播放控制" to "OK 暫停，左右快轉，上下音量",
+        ),
+        hint = "選取影片後會留在 TVShell 內建播放器，不會跳出到系統瀏覽器。",
+    )
+}
+
+@Composable
+private fun BrowserScreen(url: String) {
+    Column(
+        Modifier.fillMaxSize().padding(horizontal = 86.dp, vertical = 48.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp),
+    ) {
+        Text("瀏覽器", color = Color.White, fontSize = 48.sp, fontWeight = FontWeight.Bold)
+        Text(url, color = Color.White.copy(alpha = .58f), fontSize = 21.sp, maxLines = 1)
+        Box(
+            Modifier.fillMaxWidth().weight(1f).tvShellSurface(TVSurfaceRole.Content, cornerRadius = 18f),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("正在啟動 TVShell 內建瀏覽器…", color = Color.White.copy(alpha = .72f), fontSize = 28.sp)
+        }
+        Text("方向鍵捲動，OK 選取，Back 返回。", color = Color.White.copy(alpha = .62f), fontSize = 22.sp)
+    }
+}
+
+@Composable
+private fun ReferenceSplitPage(
+    glyph: String,
+    title: String,
+    subtitle: String,
+    rows: List<Pair<String, String>>,
+    hint: String,
+) {
+    Row(
+        Modifier.fillMaxSize().padding(horizontal = 86.dp, vertical = 60.dp),
+        horizontalArrangement = Arrangement.spacedBy(64.dp),
+    ) {
+        Column(Modifier.width(500.dp).fillMaxHeight(), verticalArrangement = Arrangement.Center) {
+            Text(glyph, color = Color.White.copy(alpha = .62f), fontSize = 150.sp, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(28.dp))
+            Text(title, color = Color.White, fontSize = 52.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(16.dp))
+            Text(subtitle, color = Color.White.copy(alpha = .58f), fontSize = 24.sp)
+        }
+        Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            rows.take(10).forEachIndexed { index, row ->
+                Row(
+                    Modifier.fillMaxWidth().tvShellSurface(TVSurfaceRole.Panel, isFocused = index == 0, cornerRadius = 10f)
+                        .padding(horizontal = 24.dp, vertical = 19.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(row.first, color = if (index == 0) Color.Black else Color.White, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+                    Text(row.second, color = if (index == 0) Color.Black.copy(alpha = .62f) else Color.White.copy(alpha = .58f), fontSize = 20.sp, maxLines = 1)
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            Text(hint, color = Color.White.copy(alpha = .58f), fontSize = 20.sp)
+        }
+    }
 }
 
 @Composable

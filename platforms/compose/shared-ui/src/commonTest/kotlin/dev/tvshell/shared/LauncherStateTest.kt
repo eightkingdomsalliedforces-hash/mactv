@@ -152,6 +152,36 @@ class LauncherStateTest {
     }
 
     @Test
+    fun everyBuiltInAppOpensItsOwnMacEquivalentRoute() {
+        val expected: Map<String, ShellRoute?> = mapOf(
+            "youtube" to ShellRoute.YouTube,
+            "bilibili" to ShellRoute.Bilibili,
+            "apple" to ShellRoute.Browser("https://www.apple.com"),
+            "browser" to ShellRoute.Browser("https://duckduckgo.com"),
+            "video" to ShellRoute.Media,
+            "anime" to ShellRoute.Anime,
+            "anime-sources" to ShellRoute.AnimeSources,
+            "remote" to ShellRoute.RemoteSettings,
+            "settings" to ShellRoute.Settings,
+            "management" to ShellRoute.AppManagement,
+        )
+
+        assertEquals(expected, defaultShellApps(animeOnly = false).associate { it.id to BuiltInAppRoute.routeFor(it) })
+        assertEquals(expected.size, expected.values.toSet().size)
+    }
+
+    @Test
+    fun backReturnsOneLevelAndHomeAlwaysReturnsToLauncher() {
+        var navigation = ShellNavigationState(ShellRoute.RemoteSettings)
+        navigation = navigation.reduce(RemoteCommand.Back)
+        assertEquals(ShellRoute.Launcher, navigation.route)
+
+        navigation = ShellNavigationState(ShellRoute.Browser("https://duckduckgo.com"))
+            .reduce(RemoteCommand.Home)
+        assertEquals(ShellRoute.Launcher, navigation.route)
+    }
+
+    @Test
     fun statusClockUsesTraditionalChineseWeekday() {
         assertEquals(true, currentTVShellTimeLabel().contains("週"))
     }
