@@ -43,15 +43,19 @@ class DesktopWebRemoteIntegrationTest {
             webView.engine.loadWorker.stateProperty().addListener { _, _, state ->
                 if (state != Worker.State.SUCCEEDED) return@addListener
                 ready.countDown()
-                runCatching {
-                    webView.engine.executeScript(WebRemoteScripts.pagePreparation)
-                    webView.engine.executeScript("document.getElementById('left').focus()")
-                    webView.engine.executeScript(WebRemoteScripts.command(WebRuntimeCommand.ScrollRight))
-                    focusedID = webView.engine.executeScript("document.activeElement.id")?.toString().orEmpty()
-                    webView.engine.executeScript(WebRemoteScripts.command(WebRuntimeCommand.Select))
-                    clicked = webView.engine.executeScript("window.clicked === true") == true
+                // SUCCEEDED can arrive before the first WebView layout pulse on Linux.
+                // Real remote input happens after layout, so exercise the same timing.
+                Platform.runLater {
+                    runCatching {
+                        webView.engine.executeScript(WebRemoteScripts.pagePreparation)
+                        webView.engine.executeScript("document.getElementById('left').focus()")
+                        webView.engine.executeScript(WebRemoteScripts.command(WebRuntimeCommand.ScrollRight))
+                        focusedID = webView.engine.executeScript("document.activeElement.id")?.toString().orEmpty()
+                        webView.engine.executeScript(WebRemoteScripts.command(WebRuntimeCommand.Select))
+                        clicked = webView.engine.executeScript("window.clicked === true") == true
+                    }
+                    completed.countDown()
                 }
-                completed.countDown()
             }
             webView.engine.loadContent(
                 """
