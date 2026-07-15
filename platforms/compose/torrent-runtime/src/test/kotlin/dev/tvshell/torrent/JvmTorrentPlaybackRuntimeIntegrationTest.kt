@@ -153,8 +153,16 @@ class JvmTorrentPlaybackRuntimeIntegrationTest {
     }
 
     private fun injectVerifiedPieces(handle: TorrentHandle, info: TorrentInfo, payload: ByteArray) {
-        repeat(info.numPieces()) { piece ->
-            injectPiece(handle, info, payload, piece)
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
+        while (System.nanoTime() < deadline) {
+            repeat(info.numPieces()) { piece ->
+                if (!handle.havePiece(piece)) injectPiece(handle, info, payload, piece)
+            }
+            if ((0 until info.numPieces()).all(handle::havePiece)) return
+            Thread.sleep(50)
+        }
+        check((0 until info.numPieces()).all(handle::havePiece)) {
+            "Native test injection did not verify every piece within 30 seconds"
         }
     }
 
