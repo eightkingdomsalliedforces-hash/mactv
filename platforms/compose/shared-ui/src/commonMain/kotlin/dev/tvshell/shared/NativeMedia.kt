@@ -23,6 +23,35 @@ data class NativeMediaCard(
     val animeEpisodeNumber: Int? = null,
 )
 
+sealed interface NativePlaybackTarget {
+    data class Direct(val candidate: dev.tvshell.shared.anime.AnimeStreamCandidate) : NativePlaybackTarget
+    data class Embedded(val url: String) : NativePlaybackTarget
+}
+
+object NativePlaybackTargetResolver {
+    private val directExtensions = setOf("mp4", "m4v", "mov", "mkv", "webm", "avi", "m3u8", "mpd", "ts")
+    private val youtubeID = Regex("(?:youtube(?:-nocookie)?\\.com/(?:watch\\?v=|embed/)|youtu\\.be/)([A-Za-z0-9_-]{6,})")
+    private val bilibiliID = Regex("(?:bilibili\\.com/video/|bvid=)(BV[A-Za-z0-9]+)", RegexOption.IGNORE_CASE)
+
+    fun resolve(card: NativeMediaCard): NativePlaybackTarget {
+        val rawURL = card.playbackURL.trim()
+        youtubeID.find(rawURL)?.groupValues?.getOrNull(1)?.let { id ->
+            return NativePlaybackTarget.Embedded("https://www.youtube-nocookie.com/embed/$id?autoplay=1&playsinline=1")
+        }
+        bilibiliID.find(rawURL)?.groupValues?.getOrNull(1)?.let { id ->
+            return NativePlaybackTarget.Embedded("https://player.bilibili.com/player.html?bvid=$id&autoplay=1&high_quality=1")
+        }
+        val path = rawURL.substringBefore('?').substringBefore('#')
+        val extension = path.substringAfterLast('.', "").lowercase()
+        if (extension in directExtensions || rawURL.startsWith("http://127.0.0.1:") || rawURL.startsWith("http://localhost:")) {
+            return NativePlaybackTarget.Direct(
+                dev.tvshell.shared.anime.AnimeStreamCandidate(rawURL, "內建播放器", emptyMap()),
+            )
+        }
+        return NativePlaybackTarget.Embedded(rawURL)
+    }
+}
+
 data class WatchHistoryState(
     val entries: List<NativeMediaCard> = emptyList(),
 ) {

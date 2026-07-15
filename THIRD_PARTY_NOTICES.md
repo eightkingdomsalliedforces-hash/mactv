@@ -59,6 +59,18 @@ The Windows Compose player uses JNA 5.19.1 to call the embedded libVLC API.
 
 JNA's own `META-INF/LICENSE` remains present in the packaged dependency JAR.
 
+## AndroidX Media3
+
+The Android TV Compose products use AndroidX Media3 1.10.1 ExoPlayer with its
+HLS and DASH modules for native adaptive, direct-file and BT Range playback.
+
+- Project: `androidx/media`
+- Source: <https://github.com/androidx/media>
+- Copyright: The Android Open Source Project
+- License: Apache-2.0
+
+The packaged Android notices retain the complete Apache License 2.0 text.
+
 ## VideoLAN libVLC
 
 The Windows Compose products package the libVLC 3.0.23 engine and runtime

@@ -1,12 +1,22 @@
 package dev.tvshell.shared.anime
 
 import android.content.Context
-import android.media.MediaPlayer
-import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.view.Surface
+import dev.tvshell.shared.OwnedValue
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.atomic.AtomicLong
 
 class AndroidAnimeHTTPTransport : AnimeHTTPTransport {
     override suspend fun get(url: String, headers: Map<String, String>): String {
@@ -24,153 +34,194 @@ class AndroidAnimeHTTPTransport : AnimeHTTPTransport {
 }
 
 class AndroidMediaPlayerAdapter(private val context: Context) : AnimePlayerAdapter {
-    private val lock = Any()
-    private var player: MediaPlayer? = null
-    private var isPrepared = false
-    private var playWhenPrepared = false
-    private var surface: Surface? = null
-    private var playbackError: String? = null
-    private var generation = 0L
+    private val applicationContext = context.applicationContext
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val generation = AtomicLong()
+    private var player: ExoPlayer? = null
+    private val surfaceLease = OwnedValue<Surface>()
+    private var currentCandidateKey: String? = null
+    private var volume = 1f
+    private var muted = false
+    @Volatile private var playbackPositionSeconds = 0.0
+    @Volatile private var playbackDurationSeconds = 0.0
+    @Volatile private var playbackIsPlaying = false
+    @Volatile private var playbackError: String? = null
 
     init {
-        AndroidAnimePlaybackRegistry.player = this
+        AndroidAnimePlaybackRegistry.register(this)
     }
 
     override fun load(candidate: AnimeStreamCandidate) {
-        val next = MediaPlayer()
-        val old: MediaPlayer?
-        val token: Long
-        val currentSurface: Surface?
-        synchronized(lock) {
-            generation += 1
-            token = generation
-            old = player
+        val candidateKey = candidate.url + "\n" + candidate.headers.toSortedMap()
+        val token = generation.incrementAndGet()
+        playbackPositionSeconds = 0.0
+        playbackDurationSeconds = 0.0
+        playbackIsPlaying = false
+        playbackError = null
+        mainHandler.post {
+            if (generation.get() != token) return@post
+            if (player != null && currentCandidateKey == candidateKey) {
+                player?.let { current ->
+                    current.playWhenReady = true
+                    current.play()
+                    startPositionUpdates(token, current)
+                }
+                return@post
+            }
+            player?.release()
+            val requestHeaders = candidate.headers.filterKeys { key ->
+                !key.equals("resolver", ignoreCase = true)
+            }
+            val httpFactory = DefaultHttpDataSource.Factory()
+                .setAllowCrossProtocolRedirects(true)
+                .setDefaultRequestProperties(requestHeaders)
+            val dataSourceFactory = DefaultDataSource.Factory(applicationContext, httpFactory)
+            val next = ExoPlayer.Builder(applicationContext)
+                .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+                .build()
             player = next
-            isPrepared = false
-            playWhenPrepared = false
-            playbackError = null
-            currentSurface = surface
-        }
-        runCatching { old?.release() }
-        try {
-            next.setSurface(currentSurface)
-            next.setDataSource(context, Uri.parse(candidate.url), candidate.headers)
-            next.setOnErrorListener { _, what, extra ->
-                synchronized(lock) {
-                    if (generation == token && player === next) {
-                        playbackError = "Android MediaPlayer 錯誤 $what/$extra"
-                        isPrepared = false
-                        playWhenPrepared = false
+            currentCandidateKey = candidateKey
+            surfaceLease.value?.let(next::setVideoSurface)
+            next.volume = if (muted) 0f else volume
+            next.addListener(object : Player.Listener {
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    if (generation.get() == token && player === next) playbackIsPlaying = isPlaying
+                }
+
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (generation.get() != token || player !== next) return
+                    playbackDurationSeconds = next.duration.validMediaTimeSeconds()
+                    if (playbackState == Player.STATE_ENDED) playbackIsPlaying = false
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    if (generation.get() == token && player === next) {
+                        playbackError = "Media3 內建播放器錯誤：${error.errorCodeName} · ${error.message.orEmpty()}".trimEnd(' ', '·')
+                        playbackIsPlaying = false
                     }
                 }
-                true
-            }
-            next.setOnCompletionListener {
-                synchronized(lock) {
-                    if (generation == token && player === next) playWhenPrepared = false
+            })
+            runCatching {
+                next.setMediaItem(MediaItem.fromUri(candidate.url))
+                next.prepare()
+                next.playWhenReady = true
+                startPositionUpdates(token, next)
+            }.onFailure { throwable ->
+                if (generation.get() == token && player === next) {
+                    playbackError = "Media3 內建播放器無法載入：${throwable.message ?: throwable::class.simpleName}"
+                    playbackIsPlaying = false
                 }
             }
-            next.setOnPreparedListener {
-                val shouldPlay = synchronized(lock) {
-                    if (generation != token || player !== next) return@setOnPreparedListener
-                    isPrepared = true
-                    playWhenPrepared
-                }
-                if (shouldPlay) {
-                    runCatching { next.start() }.onFailure { throwable ->
-                        synchronized(lock) {
-                            if (generation == token && player === next) {
-                                playbackError = "內建播放器無法開始播放：${throwable.message ?: throwable::class.simpleName}"
-                                isPrepared = false
-                                playWhenPrepared = false
-                            }
-                        }
-                    }
-                }
-            }
-            next.prepareAsync()
-        } catch (throwable: Throwable) {
-            synchronized(lock) {
-                if (generation == token && player === next) {
-                    player = null
-                    isPrepared = false
-                    playWhenPrepared = false
-                    playbackError = "內建播放器無法載入此影片：${throwable.message ?: throwable::class.simpleName}"
-                }
-            }
-            runCatching { next.release() }
-            throw IllegalStateException("內建播放器無法載入此影片：${throwable.message ?: throwable::class.simpleName}", throwable)
         }
     }
 
     override fun play() {
-        synchronized(lock) {
-            playWhenPrepared = true
-            if (!isPrepared) return
-            try {
-                player?.start()
-            } catch (throwable: Throwable) {
-                throw IllegalStateException("內建播放器無法開始播放：${throwable.message ?: throwable::class.simpleName}", throwable)
-            }
+        mainHandler.post {
+            player?.playWhenReady = true
+            player?.play()
         }
     }
 
     override fun pause() {
-        synchronized(lock) {
-            playWhenPrepared = false
-            if (isPrepared) player?.pause()
-        }
+        mainHandler.post { player?.pause() }
     }
 
     override fun seekBy(seconds: Int) {
-        synchronized(lock) {
-            if (isPrepared) player?.seekTo(((player?.currentPosition ?: 0) + seconds * 1_000).coerceAtLeast(0))
+        mainHandler.post {
+            player?.let { current ->
+                val maximum = current.duration.takeIf { it != C.TIME_UNSET && it >= 0 } ?: Long.MAX_VALUE
+                current.seekTo((current.currentPosition + seconds * 1_000L).coerceIn(0L, maximum))
+            }
+        }
+    }
+
+    fun adjustVolume(delta: Float) {
+        mainHandler.post {
+            volume = (volume + delta).coerceIn(0f, 1f)
+            muted = false
+            player?.volume = volume
+        }
+    }
+
+    fun toggleMute() {
+        mainHandler.post {
+            muted = !muted
+            player?.volume = if (muted) 0f else volume
         }
     }
 
     override fun release() {
-        val old = synchronized(lock) {
-            generation += 1
-            player.also {
-                player = null
-                isPrepared = false
-                playWhenPrepared = false
-                playbackError = null
-            }
-        }
-        runCatching { old?.release() }
-    }
-
-    fun attachSurface(value: Surface?) {
-        synchronized(lock) {
-            surface = value
-            runCatching { player?.setSurface(value) }.onFailure {
-                playbackError = "內建播放器無法連接畫面：${it.message ?: it::class.simpleName}"
-            }
+        generation.incrementAndGet()
+        playbackPositionSeconds = 0.0
+        playbackDurationSeconds = 0.0
+        playbackIsPlaying = false
+        playbackError = null
+        volume = 1f
+        muted = false
+        mainHandler.post {
+            player?.release()
+            player = null
+            currentCandidateKey = null
         }
     }
 
-    fun snapshot(): AnimePlaybackSnapshot {
-        return synchronized(lock) {
-            val current = player
-            val error = playbackError
-            if (current == null || !isPrepared) return@synchronized AnimePlaybackSnapshot(error = error)
-            runCatching {
-                AnimePlaybackSnapshot(
-                    positionSeconds = current.currentPosition.coerceAtLeast(0) / 1_000.0,
-                    durationSeconds = current.duration.coerceAtLeast(0) / 1_000.0,
-                    isPlaying = current.isPlaying,
-                    error = error,
-                )
-            }.getOrElse { throwable ->
-                AnimePlaybackSnapshot(error = throwable.message ?: "Android 內建播放器狀態讀取失敗")
-            }
+    fun close() {
+        release()
+        AndroidAnimePlaybackRegistry.unregister(this)
+    }
+
+    fun attachSurface(owner: Any, value: Surface) {
+        mainHandler.post {
+            surfaceLease.attach(owner, value)
+            player?.setVideoSurface(value)
         }
+    }
+
+    fun detachSurface(owner: Any, pauseIfOwned: Boolean = false) {
+        mainHandler.post {
+            if (!surfaceLease.detach(owner)) return@post
+            if (pauseIfOwned) player?.pause()
+            player?.clearVideoSurface()
+        }
+    }
+
+    fun snapshot(): AnimePlaybackSnapshot = AnimePlaybackSnapshot(
+        positionSeconds = playbackPositionSeconds,
+        durationSeconds = playbackDurationSeconds,
+        isPlaying = playbackIsPlaying,
+        error = playbackError,
+    )
+
+    private fun startPositionUpdates(token: Long, expectedPlayer: ExoPlayer) {
+        mainHandler.post(object : Runnable {
+            override fun run() {
+                if (generation.get() != token || player !== expectedPlayer) return
+                playbackPositionSeconds = expectedPlayer.currentPosition.validMediaTimeSeconds()
+                playbackDurationSeconds = expectedPlayer.duration.validMediaTimeSeconds()
+                playbackIsPlaying = expectedPlayer.isPlaying
+                mainHandler.postDelayed(this, 250L)
+            }
+        })
+    }
+
+    private fun Long.validMediaTimeSeconds(): Double = when {
+        this == C.TIME_UNSET || this < 0L -> 0.0
+        else -> this / 1_000.0
     }
 }
 
 object AndroidAnimePlaybackRegistry {
+    @Volatile
     var player: AndroidMediaPlayerAdapter? = null
+        private set
+
+    fun register(value: AndroidMediaPlayerAdapter) {
+        player = value
+    }
+
+    fun unregister(value: AndroidMediaPlayerAdapter) {
+        if (player === value) player = null
+    }
 }
 
 class AndroidTorrentCacheCleaner(private val root: File) {

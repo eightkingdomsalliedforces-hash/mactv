@@ -67,6 +67,9 @@ kotlin {
         val androidMain by getting {
             dependencies {
                 implementation(project(":torrent-runtime"))
+                implementation("androidx.media3:media3-exoplayer:1.10.1")
+                implementation("androidx.media3:media3-exoplayer-hls:1.10.1")
+                implementation("androidx.media3:media3-exoplayer-dash:1.10.1")
                 implementation("com.frostwire:jlibtorrent-android-arm:$jlibtorrentVersion")
                 implementation("com.frostwire:jlibtorrent-android-arm64:$jlibtorrentVersion")
                 implementation("com.frostwire:jlibtorrent-android-x86:$jlibtorrentVersion")

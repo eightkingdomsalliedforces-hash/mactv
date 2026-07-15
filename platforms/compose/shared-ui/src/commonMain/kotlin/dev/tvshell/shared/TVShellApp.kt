@@ -60,6 +60,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -154,6 +155,7 @@ fun TVShellApp(
     val activeDispatcher = remember(dispatcher) { dispatcher ?: RemoteCommandDispatcher() }
     val handleRootKeyEvents = shouldHandleRootKeyEvent(dispatcher != null)
     val focusRequester = remember { FocusRequester() }
+    val rootFocusBootstrap = remember { RootFocusBootstrap() }
 
     fun recordWatch(card: NativeMediaCard) {
         watchHistory = watchHistory.record(card)
@@ -233,6 +235,7 @@ fun TVShellApp(
         if (screen == ShellRoute.Media) {
             val next = mediaWebState.reduce(playerWebCommand(command))
             if (command == RemoteCommand.Back || next.pendingAction == "exit") {
+                adapter.stopAnime()
                 screen = if (animeOnly) ShellRoute.Anime else ShellRoute.Launcher
             }
             mediaWebState = next.clearAction()
@@ -283,7 +286,9 @@ fun TVShellApp(
             if ((command == RemoteCommand.Back || command == RemoteCommand.Home) && mediaState.phase == NativeMediaPhase.Browser) {
                 screen = ShellRoute.Launcher
             } else {
+                val wasPlaying = mediaState.phase == NativeMediaPhase.Player
                 val next = mediaState.reduce(command)
+                if (wasPlaying && next.phase == NativeMediaPhase.Browser) adapter.stopAnime()
                 val action = next.pendingAction
                 if (action?.startsWith("open-internal:") == true) {
                     val index = action.substringAfter(':').toIntOrNull() ?: 0
@@ -329,40 +334,31 @@ fun TVShellApp(
                     if (animeOnly) adapter.exitApp() else screen = ShellRoute.Launcher
                 }
                 action == "play" -> {
-                    animeStatus = adapter.playAnime().fold({ "繼續播放" }, { "播放控制失敗：${it.message}" })
                     animeWebState = animeWebState.reduce(RemoteCommand.PlayPause).clearAction()
+                    animeStatus = "繼續播放"
                     animeState = next.clearAction()
                 }
                 action == "pause" -> {
-                    animeStatus = adapter.pauseAnime().fold({ "已暫停" }, { "播放控制失敗：${it.message}" })
                     animeWebState = animeWebState.reduce(RemoteCommand.PlayPause).clearAction()
+                    animeStatus = "已暫停"
                     animeState = next.clearAction()
                 }
                 action?.startsWith("seek:") == true -> {
                     val seconds = action.substringAfter(':').toIntOrNull() ?: 0
                     animePlaybackSeconds = (animePlaybackSeconds + seconds).coerceAtLeast(0.0)
-                    animeStatus = adapter.seekAnimeBy(seconds).fold(
-                        { if (seconds >= 0) "快轉 ${seconds} 秒" else "倒轉 ${-seconds} 秒" },
-                        { "快轉失敗：${it.message}" },
-                    )
                     animeWebState = animeWebState.reduce(if (seconds >= 0) RemoteCommand.FastForward else RemoteCommand.Rewind).clearAction()
+                    animeStatus = if (seconds >= 0) "快轉 ${seconds} 秒" else "倒轉 ${-seconds} 秒"
                     animeState = next.clearAction()
                 }
                 action == "volume:up" || action == "volume:down" -> {
                     val direction = if (action.endsWith("up")) 1 else -1
-                    animeStatus = adapter.adjustAnimeVolume(direction).fold(
-                        { if (direction > 0) "音量提高" else "音量降低" },
-                        { "音量調整失敗：${it.message}" },
-                    )
                     animeWebState = animeWebState.reduce(if (direction > 0) RemoteCommand.VolumeUp else RemoteCommand.VolumeDown).clearAction()
+                    animeStatus = if (direction > 0) "音量提高" else "音量降低"
                     animeState = next.clearAction()
                 }
                 action == "volume:mute" -> {
-                    animeStatus = adapter.muteAnime().fold(
-                        { "已切換靜音" },
-                        { "靜音失敗：${it.message}" },
-                    )
                     animeWebState = animeWebState.reduce(RemoteCommand.Mute).clearAction()
+                    animeStatus = "已切換靜音"
                     animeState = next.clearAction()
                 }
                 action == "stop" -> {
@@ -451,9 +447,6 @@ fun TVShellApp(
     }
     DisposableEffect(adapter) {
         onDispose(adapter::close)
-    }
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
     }
     LaunchedEffect(externalMagnetRequest?.sequence, externalMagnetRequest?.magnet) {
         val request = externalMagnetRequest ?: return@LaunchedEffect
@@ -805,6 +798,9 @@ fun TVShellApp(
             }
             .focusRequester(focusRequester)
             .focusable()
+            .onGloballyPositioned {
+                rootFocusBootstrap.requestOnce(focusRequester::requestFocus)
+            }
         ) {
         AnimatedContent(
             targetState = screen,
@@ -1046,6 +1042,14 @@ private fun NativeMediaPlayer(
     webState: WebRuntimeState,
     onExitPlayer: () -> Unit,
 ) {
+    val playbackCard = card ?: NativeMediaCard(
+        id = "internal-player",
+        title = service,
+        subtitle = "內建播放器",
+        thumbnailURL = "",
+        playbackURL = webState.url,
+    )
+    val target = NativePlaybackTargetResolver.resolve(playbackCard)
     Column(
         Modifier.fillMaxSize().padding(horizontal = 86.dp, vertical = 48.dp),
         verticalArrangement = Arrangement.SpaceBetween,
@@ -1056,12 +1060,20 @@ private fun NativeMediaPlayer(
                 .tvShellSurface(TVSurfaceRole.Content, cornerRadius = 18f),
             contentAlignment = Alignment.Center,
         ) {
-            PlatformWebSurface(
-                url = card?.playbackURL ?: webState.url,
-                signal = webState.signal,
-                onExitRequested = onExitPlayer,
-                modifier = Modifier.fillMaxSize(),
-            )
+            when (target) {
+                is NativePlaybackTarget.Direct -> PlatformAnimeVideoSurface(
+                    candidate = target.candidate,
+                    signal = webState.signal,
+                    onExitRequested = onExitPlayer,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                is NativePlaybackTarget.Embedded -> PlatformWebSurface(
+                    url = target.url,
+                    signal = webState.signal,
+                    onExitRequested = onExitPlayer,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
             Text(
                 if (state.pendingSeekSeconds == 0) status else "已跳轉 ${if (state.pendingSeekSeconds > 0) "+" else ""}${state.pendingSeekSeconds} 秒",
                 color = Color.White,
@@ -1283,15 +1295,32 @@ private fun AppManagementScreen(apps: List<ShellApp>, focusedIndex: Int) {
 
 @Composable
 private fun MediaLibraryScreen(state: WebRuntimeState, onExitRequested: () -> Unit) {
+    val target = NativePlaybackTargetResolver.resolve(
+        NativeMediaCard(
+            id = "media-library",
+            title = "Big Buck Bunny",
+            subtitle = "TVShell 內建播放器",
+            thumbnailURL = "",
+            playbackURL = state.url,
+        ),
+    )
     Column(Modifier.fillMaxSize().padding(horizontal = 86.dp, vertical = 48.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         Text("影片", color = Color.White, fontSize = 48.sp, fontWeight = FontWeight.Bold)
         Text("TVShell 內建播放器 · Big Buck Bunny", color = Color.White.copy(alpha = .58f), fontSize = 21.sp)
-        PlatformWebSurface(
-            url = state.url,
-            signal = state.signal,
-            onExitRequested = onExitRequested,
-            modifier = Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(18.dp)),
-        )
+        when (target) {
+            is NativePlaybackTarget.Direct -> PlatformAnimeVideoSurface(
+                candidate = target.candidate,
+                signal = state.signal,
+                onExitRequested = onExitRequested,
+                modifier = Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(18.dp)),
+            )
+            is NativePlaybackTarget.Embedded -> PlatformWebSurface(
+                url = target.url,
+                signal = state.signal,
+                onExitRequested = onExitRequested,
+                modifier = Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(18.dp)),
+            )
+        }
         Text("OK 暫停／播放，左右快轉，上下調整音量，Back 返回。", color = Color.White.copy(alpha = .62f), fontSize = 22.sp)
     }
 }

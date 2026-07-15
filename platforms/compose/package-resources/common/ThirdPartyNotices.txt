@@ -65,6 +65,15 @@ SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later.
 TVShell uses JNA under the Apache License 2.0 option. The complete JNA license
 notice remains available as META-INF/LICENSE inside jna-5.19.1.jar.
 
+AndroidX Media3 1.10.1 (Android TV packages only)
+---------------------------------------------------
+Source: https://github.com/androidx/media
+Copyright (C) The Android Open Source Project.
+License: Apache License 2.0.
+TVShell uses Media3 ExoPlayer plus its HLS and DASH modules for the Android TV
+internal player. The complete Apache License 2.0 is retained in
+licenses/Apache-2.0.txt.
+
 OpenSSL 3.6.0 (embedded by jlibtorrent)
 -----------------------------------------
 Source: https://github.com/openssl/openssl/tree/openssl-3.6.0

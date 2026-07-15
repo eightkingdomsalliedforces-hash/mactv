@@ -72,14 +72,14 @@ internal class DesktopLibVLCPlayer private constructor(
         if (closed.get()) return
         EventQueue.invokeLater {
             if (closed.get()) return@invokeLater
-            when (command) {
-                WebRuntimeCommand.PlayPause, WebRuntimeCommand.Select -> runtime.togglePlayback()
-                WebRuntimeCommand.Rewind -> runtime.seekBy(-10)
-                WebRuntimeCommand.FastForward -> runtime.seekBy(10)
-                WebRuntimeCommand.VolumeUp -> runtime.adjustVolume(10)
-                WebRuntimeCommand.VolumeDown -> runtime.adjustVolume(-10)
-                WebRuntimeCommand.Mute -> runtime.toggleMute()
-                else -> Unit
+            when (command.nativePlayerAction()) {
+                NativePlayerAction.TogglePlayback -> runtime.togglePlayback()
+                NativePlayerAction.SeekBackward -> runtime.seekBy(-15)
+                NativePlayerAction.SeekForward -> runtime.seekBy(15)
+                NativePlayerAction.VolumeUp -> runtime.adjustVolume(10)
+                NativePlayerAction.VolumeDown -> runtime.adjustVolume(-10)
+                NativePlayerAction.ToggleMute -> runtime.toggleMute()
+                null -> Unit
             }
         }
     }

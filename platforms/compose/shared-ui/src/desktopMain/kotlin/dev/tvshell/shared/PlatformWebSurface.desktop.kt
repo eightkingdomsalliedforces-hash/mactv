@@ -16,6 +16,7 @@ import javafx.embed.swing.JFXPanel
 import javafx.scene.Scene
 import javafx.scene.web.WebEngine
 import javafx.scene.web.WebView
+import javafx.util.Callback
 
 @Composable
 actual fun PlatformWebSurface(
@@ -52,8 +53,9 @@ private class DesktopWebSurfaceHolder(private val exit: () -> Unit) {
                 isContextMenuEnabled = false
                 engine.userAgent = "${engine.userAgent} TVShell/1.0 WindowsTV"
             }
+            webView.engine.createPopupHandler = Callback { webView.engine }
             webView.engine.loadWorker.stateProperty().addListener { _, _, state ->
-                if (state == Worker.State.SUCCEEDED) runCatching { webView.engine.executeScript(pagePreparationScript) }
+                if (state == Worker.State.SUCCEEDED) runCatching { webView.engine.executeScript(WebRemoteScripts.pagePreparation) }
             }
             engine = webView.engine
             fxPanel.scene = Scene(webView)
@@ -79,7 +81,7 @@ private class DesktopWebSurfaceHolder(private val exit: () -> Unit) {
                 val history = current.history
                 if (history.currentIndex > 0) history.go(-1) else SwingUtilities.invokeLater(exit)
             } else {
-                runCatching { current.executeScript(scriptFor(command)) }
+                runCatching { current.executeScript(WebRemoteScripts.command(command)) }
             }
         }
     }
@@ -88,32 +90,3 @@ private class DesktopWebSurfaceHolder(private val exit: () -> Unit) {
         Platform.runLater { engine?.load("about:blank") }
     }
 }
-
-private const val pagePreparationScript = """
-(() => {
-  document.documentElement.style.scrollbarWidth='none';
-  const style=document.createElement('style');
-  style.textContent='::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}';
-  document.head && document.head.appendChild(style);
-  const candidates=[...document.querySelectorAll('button,a,[role=button]')];
-  const age=candidates.find(e=>/^(同意|我已滿|繼續觀看|進入)$/i.test((e.innerText||'').trim()));
-  if(age && /15|年齡|未滿|限制級/.test(document.body.innerText||'')) age.click();
-})()
-"""
-
-private fun scriptFor(command: WebRuntimeCommand): String = when (command) {
-    WebRuntimeCommand.ScrollUp -> "window.scrollBy({top:-260,behavior:'smooth'})"
-    WebRuntimeCommand.ScrollDown -> "window.scrollBy({top:260,behavior:'smooth'})"
-    WebRuntimeCommand.ScrollLeft -> "window.scrollBy({left:-320,behavior:'smooth'})"
-    WebRuntimeCommand.ScrollRight -> "window.scrollBy({left:320,behavior:'smooth'})"
-    WebRuntimeCommand.Select -> "(() => { const e=document.activeElement||document.elementFromPoint(innerWidth/2,innerHeight/2); if(e) e.click(); })()"
-    WebRuntimeCommand.PlayPause -> videoScript("v.paused?v.play():v.pause()")
-    WebRuntimeCommand.Rewind -> videoScript("v.currentTime=Math.max(0,v.currentTime-15)")
-    WebRuntimeCommand.FastForward -> videoScript("v.currentTime=Math.min(v.duration||Infinity,v.currentTime+15)")
-    WebRuntimeCommand.VolumeUp -> videoScript("v.volume=Math.min(1,v.volume+.1)")
-    WebRuntimeCommand.VolumeDown -> videoScript("v.volume=Math.max(0,v.volume-.1)")
-    WebRuntimeCommand.Mute -> videoScript("v.muted=!v.muted")
-    else -> "void 0"
-}
-
-private fun videoScript(body: String): String = "(() => { const v=document.querySelector('video'); if(v){$body;} })()"

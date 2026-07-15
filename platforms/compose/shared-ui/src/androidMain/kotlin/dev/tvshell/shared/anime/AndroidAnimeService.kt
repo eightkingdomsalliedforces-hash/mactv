@@ -158,7 +158,7 @@ class AndroidAnimeService(
     override fun stop(): Result<Unit> = runCatching { player.release() }
     override fun playbackSnapshot(): AnimePlaybackSnapshot = player.snapshot()
     override fun close() {
-        player.release()
+        player.close()
         torrentEngine.close()
     }
 
